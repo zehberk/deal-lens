@@ -2,7 +2,6 @@ import asyncio, glob, json, os, time
 
 from pathlib import Path
 
-from utils.cache import load_cache
 from analysis.kbb import get_pricing_data
 from analysis.normalization import (
     filter_valid_listings,
@@ -16,7 +15,14 @@ from analysis.scoring import (
     rate_risk_level2,
 )
 from analysis.reporting import render_level2_pdf
+from analysis.analysis_utils import (
+    check_missing_docs,
+    get_report_dir,
+    get_vehicle_dir,
+    prepare_advanced_analysis,
+)
 
+from utils.cache import load_cache
 from utils.carfax_parser import get_carfax_data
 from utils.constants import *
 from utils.download import download_files, download_report_pdfs
@@ -38,75 +44,17 @@ def report_stats(label: str, values: list[float]):
     )
 
 
-def get_vehicle_dir(listing: dict) -> Path | None:
-    title = listing.get("title")
-    vin = listing.get("vin")
-    if title is None or vin is None:
-        return None
-    path = Path(DOC_PATH) / title / vin
-    return path if path.is_dir() else None
-
-
-def get_report_dir(listing: dict) -> Path | None:
-    dir = get_vehicle_dir(listing)
-    # TODO: add auto-check
-    return dir / "carfax.html" if dir else None
-
-
-def check_missing_docs(listings: list[dict]):
-    # Check to see if files exists
-    missing_reports = []
-    for l in listings:
-        dir = get_vehicle_dir(l)
-        if dir is None:
-            continue
-        html = dir / "carfax.html"
-        pdf = dir / "carfax.pdf"
-
-        carfax_url = l.get("additional_docs", {}).get("carfax_url", "Unavailable")
-        if carfax_url != "Unavailable" and not pdf.exists() and not html.exists():
-            missing_reports.append(l)
-
-    if missing_reports:
-        print(f"Downloading reports for {len(missing_reports)} listings...")
-        download_report_pdfs(missing_reports)
-
-
 async def start_level2_analysis(metadata: dict, listings: list[dict], filename: str):
     make = metadata["vehicle"]["make"]
     model = metadata["vehicle"]["model"]
 
-    cache = load_cache(PRICING_CACHE)
-    cache_entries: dict = cache.setdefault("entries", {})
-
-    # We must normalize listings before getting the variant map
-    norm_listings = [normalize_listing(l) for l in listings]
-    variant_map = await get_variant_map(make, model, norm_listings)
-
-    # Ensure all folders exist, and if not, save the documents
-    if not all(get_vehicle_dir(l) for l in listings):
-        await download_files(listings, filename)
-
-    # Check for missings documents (pdfs, html)
-    check_missing_docs(listings)
-
-    # Filter out only the listings that have a valid report
-    filtered_listings = []
-    for vl in listings:
-        report = get_report_dir(vl)
-        if report and report.exists():
-            filtered_listings.append(normalize_listing(vl))
-
-    # We do not need the trim valuations, we just need to make sure the pricing data has been populated
-    _ = await get_pricing_data(make, model, norm_listings, variant_map, cache)
-
-    valid_listings, _, _ = filter_valid_listings(
-        make, model, filtered_listings, cache_entries, variant_map
+    valid_listings, cache_entries = await prepare_advanced_analysis(
+        make, model, listings, filename
     )
 
     if len(valid_listings) == 0:
         print("No listings met the criteria for level 2 analysis.")
-        return
+        return None
 
     # listing, deal, risk, narrative
     ratings: list[tuple[dict, str, int, list[str]]] = []
