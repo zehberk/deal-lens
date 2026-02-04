@@ -1,31 +1,16 @@
 import asyncio, glob, json, os, time
 
-from pathlib import Path
-
-from analysis.kbb import get_pricing_data
-from analysis.normalization import (
-    filter_valid_listings,
-    get_variant_map,
-    normalize_listing,
-)
+from analysis.analysis_utils import get_report_dir
+from analysis.reporting import render_level2_pdf
 from analysis.scoring import (
     adjust_deal_for_risk,
     classify_deal_rating,
     determine_best_price,
     rate_risk_level2,
 )
-from analysis.reporting import render_level2_pdf
-from analysis.analysis_utils import (
-    check_missing_docs,
-    get_report_dir,
-    get_vehicle_dir,
-    prepare_advanced_analysis,
-)
+from analysis.workflow import prepare_level2_analysis
 
-from utils.cache import load_cache
 from utils.carfax_parser import get_carfax_data
-from utils.constants import *
-from utils.download import download_files, download_report_pdfs
 from utils.models import CarfaxData
 
 
@@ -45,14 +30,9 @@ def report_stats(label: str, values: list[float]):
 
 
 async def start_level2_analysis(metadata: dict, listings: list[dict], filename: str):
-    make = metadata["vehicle"]["make"]
-    model = metadata["vehicle"]["model"]
+    ctx = await prepare_level2_analysis(metadata, listings, filename)
 
-    valid_listings, cache_entries = await prepare_advanced_analysis(
-        make, model, listings, filename
-    )
-
-    if len(valid_listings) == 0:
+    if len(ctx.valid_listings) == 0:
         print("No listings met the criteria for level 2 analysis.")
         return None
 
@@ -60,7 +40,7 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
     ratings: list[tuple[dict, str, int, list[str]]] = []
 
     # Extract Carfax report
-    for vl in sorted(valid_listings, key=lambda x: x["listing"]["id"]):
+    for vl in sorted(ctx.valid_listings, key=lambda x: x["listing"]["id"]):
         listing: dict = vl["listing"]
         cache_key = vl["cache_key"]
 
@@ -72,10 +52,10 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
         narrative: list[str] = []
 
         price = int(listing.get("price", 0))
-        fpp_natl = int(cache_entries[cache_key].get("fpp_natl") or 0)
-        fpp_local = int(cache_entries[cache_key].get("fpp_local") or 0)
-        fmr_high = int(cache_entries[cache_key].get("fmr_high") or 0)
-        fmv = int(cache_entries[cache_key].get("fmv") or 0)
+        fpp_natl = int(ctx.cache_entries[cache_key].get("fpp_natl") or 0)
+        fpp_local = int(ctx.cache_entries[cache_key].get("fpp_local") or 0)
+        fmr_high = int(ctx.cache_entries[cache_key].get("fmr_high") or 0)
+        fmv = int(ctx.cache_entries[cache_key].get("fmv") or 0)
 
         if not (fpp_natl and fpp_local and fmv):
             narrative.append(
@@ -104,7 +84,7 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
         ratings.append((listing, deal, risk, narrative))
 
     await render_level2_pdf(
-        make, model, len(listings), len(valid_listings), ratings, metadata
+        ctx.make, ctx.model, len(listings), len(ctx.valid_listings), ratings, metadata
     )
 
 

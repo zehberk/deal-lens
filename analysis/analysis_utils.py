@@ -3,15 +3,7 @@ import asyncio, glob, json, os, time
 
 from pathlib import Path
 
-from analysis.kbb import get_pricing_data
-from analysis.normalization import (
-    filter_valid_listings,
-    get_variant_map,
-    normalize_listing,
-)
-from analysis.analysis_utils import check_missing_docs, get_report_dir, get_vehicle_dir
 
-from utils.cache import load_cache
 from utils.common import make_string_url_safe
 from utils.constants import *
 from utils.download import download_files, download_report_pdfs
@@ -165,37 +157,3 @@ def check_missing_docs(listings: list[dict]):
     if missing_reports:
         print(f"Downloading reports for {len(missing_reports)} listings...")
         download_report_pdfs(missing_reports)
-
-
-async def prepare_advanced_analysis(
-    make: str, model: str, listings: list[dict], filename: str
-) -> tuple[list[dict], dict]:
-    cache = load_cache(PRICING_CACHE)
-    cache_entries: dict = cache.setdefault("entries", {})
-
-    # We must normalize listings before getting the variant map
-    norm_listings = [normalize_listing(l) for l in listings]
-    variant_map = await get_variant_map(make, model, norm_listings)
-
-    # Ensure all folders exist, and if not, save the documents
-    if not all(get_vehicle_dir(l) for l in listings):
-        await download_files(listings, filename)
-
-    # Check for missings documents (pdfs, html)
-    check_missing_docs(listings)
-
-    # Filter out only the listings that have a valid report
-    filtered_listings = []
-    for vl in listings:
-        report = get_report_dir(vl)
-        if report and report.exists():
-            filtered_listings.append(normalize_listing(vl))
-
-    # We do not need the trim valuations, we just need to make sure the pricing data has been populated
-    _ = await get_pricing_data(make, model, norm_listings, variant_map, cache)
-
-    valid_listings, _, _ = filter_valid_listings(
-        make, model, filtered_listings, cache_entries, variant_map
-    )
-
-    return (valid_listings, cache_entries)
