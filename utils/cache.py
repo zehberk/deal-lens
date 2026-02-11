@@ -4,7 +4,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from analysis.analysis_utils import get_relevant_entries
 from utils.constants import *
 
 
@@ -53,7 +52,9 @@ def is_local_fresh(entry: dict) -> bool:
 
 
 def cache_covers_all(
-    make: str, variants: list[str], years: list[str], cache: dict
+    variants: list[str],
+    relevant_entries: dict[str, dict[str, dict]],
+    cache: dict,
 ) -> bool:
     cache_entries = cache.get("entries", {})
     slugs = cache.get("model_slugs", {})
@@ -62,19 +63,16 @@ def cache_covers_all(
         return False
 
     for ymm in variants:
-        year: str = ymm[:4]
-        make_model_key: str = ymm[5:].strip()
-        model = make_model_key.replace(make, "")
-
-        # Check model slug
         if ymm not in slugs:
             return False
 
-        relevant_entries = get_relevant_entries(cache_entries, make, model, year)
-        if len(relevant_entries) == 0:
+        year: str = ymm[:4]
+
+        entries_for_year = relevant_entries.setdefault(year, {})
+        if entries_for_year is None:
             return False
 
-        for entry in relevant_entries.values():
+        for entry in entries_for_year.values():
             if is_entry_fresh(entry) is False:
                 return False
 

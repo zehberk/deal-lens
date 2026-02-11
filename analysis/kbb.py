@@ -14,7 +14,6 @@ from tqdm import tqdm
 
 from utils.cache import (
     cache_covers_all,
-    get_relevant_entries,
     is_entry_fresh,
     is_natl_fresh,
     save_cache,
@@ -22,6 +21,7 @@ from utils.cache import (
 from analysis.normalization import best_kbb_trim_match, get_variant_map
 from analysis.analysis_utils import (
     extract_years,
+    get_relevant_entries,
     get_trim_valuations_from_cache,
     is_trim_version_valid,
     to_int,
@@ -508,8 +508,11 @@ async def get_pricing_data(
     slugs = cache.setdefault("model_slugs", {})
 
     years = extract_years(norm_listings)
+    relevant_entries: dict[str, dict[str, dict]] = {}
+    for y in years:
+        relevant_entries[y] = get_relevant_entries(cache_entries, make, model, y)
 
-    if cache_covers_all(make, list(variant_map.keys()), years, cache):
+    if cache_covers_all(list(variant_map.keys()), relevant_entries, cache):
         return get_trim_valuations_from_cache(make, model, years, cache_entries)
 
     return await get_trim_valuations_from_scrape(
