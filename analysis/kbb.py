@@ -247,7 +247,7 @@ async def populate_pricing_for_year(
             )
         else:
             if not natl_fpp or natl_fpp == "TBD":
-                print(f"ℹ️  No national pricing data for {kbb_trim}; saving MSRP only")
+                return f"No national pricing data for {kbb_trim}"
 
         entry = cache_entries.setdefault(kbb_trim, {})
 
