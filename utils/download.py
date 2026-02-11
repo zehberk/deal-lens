@@ -483,6 +483,11 @@ def wait_for_carfax_report(ws: WebSocket, sid: str, timeout=90):
         t = (info.get("t") or "").lower()
         href = (info.get("href") or "").lower()
         ready = (info.get("ready") or "").lower()
+
+        host = (urlparse(href).hostname or "").lower()
+        if host == "secure.carfax.com":
+            raise RuntimeError("secure.carfax.com redirect")
+
         if "access blocked" in t or "/record-check" in href:
             raise RuntimeError("access blocked")
         if "vehicle history report" in t and "carfax" in t and ready == "complete":
