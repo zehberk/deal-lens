@@ -135,7 +135,10 @@ async def get_or_fetch_national_pricing(
         try:
             body = await page.inner_text("body")
             if "We're sorry, our experts haven't reviewed this car yet" in body:
-                return pricing_data, f"Unable to find table for pricing: {natl_url}"
+                return (
+                    pricing_data,
+                    f"KBB does not have data for this trim: {year} {make} {model}",
+                )
             rows_locator = page.locator("table.css-lb65co tbody tr")
             await rows_locator.first.wait_for(timeout=5000)
             rows = await rows_locator.all()
@@ -145,7 +148,10 @@ async def get_or_fetch_national_pricing(
                 await table.first.wait_for(timeout=5000)
                 rows = await table.all()
             except TimeoutError as t2:
-                return pricing_data, f"Unable to find table for pricing: {natl_url}"
+                return (
+                    pricing_data,
+                    f"KBB does not have data for this trim: {year} {make} {model}",
+                )
 
         # Collect the pricing data before attempting to get FMV, otherwise page context gets
         # overwritten and Playwright will throw an error
