@@ -13,7 +13,7 @@ from analysis.normalization import (
 
 from utils.cache import load_cache
 from utils.constants import *
-from utils.models import AnalysisContext
+from utils.models import AnalysisContext, ListingContext, PricingAnchors
 
 
 def build_analysis_context(metadata: dict) -> AnalysisContext:
@@ -28,9 +28,7 @@ def populate_cache(ctx: AnalysisContext):
 
 
 async def populate_variants(ctx: AnalysisContext, listings: list[dict]):
-    # We must normalize listings before getting the variant map
-    norm_listings = [normalize_listing(l) for l in listings]
-    ctx.variant_map = await get_variant_map(ctx.make, ctx.model, norm_listings)
+    ctx.variant_map = await get_variant_map(ctx.make, ctx.model, listings)
 
 
 async def populate_pricing_data(ctx: AnalysisContext, listings: list[dict]):
@@ -39,27 +37,77 @@ async def populate_pricing_data(ctx: AnalysisContext, listings: list[dict]):
     )
 
 
-def populate_filtered_listings(ctx: AnalysisContext, listings: list[dict]):
+def populate_filtered_listings(
+    ctx: AnalysisContext, listings: list[dict], full_listings: list[dict] | None = None
+):
     valid_data, skipped_listings, skip_summary = filter_valid_listings(
         ctx.make, ctx.model, listings, ctx.cache_entries, ctx.variant_map
     )
-    ctx.valid_listings = valid_data
+
     ctx.skipped_listings = skipped_listings
     ctx.skip_summary = skip_summary
 
+    full_listings = full_listings or listings
+
+    ctx.listings = []
+    for vd in valid_data:
+        listing = vd["listing"]
+        cache_key = vd["cache_key"]
+
+        lid = str(listing.get("id", ""))
+        vin = str(listing.get("vin", "") or "")
+
+        # Find the matching “full listing” once, here (so level2 doesn’t do it)
+        full = next((l for l in full_listings if str(l.get("id", "")) == lid), listing)
+
+        report = get_report_dir(full)
+        report_path = str(report) if report else None
+
+        entry = ctx.cache_entries.get(cache_key, {})
+        pricing = PricingAnchors(
+            msrp=entry.get("msrp"),
+            fpp_natl=entry.get("fpp_natl"),
+            fpp_local=entry.get("fpp_local"),
+            fmv=entry.get("fmv"),
+            fmr_low=entry.get("fmr_low"),
+            fmr_high=entry.get("fmr_high"),
+            uncertainty=entry.get("uncertainty"),
+            source_natl=entry.get("natl_source"),
+            source_local=entry.get("local_source"),
+        )
+
+        ctx.listings.append(
+            ListingContext(
+                listing_id=lid,
+                vin=vin,
+                cache_key=cache_key,
+                listing=listing,
+                full_listing=full,
+                report_path=report_path,
+                pricing=pricing,
+            )
+        )
+
 
 async def prepare_level1_analysis(
-    metadata: dict, listings: list[dict], report_listings: list[dict] = []
+    metadata: dict,
+    listings: list[dict],
+    report_listings: list[dict] = [],
+    is_normalized=False,
 ) -> AnalysisContext:
     ctx = build_analysis_context(metadata)
 
-    populate_cache(ctx)
-    await populate_variants(ctx, listings)
-    await populate_pricing_data(ctx, listings)
-    if report_listings:
-        populate_filtered_listings(ctx, report_listings)
+    if is_normalized:
+        norm_listings = listings
     else:
-        populate_filtered_listings(ctx, listings)
+        norm_listings = [normalize_listing(l) for l in listings]
+
+    populate_cache(ctx)
+    await populate_variants(ctx, norm_listings)
+    await populate_pricing_data(ctx, norm_listings)
+    populate_filtered_listings(
+        ctx, report_listings or norm_listings, full_listings=listings
+    )
 
     return ctx
 
@@ -68,20 +116,21 @@ async def prepare_level2_analysis(
     metadata: dict, listings: list[dict], filename: str
 ) -> AnalysisContext:
 
-    # Ensure all folders exist, and if not, save the documents
     if not all(get_vehicle_dir(l) for l in listings):
         await download_files(listings, filename)
 
-    # Filter out only the listings that have a valid report
+    norm_listings = [normalize_listing(l) for l in listings]
+
     filtered_listings = []
-    for vl in listings:
+    for vl in norm_listings:
         report = get_report_dir(vl)
         if report and report.exists():
             filtered_listings.append(vl)
 
-    ctx = await prepare_level1_analysis(metadata, listings)
+    ctx = await prepare_level1_analysis(
+        metadata, norm_listings, filtered_listings, True
+    )
 
-    # Check for missings documents (pdfs, html)
     check_missing_docs(listings)
 
     return ctx

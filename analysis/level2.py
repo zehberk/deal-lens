@@ -1,5 +1,7 @@
 import asyncio, glob, json, os, time
 
+from pathlib import Path
+
 from analysis.analysis_utils import get_report_dir
 from analysis.reporting import render_level2_pdf
 from analysis.scoring import (
@@ -32,7 +34,7 @@ def report_stats(label: str, values: list[float]):
 async def start_level2_analysis(metadata: dict, listings: list[dict], filename: str):
     ctx = await prepare_level2_analysis(metadata, listings, filename)
 
-    if len(ctx.valid_listings) == 0:
+    if len(ctx.listings) == 0:
         print("No listings met the criteria for level 2 analysis.")
         return None
 
@@ -40,22 +42,23 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
     ratings: list[tuple[dict, str, int, list[str]]] = []
 
     # Extract Carfax report
-    for vl in sorted(ctx.valid_listings, key=lambda x: x["listing"]["id"]):
-        listing: dict = vl["listing"]
-        cache_key = vl["cache_key"]
+    for lc in sorted(ctx.listings, key=lambda x: str(x.listing.get("id", ""))):
+        listing = lc.listing
+        price_val = listing.get("price")
+        if price_val is None:
+            continue
 
-        full_listing = next(l for l in listings if l.get("id") == listing.get("id"))
-        report = get_report_dir(full_listing)
-        if report is None or not report.exists() or listing.get("price") is None:
+        report = Path(lc.report_path) if lc.report_path else None
+        if report is None or not report.exists():
             continue
 
         narrative: list[str] = []
 
-        price = int(listing.get("price", 0))
-        fpp_natl = int(ctx.cache_entries[cache_key].get("fpp_natl") or 0)
-        fpp_local = int(ctx.cache_entries[cache_key].get("fpp_local") or 0)
-        fmr_high = int(ctx.cache_entries[cache_key].get("fmr_high") or 0)
-        fmv = int(ctx.cache_entries[cache_key].get("fmv") or 0)
+        price = int(price_val)
+        fpp_natl = int(lc.pricing.fpp_natl or 0)
+        fpp_local = int(lc.pricing.fpp_local or 0)
+        fmr_high = int(lc.pricing.fmr_high or 0)
+        fmv = int(lc.pricing.fmv or 0)
 
         if not (fpp_natl and fpp_local and fmv):
             narrative.append(
@@ -68,6 +71,7 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
         best_comparison = determine_best_price(
             price, fpp_local, fpp_natl, fmv, narrative
         )
+
         deal, midpoint, increment, percent = classify_deal_rating(
             price, best_comparison, fmv, fpp_local, fmr_high
         )
@@ -79,12 +83,19 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
 
         # Risk ratings and deal adjustment
         carfax: CarfaxData = get_carfax_data(report)
+        lc.carfax = carfax
+
         risk = rate_risk_level2(carfax, listing, narrative)
+        lc.risk_score = risk
+
         deal = adjust_deal_for_risk(deal, risk, narrative)
+        lc.deal_rating = deal
+        lc.narrative = narrative
+
         ratings.append((listing, deal, risk, narrative))
 
     await render_level2_pdf(
-        ctx.make, ctx.model, len(listings), len(ctx.valid_listings), ratings, metadata
+        ctx.make, ctx.model, len(listings), len(ctx.listings), ratings, metadata
     )
 
 

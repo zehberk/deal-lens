@@ -595,16 +595,55 @@ class DealCheck:
 
 
 @dataclass
+class PricingAnchors:
+    msrp: Optional[int] = None
+    fpp_natl: Optional[int] = None
+    fpp_local: Optional[int] = None
+    fmv: Optional[int] = None
+    fmr_low: Optional[int] = None
+    fmr_high: Optional[int] = None
+    uncertainty: Optional[str] = None
+    source_natl: Optional[str] = None
+    source_local: Optional[str] = None
+
+
+@dataclass
+class ListingContext:
+    listing_id: str
+    vin: str = ""
+    cache_key: str = ""
+
+    listing: dict[str, Any] = field(default_factory=dict)
+    full_listing: dict[str, Any] = field(default_factory=dict)
+
+    report_path: Optional[str] = None
+    carfax: Any | None = None
+
+    pricing: PricingAnchors = field(default_factory=PricingAnchors)
+
+    # “figure out the leverage” output
+    leverage_lines: list[str] = field(default_factory=list)
+
+    # Level 2 and 3 outputs
+    deal_rating: Optional[str] = None
+    risk_score: Optional[int] = None
+    narrative: list[str] = field(default_factory=list)
+
+
+@dataclass
 class AnalysisContext:
     # Level 1
     make: str
     model: str
+
     cache: dict[str, Any] = field(default_factory=dict)
     cache_entries: dict[str, dict[str, Any]] = field(default_factory=dict)
     variant_map: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     trim_valuations: list[TrimValuation] = field(default_factory=list)
 
-    # Level 2
-    valid_listings: list[dict[str, Any]] = field(default_factory=list)
     skipped_listings: list[dict[str, Any]] = field(default_factory=list)
     skip_summary: dict[str, dict[str, int]] = field(default_factory=dict)
+
+    listings: list[ListingContext] = field(default_factory=list)
+
+    # Level 2
