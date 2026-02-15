@@ -14,7 +14,6 @@ from tqdm import tqdm
 
 from utils.cache import (
     cache_covers_all,
-    get_relevant_entries,
     is_entry_fresh,
     is_natl_fresh,
     save_cache,
@@ -22,7 +21,9 @@ from utils.cache import (
 from analysis.normalization import best_kbb_trim_match, get_variant_map
 from analysis.analysis_utils import (
     extract_years,
+    get_relevant_entries,
     get_trim_valuations_from_cache,
+    is_dollar_amount,
     is_trim_version_valid,
     to_int,
 )
@@ -135,7 +136,10 @@ async def get_or_fetch_national_pricing(
         try:
             body = await page.inner_text("body")
             if "We're sorry, our experts haven't reviewed this car yet" in body:
-                return pricing_data, f"Unable to find table for pricing: {natl_url}"
+                return (
+                    pricing_data,
+                    f"KBB does not have data for this trim: {year} {make} {model}",
+                )
             rows_locator = page.locator("table.css-lb65co tbody tr")
             await rows_locator.first.wait_for(timeout=5000)
             rows = await rows_locator.all()
@@ -145,7 +149,10 @@ async def get_or_fetch_national_pricing(
                 await table.first.wait_for(timeout=5000)
                 rows = await table.all()
             except TimeoutError as t2:
-                return pricing_data, f"Unable to find table for pricing: {natl_url}"
+                return (
+                    pricing_data,
+                    f"KBB does not have data for this trim: {year} {make} {model}",
+                )
 
         # Collect the pricing data before attempting to get FMV, otherwise page context gets
         # overwritten and Playwright will throw an error
@@ -171,6 +178,10 @@ async def get_or_fetch_national_pricing(
                 table_trim = (await tds[0].inner_text()).strip()
                 msrp = (await tds[1].inner_text()).strip()
                 natl_fpp = None
+
+            # Skips other placeholder values
+            if not is_dollar_amount(msrp) and msrp != "TBD":
+                continue
 
             pricing_data.append(
                 (
@@ -247,7 +258,7 @@ async def populate_pricing_for_year(
             )
         else:
             if not natl_fpp or natl_fpp == "TBD":
-                print(f"ℹ️  No national pricing data for {kbb_trim}; saving MSRP only")
+                error = f"No national pricing data for {kbb_trim}"
 
         entry = cache_entries.setdefault(kbb_trim, {})
 
@@ -508,8 +519,11 @@ async def get_pricing_data(
     slugs = cache.setdefault("model_slugs", {})
 
     years = extract_years(norm_listings)
+    relevant_entries: dict[str, dict[str, dict]] = {}
+    for y in years:
+        relevant_entries[y] = get_relevant_entries(cache_entries, make, model, y)
 
-    if cache_covers_all(make, list(variant_map.keys()), years, cache):
+    if cache_covers_all(list(variant_map.keys()), relevant_entries, cache):
         return get_trim_valuations_from_cache(make, model, years, cache_entries)
 
     return await get_trim_valuations_from_scrape(

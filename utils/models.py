@@ -2,7 +2,7 @@ import re
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from utils.constants import (
     BED_LENGTH_RE,
@@ -46,7 +46,7 @@ class TrimValuation:
             f"trim_source={self.local_source!r})"
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "model": self.model,
             "kbb_trim": self.kbb_trim,
@@ -61,7 +61,7 @@ class TrimValuation:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TrimValuation":
+    def from_dict(cls, data: dict[str, Any]) -> "TrimValuation":
         return cls(
             model=data["model"],
             kbb_trim=data["kbb_trim"],
@@ -129,7 +129,7 @@ class CarListing:
             f"deviation_pct={self.deviation_pct!r})"
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "vin": self.vin,
@@ -156,7 +156,7 @@ class CarListing:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "CarListing":
+    def from_dict(cls, data: dict[str, Any]) -> "CarListing":
         return cls(
             id=data["id"],
             vin=data["vin"],
@@ -189,7 +189,7 @@ class DealBin:
     listings: list[CarListing]
     count: int
     avg_deviation_pct: Optional[float] = None
-    condition_counts: Dict[str, int] = field(default_factory=dict)  # {"New": 2, ...}
+    condition_counts: dict[str, int] = field(default_factory=dict)  # {"New": 2, ...}
     percent_of_total: Optional[float] = None  # 0..100
 
     @property
@@ -242,7 +242,7 @@ class TrimProfile:
     tokens: list[str]
     full_trim: str
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "full_trim": self.full_trim,
             "tokens": self.tokens,
@@ -592,3 +592,58 @@ class DealCheck:
     inventory_trend: dict[str, tuple[int, int]]
     visual_graph_bytes: bytes
     dealcheck_url: str
+
+
+@dataclass
+class PricingAnchors:
+    msrp: Optional[int] = None
+    fpp_natl: Optional[int] = None
+    fpp_local: Optional[int] = None
+    fmv: Optional[int] = None
+    fmr_low: Optional[int] = None
+    fmr_high: Optional[int] = None
+    uncertainty: Optional[str] = None
+    source_natl: Optional[str] = None
+    source_local: Optional[str] = None
+
+
+@dataclass
+class ListingContext:
+    listing_id: str
+    vin: str = ""
+    cache_key: str = ""
+
+    listing: dict[str, Any] = field(default_factory=dict)
+    full_listing: dict[str, Any] = field(default_factory=dict)
+
+    report_path: Optional[str] = None
+    carfax: Any | None = None
+
+    pricing: PricingAnchors = field(default_factory=PricingAnchors)
+
+    # “figure out the leverage” output
+    leverage_lines: list[str] = field(default_factory=list)
+
+    # Level 2 and 3 outputs
+    deal_rating: Optional[str] = None
+    risk_score: Optional[int] = None
+    narrative: list[str] = field(default_factory=list)
+
+
+@dataclass
+class AnalysisContext:
+    # Level 1
+    make: str
+    model: str
+
+    cache: dict[str, Any] = field(default_factory=dict)
+    cache_entries: dict[str, dict[str, Any]] = field(default_factory=dict)
+    variant_map: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    trim_valuations: list[TrimValuation] = field(default_factory=list)
+
+    skipped_listings: list[dict[str, Any]] = field(default_factory=list)
+    skip_summary: dict[str, dict[str, int]] = field(default_factory=dict)
+
+    listings: list[ListingContext] = field(default_factory=list)
+
+    # Level 2

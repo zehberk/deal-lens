@@ -50,7 +50,11 @@ def rate_uncertainty(listing) -> str:
 
 
 def determine_best_price(
-    price: int, fpp_local: int, fpp_natl: int, fmv: int, narrative: list[str]
+    price: int,
+    fpp_local: int,
+    fpp_natl: int,
+    fmv: int,
+    narrative: Optional[list[str]] = None,
 ) -> int:
     source: str = ""
     reason: str = ""
@@ -75,11 +79,12 @@ def determine_best_price(
         source = "FMV"
         reason = "no national or local FPP could be found"
 
-    narrative.append(f"{source} was used as the comparison value because {reason}.")
-    if source == "FMV":
-        narrative.append(
-            "As FMV is a measure of how much a car would be sold privately, the following ratings may be inaccurate."
-        )
+    if narrative is not None:
+        narrative.append(f"{source} was used as the comparison value because {reason}.")
+        if source == "FMV":
+            narrative.append(
+                "As FMV is a measure of how much a car would be sold privately, the following ratings may be inaccurate."
+            )
 
     return value
 
@@ -176,17 +181,21 @@ def rate_risk_level1(listing, price, compare_value) -> str:
         return "Low"
 
 
-def adjust_deal_for_risk(base_bin: str, risk: float, narrative: list[str]) -> str:
+def adjust_deal_for_risk(
+    base_bin: str, risk: float, narrative: Optional[list[str]] = None
+) -> str:
     """
     Adjusts deal grading for level 2 based on the risk.
     """
     if base_bin == "Suspicious":
         if risk > 5:
-            narrative.append(
-                "Deal rating has been downgraded to Bad due to risk and suspicious pricing."
-            )
+            if narrative is not None:
+                narrative.append(
+                    "Deal rating has been downgraded to Bad due to risk and suspicious pricing."
+                )
             return "Bad"
-        narrative.append("Deal is set as Suspicious due to extreme pricing.")
+        if narrative is not None:
+            narrative.append("Deal is set as Suspicious due to extreme pricing.")
         return "Suspicious"
 
     idx = DEAL_ORDER.index(base_bin)
@@ -199,26 +208,30 @@ def adjust_deal_for_risk(base_bin: str, risk: float, narrative: list[str]) -> st
     elif risk <= 8:
         shift = 3
     else:
-        narrative.append(
-            f"Originally rated {base_bin} based on price alone, but shifted to Bad due to extreme risk."
-        )
+        if narrative is not None:
+            narrative.append(
+                f"Originally rated {base_bin} based on price alone, but shifted to Bad due to extreme risk."
+            )
         return "Bad"
 
     new_deal = DEAL_ORDER[min(idx + shift, len(DEAL_ORDER) - 1)]
 
-    if shift == 0:
-        narrative.append(
-            f"Deal rating is fixed at {base_bin} based on price and {"low" if risk else "no"} risk factors."
-        )
-    else:
-        narrative.append(
-            f"Originally rated {base_bin} based on price alone, but is now downgraded to {new_deal} due to risk factors."
-        )
+    if narrative is not None:
+        if shift == 0:
+            narrative.append(
+                f"Deal rating is fixed at {base_bin} based on price and {"low" if risk else "no"} risk factors."
+            )
+        else:
+            narrative.append(
+                f"Originally rated {base_bin} based on price alone, but is now downgraded to {new_deal} due to risk factors."
+            )
 
     return new_deal
 
 
-def rate_risk_level2(carfax: CarfaxData, listing: dict, narrative: list[str]) -> int:
+def rate_risk_level2(
+    carfax: CarfaxData, listing: dict, narrative: Optional[list[str]] = None
+) -> int:
     """
     Scores multiple areas of the carfax report to return a risk level
 
@@ -237,7 +250,9 @@ def rate_risk_level2(carfax: CarfaxData, listing: dict, narrative: list[str]) ->
     return round(max(min(score, 10.0), 0.0))
 
 
-def score_title_status(carfax: CarfaxData, narrative: list[str]) -> float:
+def score_title_status(
+    carfax: CarfaxData, narrative: Optional[list[str]] = None
+) -> float:
     """
     Computes a composite title risk score on a 0-10 scale based on title type, structural status,
     damage history, and key risk factors (airbags, odometer).
@@ -264,14 +279,15 @@ def score_title_status(carfax: CarfaxData, narrative: list[str]) -> float:
 
     # 4. Airbag deployment: hidden safety concern, flat addition
     if carfax.airbags_deployed:
-        narrative.append("Air bags have been deployed at least once.")
+        if narrative is not None:
+            narrative.append("Air bags have been deployed at least once.")
         score += 2.5
 
     return min(max(score, 0.0), 10.0)
 
 
 def get_cumulative_damage_score(
-    severities: list[DamageSeverity], narrative: list[str]
+    severities: list[DamageSeverity], narrative: Optional[list[str]] = None
 ) -> float:
     """
     Returns a cumulative score for a list of damages. Subsequent damages are multipled by 10%,
@@ -289,6 +305,7 @@ def get_cumulative_damage_score(
         base: float = SEVERITY_SCORES.get(damage, 0.0)
         multiplier = 1 if i == 0 else 1.1 + (0.05 * (i - 1))
         score += base * multiplier
+
     if score:
         severity_groups = [list(s) for _, s in groupby(severities)]
         totals = []
@@ -296,14 +313,17 @@ def get_cumulative_damage_score(
             count = len(group)
             label = SEVERITY_LABELS.get(group[0], "unknown")
             totals.append(f"{count} {label}")
-        narrative.append(
-            f"{len(severities)} damage record{"s" if len(totals) > 1 else "" } found: {', '.join(totals)}."
-        )
+
+        if narrative is not None:
+            narrative.append(
+                f"{len(severities)} damage record{"s" if len(totals) > 1 else "" } found: {', '.join(totals)}."
+            )
+
     return min(score, 10.0)
 
 
 def get_structure_score(
-    status: StructuralStatus, damage_score: float, narrative: list[str]
+    status: StructuralStatus, damage_score: float, narrative: Optional[list[str]] = None
 ) -> float:
     """
     Returns a structure score modified by the likelihood of damage on a non-linear scale.
@@ -326,7 +346,7 @@ def get_structure_score(
         scale = (damage_score / 10) ** 1.2
         score = 0.1 + scale * (2.5 - 0.1)
 
-    if score:
+    if score and narrative is not None:
         if status == StructuralStatus.CONFIRMED:
             narrative.append(
                 "At least one damage report confirmed structural problems."
@@ -341,7 +361,10 @@ def get_structure_score(
 
 
 def get_branded_score(
-    is_branded: bool, is_total_loss: bool, damage_score: float, narrative: list[str]
+    is_branded: bool,
+    is_total_loss: bool,
+    damage_score: float,
+    narrative: Optional[list[str]] = None,
 ) -> float:
     """
     Returns a scaled title score depending on the vehicle's damage.
@@ -369,14 +392,16 @@ def get_branded_score(
         else:
             scale = (damage_score / 10) ** 0.78
             return 2.0 + scale * 5.5  # clean-title curve: 2.25 → 7.5
-    elif is_branded and is_total_loss:
-        narrative.append(
-            "Title has been branded and vehicle was considered a total loss vehicle."
-        )
-    elif is_branded:
-        narrative.append("Title has been branded.")
-    else:
-        narrative.append("Vehicle was declared a total loss.")
+
+    if narrative is not None:
+        if is_branded and is_total_loss:
+            narrative.append(
+                "Title has been branded and vehicle was considered a total loss vehicle."
+            )
+        elif is_branded:
+            narrative.append("Title has been branded.")
+        else:
+            narrative.append("Vehicle was declared a total loss.")
 
     if damage_score <= 0:
         return 7.0  # suspicious: title issue with no visible damage
@@ -386,7 +411,7 @@ def get_branded_score(
 
 
 def score_warranty_status(
-    carfax: CarfaxData, listing: dict, narrative: list[str]
+    carfax: CarfaxData, listing: dict, narrative: Optional[list[str]] = None
 ) -> float:
     """
     Finds the rating score for a vehicle's warranty status. Range is -2 to 0.
@@ -407,11 +432,13 @@ def score_warranty_status(
     coverages: list[dict] = listing["coverages"]
 
     if carfax.has_accident or carfax.has_damage:
-        narrative.append("The basic warranty on this vehicle has been voided.")
+        if narrative is not None:
+            narrative.append("The basic warranty on this vehicle has been voided.")
         return 0.0
 
     if not carfax.is_basic_warranty_active:
-        narrative.append("The basic warranty on this vehicle has expired.")
+        if narrative is not None:
+            narrative.append("The basic warranty on this vehicle has expired.")
         return 0.0
 
     basic_months, basic_miles = carfax.remaining_warranty
@@ -443,7 +470,7 @@ def score_warranty_status(
     else:
         rating = 0.0
 
-    if rating:
+    if rating and narrative is not None:
         narrative.append(
             f"Basic warranty is active with {basic_months} months left and {basic_miles} miles left."
         )
@@ -451,7 +478,9 @@ def score_warranty_status(
     return rating
 
 
-def score_mileage_use(carfax: CarfaxData, listing: dict, narrative: list[str]) -> float:
+def score_mileage_use(
+    carfax: CarfaxData, listing: dict, narrative: Optional[list[str]] = None
+) -> float:
     """
     Calculates a mileage-based risk modifier on a -1.0 to 2.0 scale.
 
@@ -478,7 +507,10 @@ def score_mileage_use(carfax: CarfaxData, listing: dict, narrative: list[str]) -
     """
     # Odometer inconsistency: fraud/mechanical risk
     if carfax.has_odometer_problem:
-        narrative.append("An odometer inconsistency has been found for this vehicle.")
+        if narrative is not None:
+            narrative.append(
+                "An odometer inconsistency has been found for this vehicle."
+            )
         return 2.5
 
     production_year = int(listing["year"])
@@ -497,28 +529,35 @@ def score_mileage_use(carfax: CarfaxData, listing: dict, narrative: list[str]) -
 
     # Continuous scaling: mild penalty below -10%, neutral zone, then 0 → 2 curve above +10%
     if deviation <= -0.20:
-        narrative.append(
-            f"Vehicle has been driven significantly less than expected for it's age ({percent_diff:.1f}%)."
-        )
+        if narrative is not None:
+            narrative.append(
+                f"Vehicle has been driven significantly less than expected for it's age ({percent_diff:.1f}%)."
+            )
         score = -1.0
     elif deviation <= -0.10:
-        narrative.append(
-            f"Vehicle has been driven less than expected for it's age ({percent_diff:.1f}%)."
-        )
+        if narrative is not None:
+            narrative.append(
+                f"Vehicle has been driven less than expected for it's age ({percent_diff:.1f}%)."
+            )
         score = -1.0 + (deviation + 0.20) * 5  # smooth ramp -1 → -0.5
     elif deviation < 0.10:
-        narrative.append(f"Vehicle has been driven an expected amount for it's age.")
+        if narrative is not None:
+            narrative.append(
+                f"Vehicle has been driven an expected amount for it's age."
+            )
         score = 0.0
     elif deviation < 0.40:
-        narrative.append(
-            f"Vehicle has been driven more than expected for it's age ({percent_diff:.1f}%)."
-        )
+        if narrative is not None:
+            narrative.append(
+                f"Vehicle has been driven more than expected for it's age ({percent_diff:.1f}%)."
+            )
         # from +10% → +40%, interpolate 0 → 2.0
         score = ((deviation - 0.10) / 0.30) * 2.0
     else:
-        narrative.append(
-            f"Vehicle has been driven much more than expected for it's age ({percent_diff:.1f}%)."
-        )
+        if narrative is not None:
+            narrative.append(
+                f"Vehicle has been driven much more than expected for it's age ({percent_diff:.1f}%)."
+            )
         score = 2.0
 
     return score

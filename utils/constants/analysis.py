@@ -263,3 +263,16 @@ FEE_SIGNAL_RE = re.compile(
     r"\b(?:fee|fees|charge|charges|expense)\b",
     re.I,
 )
+
+DOLLAR_AMOUNT_RE = re.compile(
+    r"""
+    ^\$
+    (?:
+        (?:\d{1,3}(?:,\d{3})+)   # 1,234 or 12,345,678
+        |
+        \d+                     # 30012
+    )
+    $
+    """,
+    re.VERBOSE,
+)

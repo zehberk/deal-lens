@@ -20,43 +20,30 @@ from analysis.scoring import (
     rate_risk_level1,
     rate_uncertainty,
 )
+from analysis.workflow import prepare_level1_analysis
 
 from utils.constants import PRICING_CACHE
 from utils.models import CarListing, DealBin, TrimValuation
 
 
 async def create_level1_file(listings: list[dict], metadata: dict):
-    cache = load_cache(PRICING_CACHE)
-    cache_entries: dict = cache.setdefault("entries", {})
-
-    make = metadata["vehicle"]["make"]
-    model = metadata["vehicle"]["model"]
-
-    variant_map = await get_variant_map(make, model, listings)
-
-    trim_valuations: list[TrimValuation] = await get_pricing_data(
-        make, model, listings, variant_map, cache
-    )
+    ctx = await prepare_level1_analysis(metadata, listings)
 
     no_price_bin = DealBin(category="No Price", listings=[], count=0)
     all_listings: list[CarListing] = []
     seen_ids: set[str] = set()  # guard if input has dupes
 
-    valid_data, skipped_listings, skip_summary = filter_valid_listings(
-        make, model, listings, cache_entries, variant_map
-    )
-
-    for item in valid_data:
+    for item in ctx.valid_listings:
         listing = item["listing"]
         cache_key = item["cache_key"]
         year = item["year"]
         base_trim = item["base_trim"]
 
-        msrp = int(cache_entries[cache_key].get("msrp"))
-        fpp_natl = int(cache_entries[cache_key].get("fpp_natl") or 0)
-        fpp_local = int(cache_entries[cache_key].get("fpp_local") or 0)
-        fmr_high = int(cache_entries[cache_key].get("fmr_high") or 0)
-        fmv = int(cache_entries[cache_key].get("fmv") or 0)
+        msrp = int(ctx.cache_entries[cache_key].get("msrp") or 0)
+        fpp_natl = int(ctx.cache_entries[cache_key].get("fpp_natl") or 0)
+        fpp_local = int(ctx.cache_entries[cache_key].get("fpp_local") or 0)
+        fmr_high = int(ctx.cache_entries[cache_key].get("fmr_high") or 0)
+        fmv = int(ctx.cache_entries[cache_key].get("fmv") or 0)
 
         price = int(listing.get("price") or 0)
         best_comparison = determine_best_price(price, fpp_local, fpp_natl, fmv, [])
@@ -73,8 +60,8 @@ async def create_level1_file(listings: list[dict], metadata: dict):
             id=listing["id"],
             vin=listing["vin"],
             year=int(year),
-            make=make,
-            model=model,
+            make=ctx.make,
+            model=ctx.model,
             trim=base_trim,
             trim_version=listing["trim_version"],
             title=listing["title"],
@@ -116,12 +103,12 @@ async def create_level1_file(listings: list[dict], metadata: dict):
     cond_dist_total = compute_condition_distribution_total(all_listings)
 
     analysis_json = to_level1_json(
-        make=make,
-        model=model,
+        make=ctx.make,
+        model=ctx.model,
         sort=metadata["filters"]["sort"],  # already available in start_level1_analysis
         deal_bins=deal_bins,
         crosstab=crosstab,
-        skipped_listings=skipped_listings,
+        skipped_listings=ctx.skipped_listings,
     )
     analysis_json["condition_distribution"] = cond_dist_total
 
@@ -129,27 +116,27 @@ async def create_level1_file(listings: list[dict], metadata: dict):
 
     # Only pass along the entries from the quicklist, not the entire cache
     quicklist = sorted(
-        {l.cache_key for l in all_listings if l.cache_key in cache_entries}
+        {l.cache_key for l in all_listings if l.cache_key in ctx.cache_entries}
     )
     visible_entries = {
-        k: TrimValuation.from_dict({**cache_entries[k], "kbb_trim": k})
+        k: TrimValuation.from_dict({**ctx.cache_entries[k], "kbb_trim": k})
         for k in quicklist
     }
 
     # Output skipped listing reasons
     skip_messages: list[str] = []
     # print("The following models have been skipped for these reasons:")
-    for title, reasons in sorted(skip_summary.items()):
+    for title, reasons in sorted(ctx.skip_summary.items()):
         for reason, count in reasons.items():
             # print(f"  - {title}: {reason} ({count})")
             skip_messages.append(f"{title}: {reason} ({count})")
 
     await render_level1_pdf(
-        make,
-        model,
+        ctx.make,
+        ctx.model,
         visible_entries,
         all_listings,
-        trim_valuations,
+        ctx.trim_valuations,
         deal_bins,
         great_bin,
         good_bin,

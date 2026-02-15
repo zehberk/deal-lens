@@ -11,6 +11,7 @@ visor_scraper = "visor_scraper.scraper:main"
 kbb_collect = "analysis.kbb_collector:main"
 level1 = "analysis.level1:main"
 level2 = "analysis.level2:main"
+level3 = "analysis.level3:main"
 download = "utils.download:main"
 
 [tool.setuptools.packages.find]

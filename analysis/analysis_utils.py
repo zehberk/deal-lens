@@ -1,5 +1,12 @@
+import asyncio, glob, json, os, time
+
+
+from pathlib import Path
+
+
 from utils.common import make_string_url_safe
 from utils.constants import *
+from utils.download import download_files, download_report_pdfs
 from utils.models import TrimValuation
 
 
@@ -117,3 +124,40 @@ def get_trim_valuations_from_cache(
 
             trim_valuations.append(TrimValuation.from_dict(entry))
     return trim_valuations
+
+
+def get_vehicle_dir(listing: dict) -> Path | None:
+    title = listing.get("title")
+    vin = listing.get("vin")
+    if title is None or vin is None:
+        return None
+    path = Path(DOC_PATH) / title / vin
+    return path if path.is_dir() else None
+
+
+def get_report_dir(listing: dict) -> Path | None:
+    dir = get_vehicle_dir(listing)
+    return dir / "carfax.html" if dir else None
+
+
+def check_missing_docs(listings: list[dict]):
+    # Check to see if files exists
+    missing_reports = []
+    for l in listings:
+        dir = get_vehicle_dir(l)
+        if dir is None:
+            continue
+        html = dir / "carfax.html"
+        pdf = dir / "carfax.pdf"
+
+        carfax_url = l.get("additional_docs", {}).get("carfax_url", "Unavailable")
+        if carfax_url != "Unavailable" and not pdf.exists() and not html.exists():
+            missing_reports.append(l)
+
+    if missing_reports:
+        print(f"Downloading reports for {len(missing_reports)} listings...")
+        download_report_pdfs(missing_reports)
+
+
+def is_dollar_amount(s: str) -> bool:
+    return bool(DOLLAR_AMOUNT_RE.match(s.strip()))
