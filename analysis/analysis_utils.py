@@ -157,3 +157,7 @@ def check_missing_docs(listings: list[dict]):
     if missing_reports:
         print(f"Downloading reports for {len(missing_reports)} listings...")
         download_report_pdfs(missing_reports)
+
+
+def is_dollar_amount(s: str) -> bool:
+    return bool(DOLLAR_AMOUNT_RE.match(s.strip()))

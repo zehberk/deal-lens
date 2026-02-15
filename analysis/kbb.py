@@ -23,6 +23,7 @@ from analysis.analysis_utils import (
     extract_years,
     get_relevant_entries,
     get_trim_valuations_from_cache,
+    is_dollar_amount,
     is_trim_version_valid,
     to_int,
 )
@@ -177,6 +178,10 @@ async def get_or_fetch_national_pricing(
                 table_trim = (await tds[0].inner_text()).strip()
                 msrp = (await tds[1].inner_text()).strip()
                 natl_fpp = None
+
+            # Skips other placeholder values
+            if not is_dollar_amount(msrp) and msrp != "TBD":
+                continue
 
             pricing_data.append(
                 (
