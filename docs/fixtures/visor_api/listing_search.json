@@ -1,0 +1,69 @@
+{
+  "data": [
+    {
+      "id": "00000000000000000000000000000001",
+      "vin": "1TEST000000000001",
+      "year": 2026,
+      "make": "Example Make",
+      "model": "Example Model",
+      "trim": "Example Trim",
+      "version": "Example Trim Hybrid",
+      "body_type": "Sedan",
+      "drivetrain": "FWD",
+      "fuel_type": "Hybrid",
+      "powertrain_type": "HEV",
+      "transmission": "CVT",
+      "engine": "2.5L I4",
+      "cylinders": 4,
+      "doors": 4,
+      "seating_capacity": 5,
+      "exterior_color": "Example Blue",
+      "interior_color": null,
+      "base_exterior_color": "Blue",
+      "base_interior_color": null,
+      "msrp": 34500,
+      "discount_from_msrp": 0.0,
+      "price": 34000,
+      "miles": 0,
+      "days_on_market": 3,
+      "listed_at": "2026-01-02 03:04:05.000000",
+      "status": "active",
+      "inventory_status": "active",
+      "inventory_type": "new",
+      "stock_number": null,
+      "vdp_url": "https://dealer.example.invalid/inventory/1TEST000000000001",
+      "dealer_id": "00000000-0000-4000-8000-000000000001",
+      "dealer_name": "Example Motors",
+      "city": "Example City",
+      "state": "CO",
+      "postal_code": "00000",
+      "latitude": 0.0,
+      "longitude": 0.0,
+      "distance_miles": null,
+      "photo_urls": [
+        "https://images.example.invalid/vehicle-1.jpg"
+      ],
+      "features": [
+        "Adaptive Cruise Control"
+      ],
+      "options_packages": [
+        "PKG1"
+      ],
+      "price_history": [],
+      "options": [
+        {
+          "code": "PKG1",
+          "name": "Example Package",
+          "msrp": 500
+        }
+      ]
+    }
+  ],
+  "pagination": {
+    "limit": 1,
+    "offset": 0,
+    "total": 1,
+    "next_offset": null
+  },
+  "meta": {}
+}

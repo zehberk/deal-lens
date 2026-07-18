@@ -1,0 +1,74 @@
+{
+  "data": {
+    "id": "00000000000000000000000000000001",
+    "vin": "1TEST000000000001",
+    "status": "active",
+    "price": 34000,
+    "miles": 0,
+    "inventory_type": "new",
+    "stock_number": null,
+    "vdp_url": "https://dealer.example.invalid/inventory/1TEST000000000001",
+    "vhr_url": null,
+    "photo_urls": [
+      "https://images.example.invalid/vehicle-1.jpg"
+    ],
+    "photo_url_primary": "https://images.example.invalid/vehicle-1.jpg",
+    "pricing": {
+      "displayed_provider_current_price_usd": 34000,
+      "seller_total_before_taxes_and_registration_usd": 34000,
+      "seller_total_before_manufacturer_incentives_usd": 34000,
+      "dealer_adjusted_vehicle_price_usd": null,
+      "line_items": []
+    },
+    "inventory_date": "2026-01-02",
+    "sold_date": null,
+    "last_checked_at": "2026-01-02 03:04:05.000000",
+    "dealer": {
+      "dealer_id": "00000000-0000-4000-8000-000000000001",
+      "name": "Example Motors",
+      "city": "Example City",
+      "state": "CO",
+      "postal_code": "00000",
+      "latitude": 0.0,
+      "longitude": 0.0,
+      "phone": "(000) 000-0000"
+    },
+    "vehicle": {
+      "vin": "1TEST000000000001",
+      "status": "active",
+      "build": {
+        "year": 2026,
+        "make": "Example Make",
+        "model": "Example Model",
+        "trim": "Example Trim",
+        "version": "Example Trim Hybrid",
+        "body_type": "Sedan",
+        "drivetrain": "FWD",
+        "fuel_type": "Hybrid",
+        "powertrain_type": "HEV",
+        "transmission": "CVT",
+        "engine": "2.5L I4",
+        "cylinders": 4,
+        "doors": 4,
+        "seating_capacity": 5,
+        "exterior_color": "Example Blue",
+        "interior_color": null,
+        "base_exterior_color": "Blue",
+        "base_interior_color": null,
+        "assembly_location": null,
+        "window_sticker_verified": false,
+        "base_msrp": 34500,
+        "combined_msrp": 35000,
+        "options": [
+          {
+            "code": "PKG1",
+            "name": "Example Package",
+            "msrp": 500
+          }
+        ]
+      }
+    },
+    "price_history": []
+  },
+  "meta": {}
+}
