@@ -141,3 +141,9 @@ Before reporting completion:
 - Note any compatibility impact on legacy scraper data.
 - Update documentation when setup, configuration, or behavior changed.
 - Summarize changed files, important decisions, and remaining risks.
+
+## Important Links
+
+- API Documentation: https://api.visor.vin/docs
+- API endpoints: https://api.visor.vin/docs/api-reference/inventory/filter-listings
+- GitHub repo: https://github.com/zehberk/deal-lens/

@@ -84,6 +84,10 @@ Results are saved to a `.json` file in the root directory, with the filename bas
 
 Progress and summary info are shown in the terminal. See [output.docs.md](output/output.docs.md)
 
+The field comparison, compatibility decision, unavailable-value policy, and
+sanitized contract fixtures for the migration from web scraping to the official
+Visor API are documented in [docs/visor-api-migration.md](docs/visor-api-migration.md).
+
 
 ## Testing
 

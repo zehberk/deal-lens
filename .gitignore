@@ -41,6 +41,7 @@ cache/*.cache
 Thumbs.db
 
 # Test code
+tests/*
 playwright-profile/*
 evalutation_instructions.md
 

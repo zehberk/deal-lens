@@ -1,0 +1,105 @@
+{
+  "data": {
+    "total": 100,
+    "facets": {
+      "make": [
+        {
+          "value": "Example Make",
+          "count": 100
+        }
+      ],
+      "model": [
+        {
+          "value": "Example Model",
+          "count": 75
+        }
+      ],
+      "trim": [
+        {
+          "value": "Example Trim",
+          "count": 25
+        }
+      ]
+    },
+    "range_facets": {
+      "price": {
+        "buckets": [
+          {
+            "min": 20000,
+            "max": 30000,
+            "count": 40
+          }
+        ],
+        "interval": 10000,
+        "min": 20000,
+        "max": 40000
+      },
+      "miles": {
+        "buckets": [
+          {
+            "min": 0,
+            "max": 10000,
+            "count": 60
+          }
+        ],
+        "interval": 10000,
+        "min": 0,
+        "max": 100000
+      },
+      "days_on_market": {
+        "buckets": [
+          {
+            "min": 0,
+            "max": 10,
+            "count": 30
+          }
+        ],
+        "interval": 10,
+        "min": 0,
+        "max": 200
+      }
+    },
+    "stats": {
+      "price": {
+        "min": 20000,
+        "max": 40000,
+        "count": 90,
+        "missing": 10,
+        "mean": 30000.0,
+        "median": 29500,
+        "stddev": 5000.0
+      },
+      "miles": {
+        "min": 0,
+        "max": 100000,
+        "count": 80,
+        "missing": 20,
+        "mean": 25000.0,
+        "median": 15000,
+        "stddev": 20000.0
+      },
+      "days_on_market": {
+        "min": 0,
+        "max": 200,
+        "count": 100,
+        "missing": 0,
+        "mean": 30.0,
+        "median": 16,
+        "stddev": 45.0
+      }
+    }
+  },
+  "meta": {
+    "facets": [
+      "make",
+      "model",
+      "trim",
+      "price",
+      "miles",
+      "days_on_market"
+    ],
+    "metric": "count",
+    "sort": "-count",
+    "minimum_metric_count": 10
+  }
+}

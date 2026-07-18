@@ -1,0 +1,8 @@
+{
+  "error": {
+    "type": "validation_error",
+    "code": "unknown_query_parameter",
+    "message": "Unknown query parameter: bad_filter."
+  },
+  "_tag": "PublicApiValidationError"
+}
