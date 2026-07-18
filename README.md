@@ -38,6 +38,41 @@ A lightweight CLI tool that scrapes car listings from [visor.vin](https://visor.
    Visor API key. Alternatively, set `VISOR_API_KEY` in the process environment.
    A process environment value takes precedence over `api.env`.
 
+### Visor inventory API
+
+Use the authenticated API client for general listing searches, market facets, and
+individual listing detail. Filters use the parameter names from the official Visor
+API; sequences are encoded as comma-separated values.
+
+```python
+from visor_api import VisorClient
+from visor_scraper.config import get_visor_api_key
+
+
+client = VisorClient(get_visor_api_key())
+filters = {
+	"make": "Toyota",
+	"model": "Camry",
+	"year": [2024, 2025],
+	"inventory_type": "used",
+}
+
+listings = client.filter_listings({**filters, "limit": 50})
+market = client.filter_facets({
+	**filters,
+	"facets": "price,miles,days_on_market",
+})
+listing = client.get_listing(
+	listings["data"][0]["id"],
+	{"include": "price_history,options"},
+)
+```
+
+The client sends the configured key only in the `Authorization: Bearer` header,
+uses a 30-second timeout, and retries rate-limit and temporary platform responses a
+bounded number of times. `VisorAPIError` exposes the HTTP status, parsed response
+body, and `Retry-After` header for explicit caller handling.
+
 5. Install browser dependencies for Playwright:
    ```bash
    playwright install
