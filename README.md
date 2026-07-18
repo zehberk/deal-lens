@@ -73,7 +73,9 @@ uses a 10-second connection timeout and a 30-second response/read timeout, and
 retries rate-limit and temporary platform responses a bounded number of times.
 `VisorAPIError` exposes Visor's error type and code, HTTP status, parsed response
 body, and `Retry-After` header. Connection and response/read failures raise
-`VisorConnectionTimeoutError` and `VisorReadTimeoutError`, respectively.
+`VisorConnectionTimeoutError` and `VisorReadTimeoutError`, respectively. Final API
+errors are logged once with their type, status, code, and operator-facing message;
+credentials and full response payloads are not logged.
 
 5. Install browser dependencies for Playwright:
    ```bash

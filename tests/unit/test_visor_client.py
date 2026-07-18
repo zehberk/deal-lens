@@ -150,7 +150,7 @@ def test_retryable_response_is_retried(monkeypatch):
 	],
 )
 def test_documented_api_error_kind_and_code_are_explicit(
-	status, error_type, code, expected_kind
+	status, error_type, code, expected_kind, caplog
 ):
 	body = {
 		"error": {
@@ -165,12 +165,18 @@ def test_documented_api_error_kind_and_code_are_explicit(
 		max_retries=0,
 	)
 
-	with pytest.raises(VisorAPIError, match=expected_kind) as caught:
-		client.filter_listings()
+	with caplog.at_level("ERROR", logger="visor_api.client"):
+		with pytest.raises(VisorAPIError, match=expected_kind) as caught:
+			client.filter_listings()
 
 	assert caught.value.error_type == error_type
 	assert caught.value.code == code
 	assert "documented diagnostic" in str(caught.value)
+	assert len(caplog.records) == 1
+	assert expected_kind in caplog.text
+	assert f"HTTP {status}" in caplog.text
+	assert code in caplog.text
+	assert "documented diagnostic" in caplog.text
 
 
 @pytest.mark.parametrize(

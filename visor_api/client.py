@@ -1,6 +1,7 @@
 """Authenticated client boundary for the Visor Public API."""
 
 import json
+import logging
 import time
 
 from collections.abc import Callable, Mapping, Sequence
@@ -18,6 +19,8 @@ DEFAULT_BASE_URL = "https://api.visor.vin"
 DEFAULT_CONNECTION_TIMEOUT_SECONDS = 10.0
 DEFAULT_READ_TIMEOUT_SECONDS = 30.0
 RETRYABLE_STATUS_CODES = frozenset({429, 503})
+
+logger = logging.getLogger(__name__)
 
 QueryValue = str | int | float | bool | Sequence[str | int | float | bool] | None
 QueryParams = Mapping[str, QueryValue]
@@ -175,11 +178,13 @@ class VisorClient:
 			body = _decode_body(response.data)
 			if 200 <= response.status < 300:
 				if not isinstance(body, dict):
-					raise VisorAPIError(
+					error = VisorAPIError(
 						response.status,
 						"expected a JSON object response",
 						body=body,
 					)
+					logger.error("%s", error)
+					raise error
 				return body
 
 			retry_after = response.headers.get("Retry-After")
@@ -187,7 +192,7 @@ class VisorClient:
 				time.sleep(_retry_delay(retry_after, attempt))
 				continue
 			error_type, code, message = _error_details(body)
-			raise VisorAPIError(
+			error = VisorAPIError(
 				response.status,
 				message,
 				error_type=error_type,
@@ -195,6 +200,8 @@ class VisorClient:
 				body=body,
 				retry_after=retry_after,
 			)
+			logger.error("%s", error)
+			raise error
 
 		raise AssertionError("retry loop ended unexpectedly")
 
