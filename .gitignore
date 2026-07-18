@@ -56,3 +56,4 @@ test*.*
 *expected*.json
 *output*.json
 *sample*.json
+api.env
