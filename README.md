@@ -32,12 +32,18 @@ A lightweight CLI tool that scrapes car listings from [visor.vin](https://visor.
    pip install -r requirements.txt
    ```
 
-4. Install browser dependencies for Playwright:
+4. Configure Visor API access:
+
+   Copy `api.env.example` to `api.env`, then replace the placeholder with your
+   Visor API key. Alternatively, set `VISOR_API_KEY` in the process environment.
+   A process environment value takes precedence over `api.env`.
+
+5. Install browser dependencies for Playwright:
    ```bash
    playwright install
    ```
 
-5. Authentication Setup
+6. Authentication Setup
    
    This script can be run without cookies, but you will not be able to see any of the features that a subscription can give you (installed options, additional documents, etc.). As of right now, cookie automation is not available; however, there is a simple workaround.
 

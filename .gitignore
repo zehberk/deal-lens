@@ -57,4 +57,9 @@ test*.*
 *expected*.json
 *output*.json
 *sample*.json
+# Local API credentials
 api.env
+
+# Keep focused unit tests tracked while legacy browser probes remain local.
+!tests/unit/
+!tests/unit/test_*.py
