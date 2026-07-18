@@ -69,9 +69,11 @@ listing = client.get_listing(
 ```
 
 The client sends the configured key only in the `Authorization: Bearer` header,
-uses a 30-second timeout, and retries rate-limit and temporary platform responses a
-bounded number of times. `VisorAPIError` exposes the HTTP status, parsed response
-body, and `Retry-After` header for explicit caller handling.
+uses a 10-second connection timeout and a 30-second response/read timeout, and
+retries rate-limit and temporary platform responses a bounded number of times.
+`VisorAPIError` exposes Visor's error type and code, HTTP status, parsed response
+body, and `Retry-After` header. Connection and response/read failures raise
+`VisorConnectionTimeoutError` and `VisorReadTimeoutError`, respectively.
 
 5. Install browser dependencies for Playwright:
    ```bash

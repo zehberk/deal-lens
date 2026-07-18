@@ -1,32 +1,26 @@
 import json
 
-from email.message import Message
-from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from visor_api import VisorAPIError, VisorClient
+from urllib3.exceptions import ConnectTimeoutError, ReadTimeoutError
+from urllib3.util import Timeout
+
+from visor_api import (
+	VisorAPIError,
+	VisorClient,
+	VisorConnectionTimeoutError,
+	VisorReadTimeoutError,
+)
 from visor_api.client import DEFAULT_BASE_URL
 
 
 class FakeResponse:
 	def __init__(self, body, status=200):
 		self.status = status
-		self.body = json.dumps(body).encode()
-		self.headers = Message()
-
-	def __enter__(self):
-		return self
-
-	def __exit__(self, *args):
-		return None
-
-	def read(self):
-		return self.body
-
-	def close(self):
-		pass
+		self.data = json.dumps(body).encode()
+		self.headers = {}
 
 
 class FakeOpener:
@@ -34,8 +28,8 @@ class FakeOpener:
 		self.responses = list(responses)
 		self.requests = []
 
-	def __call__(self, request, **kwargs):
-		self.requests.append((request, kwargs))
+	def __call__(self, method, url, **kwargs):
+		self.requests.append((method, url, kwargs))
 		response = self.responses.pop(0)
 		if isinstance(response, Exception):
 			raise response
@@ -43,13 +37,9 @@ class FakeOpener:
 
 
 def api_error(status, body, headers=None):
-	return HTTPError(
-		"https://api.visor.vin/v1/listings",
-		status,
-		"error",
-		headers or Message(),
-		FakeResponse(body),
-	)
+	response = FakeResponse(body, status)
+	response.headers = headers or {}
+	return response
 
 
 def test_client_uses_visor_api_base_url():
@@ -95,24 +85,26 @@ def test_inventory_methods_send_authenticated_get_requests(
 	)
 
 	assert result == {"data": {}}
-	request, options = opener.requests[0]
-	parsed_url = urlparse(request.full_url)
+	method, url, options = opener.requests[0]
+	parsed_url = urlparse(url)
 	assert parsed_url.path == expected_path
 	assert parse_qs(parsed_url.query) == {
 		"make": ["Toyota,Honda"],
 		"include": ["options,price_history"],
 		"active": ["true"],
 	}
-	assert request.get_header("Authorization") == "Bearer secret-api-key"
-	assert request.get_header("Accept") == "application/json"
-	assert request.method == "GET"
-	assert options == {"timeout": 30.0}
+	assert options["headers"]["Authorization"] == "Bearer secret-api-key"
+	assert options["headers"]["Accept"] == "application/json"
+	assert method == "GET"
+	assert options["retries"] is False
+	assert isinstance(options["timeout"], Timeout)
+	assert options["timeout"].connect_timeout == 10.0
+	assert options["timeout"].read_timeout == 30.0
 
 
 def test_api_error_preserves_status_body_and_retry_header():
 	body = {"error": {"message": "Unknown query parameter: bad_filter."}}
-	headers = Message()
-	headers["Retry-After"] = "4"
+	headers = {"Retry-After": "4"}
 	opener = FakeOpener(api_error(400, body, headers))
 	client = VisorClient("test-api-key", opener=opener)
 
@@ -120,6 +112,8 @@ def test_api_error_preserves_status_body_and_retry_header():
 		client.filter_listings({"bad_filter": "value"})
 
 	assert caught.value.status == 400
+	assert caught.value.error_type == "unexpected_error"
+	assert caught.value.code is None
 	assert caught.value.body == body
 	assert caught.value.retry_after == "4"
 
@@ -127,10 +121,13 @@ def test_api_error_preserves_status_body_and_retry_header():
 def test_retryable_response_is_retried(monkeypatch):
 	sleeps = []
 	monkeypatch.setattr("visor_api.client.time.sleep", sleeps.append)
-	headers = Message()
-	headers["Retry-After"] = "0.5"
+	headers = {"Retry-After": "0.5"}
 	opener = FakeOpener(
-		api_error(429, {"error": {"message": "slow down"}}, headers),
+		api_error(
+			429,
+			{"error": {"type": "rate_limit_error", "message": "slow down"}},
+			headers,
+		),
 		FakeResponse({"data": []}),
 	)
 	client = VisorClient("test-api-key", opener=opener, max_retries=1)
@@ -138,6 +135,86 @@ def test_retryable_response_is_retried(monkeypatch):
 	assert client.filter_listings() == {"data": []}
 	assert len(opener.requests) == 2
 	assert sleeps == [0.5]
+
+
+@pytest.mark.parametrize(
+	("status", "error_type", "code", "expected_kind"),
+	[
+		(400, "validation_error", "unknown_query_parameter", "validation error"),
+		(401, "authentication_error", "invalid_api_key", "authentication error"),
+		(402, "billing_error", "spend_cap_reached", "billing error"),
+		(403, "permission_error", "missing_scope", "permission error"),
+		(404, "not_found_error", "listing_not_found", "not found error"),
+		(429, "rate_limit_error", "rate_limit_exceeded", "rate limit error"),
+		(503, "platform_error", "service_unavailable", "platform error"),
+	],
+)
+def test_documented_api_error_kind_and_code_are_explicit(
+	status, error_type, code, expected_kind
+):
+	body = {
+		"error": {
+			"type": error_type,
+			"code": code,
+			"message": "documented diagnostic",
+		}
+	}
+	client = VisorClient(
+		"test-api-key",
+		opener=FakeOpener(api_error(status, body)),
+		max_retries=0,
+	)
+
+	with pytest.raises(VisorAPIError, match=expected_kind) as caught:
+		client.filter_listings()
+
+	assert caught.value.error_type == error_type
+	assert caught.value.code == code
+	assert "documented diagnostic" in str(caught.value)
+
+
+@pytest.mark.parametrize(
+	("transport_error", "expected_exception", "expected_message"),
+	[
+		(
+			ConnectTimeoutError(None, "https://api.visor.vin", "timed out"),
+			VisorConnectionTimeoutError,
+			"connection timeout after 10 seconds",
+		),
+		(
+			ReadTimeoutError(None, "https://api.visor.vin", "timed out"),
+			VisorReadTimeoutError,
+			"response/read timeout after 30 seconds",
+		),
+	],
+)
+def test_timeout_errors_identify_request_phase(
+	transport_error, expected_exception, expected_message
+):
+	client = VisorClient("test-api-key", opener=FakeOpener(transport_error))
+
+	with pytest.raises(expected_exception, match=expected_message):
+		client.filter_listings()
+
+
+@pytest.mark.parametrize(
+	("option", "value"),
+	[("connection_timeout", 0), ("read_timeout", -1)],
+)
+def test_client_rejects_invalid_timeouts(option, value):
+	with pytest.raises(ValueError, match=option):
+		VisorClient("test-api-key", **{option: value})
+
+
+def test_legacy_timeout_option_sets_both_request_phases():
+	opener = FakeOpener(FakeResponse({"data": []}))
+	client = VisorClient("test-api-key", timeout=5, opener=opener)
+
+	client.filter_listings()
+
+	request_timeout = opener.requests[0][2]["timeout"]
+	assert request_timeout.connect_timeout == 5
+	assert request_timeout.read_timeout == 5
 
 
 @pytest.mark.parametrize("api_key", ["", "   "])
