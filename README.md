@@ -45,7 +45,7 @@ individual listing detail. Filters use the parameter names from the official Vis
 API; sequences are encoded as comma-separated values.
 
 ```python
-from visor_api import VisorClient
+from visor_api import VisorClient, adapt_search_response
 from visor_scraper.config import get_visor_api_key
 
 
@@ -66,7 +66,20 @@ listing = client.get_listing(
 	listings["data"][0]["id"],
 	{"include": "price_history,options"},
 )
+
+# Convert API records to the existing DealLens metadata/listings contract.
+payload = adapt_search_response(
+	listings,
+	details={listing["data"]["id"]: listing["data"]},
+	request_filters=filters,
+)
 ```
+
+The adapter prefers non-null detail values, retains every untouched API record in
+`source_data`, and records source paths, calculations, and unavailable reasons in
+`provenance`. Facet responses can be supplied through `facets_response`; aggregate
+market values are kept in metadata and a separate `facet_result`, never copied onto
+individual listings.
 
 The client sends the configured key only in the `Authorization: Bearer` header,
 uses a 10-second connection timeout and a 30-second response/read timeout, and

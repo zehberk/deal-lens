@@ -266,3 +266,49 @@ def test_get_listing_rejects_empty_identifier():
 
 	with pytest.raises(ValueError, match="listing_id"):
 		client.get_listing(" ")
+
+
+def test_filter_all_listings_uses_offset_pagination_and_requested_limit():
+	opener = FakeOpener(
+		FakeResponse({
+			"data": [{"id": index} for index in range(100)],
+			"pagination": {
+				"limit": 100,
+				"offset": 0,
+				"next_offset": 100,
+				"total": 125,
+			},
+			"meta": {},
+		}),
+		FakeResponse({
+			"data": [{"id": index} for index in range(100, 125)],
+			"pagination": {
+				"limit": 25,
+				"offset": 100,
+				"next_offset": None,
+				"total": 125,
+			},
+			"meta": {},
+		}),
+	)
+	client = VisorClient("test-api-key", opener=opener)
+
+	response = client.filter_all_listings({"make": "Toyota"}, max_listings=125)
+
+	assert len(response["data"]) == 125
+	assert parse_qs(urlparse(opener.requests[0][1]).query)["limit"] == ["100"]
+	assert parse_qs(urlparse(opener.requests[1][1]).query) == {
+		"make": ["Toyota"], "limit": ["25"], "offset": ["100"]
+	}
+
+
+def test_filter_all_listings_stops_on_short_empty_page():
+	opener = FakeOpener(FakeResponse({
+		"data": [],
+		"pagination": {"limit": 50, "offset": 0, "next_offset": None, "total": 0},
+		"meta": {},
+	}))
+	client = VisorClient("test-api-key", opener=opener)
+
+	assert client.filter_all_listings(max_listings=50)["data"] == []
+	assert len(opener.requests) == 1

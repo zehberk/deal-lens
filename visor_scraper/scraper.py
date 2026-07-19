@@ -10,7 +10,6 @@ from playwright.async_api import (
     TimeoutError,
 )
 from tqdm import tqdm
-from urllib.parse import parse_qs, urlparse
 
 from analysis.level1 import start_level1_analysis
 from analysis.level2 import start_level2_analysis
@@ -19,6 +18,7 @@ from utils.common import current_timestamp
 from utils.constants import *
 from utils.download import download_files
 from visor_scraper.helpers import *
+from visor_api.query import VisorListingQuery
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
@@ -798,12 +798,12 @@ def apply_url_to_args(args: Namespace) -> Namespace:
     if not args.url:
         logging.error("You must provide a URL")
         exit(1)
-    qs = parse_qs(urlparse(args.url).query)
+    filters = VisorListingQuery.from_url(args.url).filters
 
-    args.make = qs.get("make", [""])[0].strip()
-    args.model = qs.get("model", [""])[0].strip()
-    args.trim = qs.get("trim", [""])[0].split(",") if "trim" in qs else []
-    args.year = qs.get("year", [""])[0].split(",") if "year" in qs else []
+    args.make = next(iter(filters.get("make", ())), "")
+    args.model = next(iter(filters.get("model", ())), "")
+    args.trim = list(filters.get("trim", ()))
+    args.year = list(filters.get("year", ()))
 
     return args
 

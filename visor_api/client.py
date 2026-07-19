@@ -119,6 +119,71 @@ class VisorClient:
 		"""Return listing summaries matching the supplied inventory filters."""
 		return self._get("/v1/listings", params)
 
+	def filter_all_listings(
+		self,
+		params: QueryParams | None = None,
+		*,
+		max_listings: int = 50,
+	) -> dict[str, Any]:
+		"""Retrieve offset pages until the requested listing limit is satisfied."""
+		if max_listings < 0:
+			raise ValueError("max_listings must not be negative")
+		base_params = dict(params or {})
+		base_params.pop("limit", None)
+		base_params.pop("offset", None)
+		listings: list[Any] = []
+		last_response: dict[str, Any] = {"data": [], "pagination": {}, "meta": {}}
+		offset = 0
+
+		while len(listings) < max_listings:
+			page_size = min(100, max_listings - len(listings))
+			last_response = self.filter_listings({
+				**base_params,
+				"limit": page_size,
+				"offset": offset,
+			})
+			page = last_response.get("data")
+			if not isinstance(page, list):
+				raise VisorAPIError(
+					200,
+					"expected data to be a list",
+					body=last_response,
+				)
+			listings.extend(page)
+			pagination = last_response.get("pagination")
+			next_offset = (
+				pagination.get("next_offset")
+				if isinstance(pagination, dict)
+				else None
+			)
+			if not page or next_offset is None:
+				break
+			try:
+				next_offset = int(next_offset)
+			except (TypeError, ValueError) as error:
+				raise VisorAPIError(
+					200,
+					"invalid next_offset in pagination",
+					body=last_response,
+				) from error
+			if next_offset <= offset:
+				break
+			offset = next_offset
+
+		return {
+			**last_response,
+			"data": listings[:max_listings],
+			"pagination": {
+				**(
+					last_response.get("pagination")
+					if isinstance(last_response.get("pagination"), dict)
+					else {}
+				),
+				"limit": max_listings,
+				"offset": 0,
+			},
+		}
+
 	def filter_facets(self, params: QueryParams | None = None) -> dict[str, Any]:
 		"""Return facet counts, ranges, and statistics for inventory filters."""
 		return self._get("/v1/facets", params)
