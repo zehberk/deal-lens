@@ -38,6 +38,47 @@ A lightweight CLI tool that scrapes car listings from [visor.vin](https://visor.
    Visor API key. Alternatively, set `VISOR_API_KEY` in the process environment.
    A process environment value takes precedence over `api.env`.
 
+### Visor inventory API
+
+Use the authenticated API client for general listing searches, market facets, and
+individual listing detail. Filters use the parameter names from the official Visor
+API; sequences are encoded as comma-separated values.
+
+```python
+from visor_api import VisorClient
+from visor_scraper.config import get_visor_api_key
+
+
+client = VisorClient(get_visor_api_key())
+filters = {
+	"make": "Toyota",
+	"model": "Camry",
+	"year": [2024, 2025],
+	"inventory_type": "used",
+}
+
+listings = client.filter_listings({**filters, "limit": 50})
+market = client.filter_facets({
+	**filters,
+	"facets": "price,miles,days_on_market",
+})
+listing = client.get_listing(
+	listings["data"][0]["id"],
+	{"include": "price_history,options"},
+)
+```
+
+The client sends the configured key only in the `Authorization: Bearer` header,
+uses a 10-second connection timeout and a 30-second response/read timeout, and
+retries rate-limit and temporary platform responses a bounded number of times.
+`VisorAPIError` exposes Visor's error type and code, HTTP status, parsed response
+body, and `Retry-After` header. Connection and response/read failures raise
+`VisorConnectionTimeoutError` and `VisorReadTimeoutError`, respectively. Final API
+errors are logged once with their type, status, code, and operator-facing message;
+credentials and full response payloads are not logged. Retry attempts are logged at
+`WARNING`, final failures and timeouts at `ERROR`, and sanitized request timing and
+rate-limit telemetry at `DEBUG`.
+
 5. Install browser dependencies for Playwright:
    ```bash
    playwright install
