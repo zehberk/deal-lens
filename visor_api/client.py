@@ -6,7 +6,7 @@ import time
 
 from collections.abc import Callable, Mapping, Sequence
 from email.message import Message
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 from urllib.parse import quote, urlencode
 
 import urllib3
@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 
 QueryValue = str | int | float | bool | Sequence[str | int | float | bool] | None
 QueryParams = Mapping[str, QueryValue]
+
+if TYPE_CHECKING:
+	from visor_api.models import FacetResponse, ListingDetailResponse, ListingSearchResponse
 
 
 class HTTPResponse(Protocol):
@@ -119,6 +122,14 @@ class VisorClient:
 		"""Return listing summaries matching the supplied inventory filters."""
 		return self._get("/v1/listings", params)
 
+	def filter_listings_model(
+		self, params: QueryParams | None = None
+	) -> "ListingSearchResponse":
+		"""Return a validated listing-search response model."""
+		from visor_api.models import ListingSearchResponse
+
+		return ListingSearchResponse.from_dict(self.filter_listings(params))
+
 	def filter_all_listings(
 		self,
 		params: QueryParams | None = None,
@@ -184,9 +195,28 @@ class VisorClient:
 			},
 		}
 
+	def filter_all_listings_model(
+		self,
+		params: QueryParams | None = None,
+		*,
+		max_listings: int = 50,
+	) -> "ListingSearchResponse":
+		"""Return all requested listing pages as one validated response model."""
+		from visor_api.models import ListingSearchResponse
+
+		return ListingSearchResponse.from_dict(
+			self.filter_all_listings(params, max_listings=max_listings)
+		)
+
 	def filter_facets(self, params: QueryParams | None = None) -> dict[str, Any]:
 		"""Return facet counts, ranges, and statistics for inventory filters."""
 		return self._get("/v1/facets", params)
+
+	def filter_facets_model(self, params: QueryParams | None = None) -> "FacetResponse":
+		"""Return a validated facet response model."""
+		from visor_api.models import FacetResponse
+
+		return FacetResponse.from_dict(self.filter_facets(params))
 
 	def get_listing(
 		self,
@@ -198,6 +228,14 @@ class VisorClient:
 		if not listing_id:
 			raise ValueError("listing_id must not be empty")
 		return self._get(f"/v1/listings/{quote(listing_id, safe='')}", params)
+
+	def get_listing_model(
+		self, listing_id: str, params: QueryParams | None = None
+	) -> "ListingDetailResponse":
+		"""Return a validated listing-detail response model."""
+		from visor_api.models import ListingDetailResponse
+
+		return ListingDetailResponse.from_dict(self.get_listing(listing_id, params))
 
 	def _get(self, path: str, params: QueryParams | None) -> dict[str, Any]:
 		log_path = _log_path(path)

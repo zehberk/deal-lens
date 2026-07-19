@@ -98,6 +98,7 @@ Unless the repository configuration says otherwise:
 - Use saved fixtures for API and legacy scraper payloads.
 - Add regression tests when changing normalization, scoring, filtering, or report output.
 - Do not require live API credentials for the normal unit-test suite.
+- Never run tests, scripts, or smoke checks that make live API calls unless the user specifically asks for live API execution.
 - Run targeted tests first, then the full suite when practical.
 
 Default test command:
@@ -137,6 +138,7 @@ Before reporting completion:
 
 - Confirm the requested behavior is implemented.
 - Run relevant tests and report the exact result.
+- Run the configured IDE or static-analysis check on changed code, resolve all reported errors, and report the result.
 - Check that no secrets or user-specific data were added.
 - Note any compatibility impact on legacy scraper data.
 - Update documentation when setup, configuration, or behavior changed.

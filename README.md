@@ -75,11 +75,20 @@ payload = adapt_search_response(
 )
 ```
 
+Typed variants are available as `filter_listings_model`,
+`filter_all_listings_model`, `filter_facets_model`, and `get_listing_model`.
+They validate API and cached payloads into the models exported by `visor_api`,
+while the original methods continue returning raw dictionaries for compatibility.
+Unknown response fields are preserved during model serialization so a newer API
+field is not silently discarded.
+
 The adapter prefers non-null detail values, retains every untouched API record in
 `source_data`, and records source paths, calculations, and unavailable reasons in
-`provenance`. Facet responses can be supplied through `facets_response`; aggregate
-market values are kept in metadata and a separate `facet_result`, never copied onto
-individual listings.
+`provenance`. Missing and incompatible analysis fields are recorded on each
+listing and aggregated in `metadata.warnings`; warnings identify the received type
+without copying the raw incompatible value. Facet responses can be supplied through
+`facets_response`; aggregate market values are kept in metadata and a separate
+`facet_result`, never copied onto individual listings.
 
 The client sends the configured key only in the `Authorization: Bearer` header,
 uses a 10-second connection timeout and a 30-second response/read timeout, and
