@@ -98,6 +98,7 @@ Unless the repository configuration says otherwise:
 - Use saved fixtures for API and legacy scraper payloads.
 - Add regression tests when changing normalization, scoring, filtering, or report output.
 - Do not require live API credentials for the normal unit-test suite.
+- Never run tests, scripts, or smoke checks that make live API calls unless the user specifically asks for live API execution.
 - Run targeted tests first, then the full suite when practical.
 
 Default test command:

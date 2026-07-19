@@ -9,6 +9,7 @@ from visor_api.client import (
 )
 from visor_api.adapter import adapt_facets_response, adapt_listing, adapt_search_response
 from visor_api.query import LISTING_EXPANSIONS, LISTING_FIELDS, VisorListingQuery
+from visor_api.cache import CachedSearchResult, cached_listing_search
 
 
 __all__ = [
@@ -20,6 +21,8 @@ __all__ = [
 	"VisorListingQuery",
 	"LISTING_EXPANSIONS",
 	"LISTING_FIELDS",
+	"CachedSearchResult",
+	"cached_listing_search",
 	"adapt_facets_response",
 	"adapt_listing",
 	"adapt_search_response",
