@@ -309,25 +309,38 @@ def normalize_listing(listing: dict) -> dict:
     """Convert a raw listing into the minimal Level-1 schema."""
 
     addl = listing.get("additional_docs", {}) or {}
-    carfax_present: bool = bool_from_url(addl.get("carfax_url"))
+    carfax_present: bool | None = bool_from_url(addl.get("carfax_url"))
     # autocheck_present: bool = bool_from_url(addl.get("autocheck_url"))
-    sticker_present: bool = bool_from_url(addl.get("window_sticker_url"))
+    sticker_present: bool | None = bool_from_url(addl.get("window_sticker_url"))
 
     specs: dict = listing.get("specs", {})
-    fuel_type: str = specs.get("Fuel Type", "").strip().lower()
-    listing_url: str = listing.get("listing_url", "").lower()
+    fuel_type: str = str(specs.get("Fuel Type") or "").strip().lower()
+    powertrain_type: str = str(specs.get("Powertrain Type") or "").strip().lower()
+    listing_url: str = str(listing.get("listing_url") or "").lower()
     if not listing_url:
         print(f"Listing URL invalid for {listing.get("id")}")
 
-    is_hybrid = False
-    is_plugin = False
-    if "hybrid" in fuel_type or "hybrid" in listing_url:
+    is_hybrid: bool | None = False
+    is_plugin: bool | None = False
+    if "hybrid" in fuel_type or powertrain_type in {"hev", "phev"} or "hybrid" in listing_url:
         is_hybrid = True
-        if "plug" in fuel_type or "plug" in listing_url:
+        if "plug" in fuel_type or powertrain_type == "phev" or "plug" in listing_url:
             is_plugin = True
-    elif fuel_type == "" or fuel_type == "not specified":
+    elif fuel_type in {"", "not specified"} and not powertrain_type:
         is_hybrid = None  # unknown
         is_plugin = None  # unknown
+
+    source_data = listing.get("source_data", {}) or {}
+    is_api_listing = source_data.get("provider") == "visor_api"
+    detail = source_data.get("detail_listing", {}) or {}
+    build = (detail.get("vehicle", {}) or {}).get("build", {}) or {}
+    if "window_sticker_verified" in build:
+        sticker_present = build["window_sticker_verified"]
+    elif not bool_from_url(addl.get("window_sticker_url")):
+        sticker_present = None
+
+    if is_api_listing and not bool_from_url(addl.get("carfax_url")):
+        carfax_present = None
 
     war = listing.get("warranty", {}) or {}
     # Treat "present" as: either a non-unknown overall_status or any coverages listed
@@ -335,6 +348,8 @@ def normalize_listing(listing: dict) -> dict:
         str(war.get("overall_status", "")).strip().lower()
         not in {"", "unknown", "n/a", "none"}
     )
+    if is_api_listing and listing.get("warranty") is None:
+        warranty_present = None
 
     tv = specs.get("Trim Version", "")
     valid_tv = tv if is_trim_version_valid(tv) else ""
@@ -355,7 +370,7 @@ def normalize_listing(listing: dict) -> dict:
         "window_sticker_present": sticker_present,
         "warranty_info_present": warranty_present,
         # Level 2
-        "coverages": listing.get("warranty", {}).get("coverages", []),
+        "coverages": (listing.get("warranty") or {}).get("coverages", []),
         "seller": listing.get("seller", {}),
         "visor_listing": f"https://visor.vin/search/listings/{listing.get("vin")}",
         "dealer_listing": listing.get("listing_url"),

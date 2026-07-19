@@ -4,11 +4,12 @@ import logging
 from argparse import Namespace
 from datetime import date
 from playwright.async_api import ElementHandle, Page
-from urllib.parse import parse_qsl, urlencode, urlparse
+from urllib.parse import parse_qsl, urlparse
 
 from utils.cache import load_cache, save_cache
 from utils.common import current_timestamp
 from utils.constants import *
+from visor_api.query import VisorListingQuery
 
 
 def metadata_years(years: list[str]) -> str:
@@ -48,9 +49,7 @@ def get_today_key() -> str:
 
 
 def get_fingerprint(args: Namespace) -> str:
-    params = parse_qsl(urlparse(args.url).query, keep_blank_values=True)
-    query = urlencode(sorted(params))
-    return f"{query}|max={int(args.max_listings)}"
+    return VisorListingQuery.from_url(args.url).fingerprint(args.max_listings)
 
 
 def get_cache_key(args: Namespace) -> str:
