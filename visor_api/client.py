@@ -135,6 +135,8 @@ class VisorClient:
 		return self._get(f"/v1/listings/{quote(listing_id, safe='')}", params)
 
 	def _get(self, path: str, params: QueryParams | None) -> dict[str, Any]:
+		log_path = _log_path(path)
+		started_at = time.monotonic()
 		query = urlencode(_encode_params(params))
 		url = f"{self.base_url}{path}"
 		if query:
@@ -158,25 +160,35 @@ class VisorClient:
 				)
 			except MaxRetryError as error:
 				if isinstance(error.reason, ReadTimeoutError):
-					raise VisorReadTimeoutError(
+					timeout_error = VisorReadTimeoutError(
 						f"Visor API response/read timeout after {self.read_timeout:g} seconds"
-					) from error
+					)
+					logger.error("%s: %s", log_path, timeout_error)
+					raise timeout_error from error
 				if isinstance(error.reason, ConnectTimeoutError):
-					raise VisorConnectionTimeoutError(
+					timeout_error = VisorConnectionTimeoutError(
 						f"Visor API connection timeout after {self.connection_timeout:g} seconds"
-					) from error
+					)
+					logger.error("%s: %s", log_path, timeout_error)
+					raise timeout_error from error
 				raise
 			except ConnectTimeoutError as error:
-				raise VisorConnectionTimeoutError(
+				timeout_error = VisorConnectionTimeoutError(
 					f"Visor API connection timeout after {self.connection_timeout:g} seconds"
-				) from error
+				)
+				logger.error("%s: %s", log_path, timeout_error)
+				raise timeout_error from error
 			except ReadTimeoutError as error:
-				raise VisorReadTimeoutError(
+				timeout_error = VisorReadTimeoutError(
 					f"Visor API response/read timeout after {self.read_timeout:g} seconds"
-				) from error
+				)
+				logger.error("%s: %s", log_path, timeout_error)
+				raise timeout_error from error
 
 			body = _decode_body(response.data)
+			_log_rate_limits(log_path, response.headers)
 			if 200 <= response.status < 300:
+				_log_completion(log_path, response.status, started_at, attempt)
 				if not isinstance(body, dict):
 					error = VisorAPIError(
 						response.status,
@@ -189,8 +201,23 @@ class VisorClient:
 
 			retry_after = response.headers.get("Retry-After")
 			if response.status in RETRYABLE_STATUS_CODES and attempt < self.max_retries:
-				time.sleep(_retry_delay(retry_after, attempt))
+				delay = _retry_delay(retry_after, attempt)
+				error_type, code, _ = _error_details(body)
+				logger.warning(
+					"Retrying Visor API %s after HTTP %d %s%s "
+					"(attempt %d of %d) in %g seconds%s",
+					log_path,
+					response.status,
+					error_type.replace("_", " "),
+					f", code {code}" if code else "",
+					attempt + 2,
+					self.max_retries + 1,
+					delay,
+					" from Retry-After" if retry_after is not None else "",
+				)
+				time.sleep(delay)
 				continue
+			_log_completion(log_path, response.status, started_at, attempt)
 			error_type, code, message = _error_details(body)
 			error = VisorAPIError(
 				response.status,
@@ -204,6 +231,47 @@ class VisorClient:
 			raise error
 
 		raise AssertionError("retry loop ended unexpectedly")
+
+
+def _log_path(path: str) -> str:
+	if path.startswith("/v1/listings/"):
+		return "/v1/listings/{listing_id}"
+	return path
+
+
+def _log_completion(
+	path: str,
+	status: int,
+	started_at: float,
+	retry_count: int,
+) -> None:
+	logger.debug(
+		"Visor API GET %s completed with HTTP %d in %.3f seconds (%d retries)",
+		path,
+		status,
+		time.monotonic() - started_at,
+		retry_count,
+	)
+
+
+def _log_rate_limits(path: str, headers: Mapping[str, str] | Message) -> None:
+	values = {
+		name: headers.get(name)
+		for name in (
+			"X-RateLimit-Tier",
+			"X-RateLimit-Limit-10s",
+			"X-RateLimit-Remaining-10s",
+			"X-RateLimit-Limit-60s",
+			"X-RateLimit-Remaining-60s",
+		)
+		if headers.get(name) is not None
+	}
+	if values:
+		logger.debug(
+			"Visor API %s rate limits: %s",
+			path,
+			", ".join(f"{name}={value}" for name, value in values.items()),
+		)
 
 
 def _encode_params(params: QueryParams | None) -> dict[str, str]:

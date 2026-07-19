@@ -75,7 +75,9 @@ retries rate-limit and temporary platform responses a bounded number of times.
 body, and `Retry-After` header. Connection and response/read failures raise
 `VisorConnectionTimeoutError` and `VisorReadTimeoutError`, respectively. Final API
 errors are logged once with their type, status, code, and operator-facing message;
-credentials and full response payloads are not logged.
+credentials and full response payloads are not logged. Retry attempts are logged at
+`WARNING`, final failures and timeouts at `ERROR`, and sanitized request timing and
+rate-limit telemetry at `DEBUG`.
 
 5. Install browser dependencies for Playwright:
    ```bash

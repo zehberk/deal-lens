@@ -118,7 +118,7 @@ def test_api_error_preserves_status_body_and_retry_header():
 	assert caught.value.retry_after == "4"
 
 
-def test_retryable_response_is_retried(monkeypatch):
+def test_retryable_response_is_retried(monkeypatch, caplog):
 	sleeps = []
 	monkeypatch.setattr("visor_api.client.time.sleep", sleeps.append)
 	headers = {"Retry-After": "0.5"}
@@ -132,9 +132,14 @@ def test_retryable_response_is_retried(monkeypatch):
 	)
 	client = VisorClient("test-api-key", opener=opener, max_retries=1)
 
-	assert client.filter_listings() == {"data": []}
+	with caplog.at_level("WARNING", logger="visor_api.client"):
+		assert client.filter_listings() == {"data": []}
 	assert len(opener.requests) == 2
 	assert sleeps == [0.5]
+	assert "Retrying Visor API /v1/listings" in caplog.text
+	assert "rate limit error" in caplog.text
+	assert "attempt 2 of 2" in caplog.text
+	assert "0.5 seconds from Retry-After" in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -195,12 +200,16 @@ def test_documented_api_error_kind_and_code_are_explicit(
 	],
 )
 def test_timeout_errors_identify_request_phase(
-	transport_error, expected_exception, expected_message
+	transport_error, expected_exception, expected_message, caplog
 ):
 	client = VisorClient("test-api-key", opener=FakeOpener(transport_error))
 
-	with pytest.raises(expected_exception, match=expected_message):
-		client.filter_listings()
+	with caplog.at_level("ERROR", logger="visor_api.client"):
+		with pytest.raises(expected_exception, match=expected_message):
+			client.filter_listings()
+
+	assert expected_message in caplog.text
+	assert "/v1/listings" in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -221,6 +230,29 @@ def test_legacy_timeout_option_sets_both_request_phases():
 	request_timeout = opener.requests[0][2]["timeout"]
 	assert request_timeout.connect_timeout == 5
 	assert request_timeout.read_timeout == 5
+
+
+def test_debug_logging_reports_sanitized_completion_and_rate_limits(caplog):
+	response = FakeResponse({"data": {}})
+	response.headers = {
+		"X-RateLimit-Tier": "tier_1",
+		"X-RateLimit-Limit-10s": "20",
+		"X-RateLimit-Remaining-10s": "19",
+		"X-RateLimit-Limit-60s": "60",
+		"X-RateLimit-Remaining-60s": "59",
+	}
+	client = VisorClient("secret-api-key", opener=FakeOpener(response))
+
+	with caplog.at_level("DEBUG", logger="visor_api.client"):
+		client.get_listing("sensitive-listing-id", {"postal_code": "80202"})
+
+	assert "GET /v1/listings/{listing_id} completed with HTTP 200" in caplog.text
+	assert "(0 retries)" in caplog.text
+	assert "X-RateLimit-Remaining-10s=19" in caplog.text
+	assert "X-RateLimit-Remaining-60s=59" in caplog.text
+	assert "secret-api-key" not in caplog.text
+	assert "sensitive-listing-id" not in caplog.text
+	assert "80202" not in caplog.text
 
 
 @pytest.mark.parametrize("api_key", ["", "   "])
