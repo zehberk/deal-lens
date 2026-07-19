@@ -49,6 +49,31 @@ def _first(*values: Any) -> Any:
 	return next((value for value in values if value is not None), None)
 
 
+def _is_number(value: Any) -> bool:
+	return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _warning(
+	field: str,
+	code: str,
+	message: str,
+	*,
+	api_path: str | None = None,
+	received: Any = None,
+) -> dict[str, Any]:
+	result = {
+		"code": code,
+		"field": field,
+		"message": message,
+		"source": "visor_api",
+	}
+	if api_path is not None:
+		result["api_path"] = api_path
+	if received is not None:
+		result["received_type"] = type(received).__name__
+	return result
+
+
 def _source_value(
 	search: Mapping[str, Any], detail: Mapping[str, Any], build: Mapping[str, Any], key: str
 ) -> tuple[Any, str | None]:
@@ -154,6 +179,7 @@ def adapt_listing(
 		}
 
 	provenance: dict[str, dict[str, Any]] = {}
+	warnings: list[dict[str, Any]] = []
 
 	def fact(legacy_path: str, key: str) -> Any:
 		value, source_path = _source_value(search, detail, build, key)
@@ -190,6 +216,21 @@ def adapt_listing(
 
 	options_source = _first(build.get("options"), detail.get("options"), search.get("options"))
 	option_items, option_total = _adapt_options(options_source)
+	if options_source is None:
+		warnings.append(_warning(
+			"installed_addons.items",
+			"missing_data",
+			"Installed options were not requested or provided.",
+			api_path="vehicle.build.options/options",
+		))
+	elif option_items is None:
+		warnings.append(_warning(
+			"installed_addons.items",
+			"incompatible_data",
+			"Installed options must be an array.",
+			api_path="vehicle.build.options/options",
+			received=options_source,
+		))
 	provenance["installed_addons.items"] = {
 		"kind": "source_fact",
 		"api_path": "vehicle.build.options/options",
@@ -211,10 +252,39 @@ def adapt_listing(
 	images = _sequence(photos)
 	if images is None:
 		images = []
-	provenance["images"] = {"kind": "source_fact", "api_path": "photo_urls"}
+		warnings.append(_warning(
+			"images",
+			"missing_data" if photos is None else "incompatible_data",
+			"Photo URLs were not provided." if photos is None else "Photo URLs must be an array.",
+			api_path="photo_urls",
+			received=photos,
+		))
+	provenance["images"] = (
+		{"kind": "source_fact", "api_path": "photo_urls"}
+		if photos is not None and _sequence(photos) is not None
+		else {
+			"kind": "unavailable",
+			"reason": "not_provided_by_api" if photos is None else "incompatible_data",
+		}
+	)
 
 	price_history_source = _first(detail.get("price_history"), search.get("price_history"))
 	price_history = _adapt_price_history(price_history_source)
+	if price_history_source is None:
+		warnings.append(_warning(
+			"price_history",
+			"missing_data",
+			"Price history was not requested or provided.",
+			api_path="price_history",
+		))
+	elif price_history is None:
+		warnings.append(_warning(
+			"price_history",
+			"incompatible_data",
+			"Price history must be an array.",
+			api_path="price_history",
+			received=price_history_source,
+		))
 	provenance["price_history"] = {
 		"kind": "source_fact",
 		"api_path": "price_history",
@@ -241,19 +311,62 @@ def adapt_listing(
 		else {"kind": "unavailable", "reason": "not_requested_or_not_provided"}
 	)
 
+	listing_id = _first(detail.get("id"), search.get("id"))
+	vin = _first(detail.get("vin"), vehicle.get("vin"), search.get("vin"))
+	price = _first(detail.get("price"), search.get("price"))
+	mileage = _first(detail.get("miles"), search.get("miles"))
+	listing_url = _first(detail.get("vdp_url"), search.get("vdp_url"))
+	for field_name, value, api_path, expected in (
+		("id", listing_id, "id", "string-compatible identifier"),
+		("vin", vin, "vin", "string"),
+		("year", year, "vehicle.build.year/year", "number"),
+		("metadata.vehicle.make", make, "vehicle.build.make/make", "string"),
+		("metadata.vehicle.model", model, "vehicle.build.model/model", "string"),
+		("trim", trim, "vehicle.build.trim/trim", "string"),
+		("msrp", msrp, msrp_path or "msrp", "number"),
+		("price", price, "price", "number"),
+		("mileage", mileage, "miles", "number"),
+		("days_on_market", days_on_market, "days_on_market", "number"),
+		("listing_url", listing_url, "vdp_url", "string"),
+		("seller.name", dealer.get("name"), "dealer.name/dealer_name", "string"),
+	):
+		if value is None:
+			warnings.append(_warning(
+				field_name,
+				"missing_data",
+				f"{field_name} was not provided.",
+				api_path=api_path,
+			))
+		elif (
+			(expected == "number" and not _is_number(value))
+			or (expected == "string" and not isinstance(value, str))
+			or (
+				expected == "string-compatible identifier"
+				and isinstance(value, (Mapping, Sequence))
+				and not isinstance(value, (str, bytes, bytearray))
+			)
+		):
+			warnings.append(_warning(
+				field_name,
+				"incompatible_data",
+				f"{field_name} must be a {expected}.",
+				api_path=api_path,
+				received=value,
+			))
+
 	listing = {
-		"id": str(_first(detail.get("id"), search.get("id"))) if _first(detail.get("id"), search.get("id")) is not None else None,
-		"vin": _first(detail.get("vin"), vehicle.get("vin"), search.get("vin")),
+		"id": str(listing_id) if listing_id is not None else None,
+		"vin": vin,
 		"title": title,
 		"year": year,
 		"trim": trim,
 		"condition": condition,
 		"msrp": msrp,
-		"price": _first(detail.get("price"), search.get("price")),
-		"mileage": _first(detail.get("miles"), search.get("miles")),
+		"price": price,
+		"mileage": mileage,
 		"days_on_market": days_on_market,
 		"listed": listed,
-		"listing_url": _first(detail.get("vdp_url"), search.get("vdp_url")),
+		"listing_url": listing_url,
 		"images": images,
 		"seller": {
 			"name": dealer.get("name"),
@@ -277,6 +390,7 @@ def adapt_listing(
 			"detail_listing": deepcopy(detail),
 		},
 		"provenance": provenance,
+		"warnings": warnings,
 	}
 	for legacy_path, api_key in (
 		("id", "id"), ("vin", "vin"), ("price", "price"), ("mileage", "miles"),
@@ -324,6 +438,22 @@ def adapt_search_response(
 	rows = _sequence(response_data.get("data")) or []
 	detail_by_id = details or {}
 	listings = [adapt_listing(_mapping(row), detail_by_id.get(str(_mapping(row).get("id")))) for row in rows]
+	warnings = []
+	for listing in listings:
+		for listing_warning in listing.get("warnings", []):
+			warnings.append({
+				**listing_warning,
+				"listing_id": listing.get("id"),
+				"vin": listing.get("vin"),
+			})
+	if _sequence(response_data.get("data")) is None:
+		warnings.append(_warning(
+			"listings",
+			"missing_data" if response_data.get("data") is None else "incompatible_data",
+			"Listing search data was not provided as an array.",
+			api_path="data",
+			received=response_data.get("data"),
+		))
 	first = listings[0] if listings else {}
 	first_source = _mapping(_mapping(first.get("source_data")).get("search_listing"))
 	metadata = {
@@ -336,7 +466,7 @@ def adapt_search_response(
 		"filters": deepcopy(dict(request_filters or {})),
 		"site_info": {},
 		"runtime": {"timestamp": captured_at or datetime.now(timezone.utc).isoformat(), "source": "visor_api"},
-		"warnings": [],
+		"warnings": warnings,
 		"pagination": deepcopy(response_data.get("pagination")),
 	}
 	result = {"metadata": metadata, "listings": listings, "source_data": {"listing_search": deepcopy(response_data)}}
