@@ -138,6 +138,7 @@ Before reporting completion:
 
 - Confirm the requested behavior is implemented.
 - Run relevant tests and report the exact result.
+- Run the configured IDE or static-analysis check on changed code, resolve all reported errors, and report the result.
 - Check that no secrets or user-specific data were added.
 - Note any compatibility impact on legacy scraper data.
 - Update documentation when setup, configuration, or behavior changed.

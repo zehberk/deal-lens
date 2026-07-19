@@ -25,8 +25,10 @@ def test_adapter_maps_complete_search_and_detail_contract():
 	assert listing["title"] == "2026 Example Make Example Model Example Trim"
 	assert listing["year"] == 2026
 	assert listing["trim"] == "Example Trim"
+	assert listing["msrp"] == 35000
 	assert listing["price"] == 34000
 	assert listing["mileage"] == 0
+	assert listing["days_on_market"] == 3
 	assert listing["condition"] == "New"
 	assert listing["listed"] == "2026-01-02"
 	assert listing["listing_url"].startswith("https://dealer.example.invalid/")
@@ -55,7 +57,7 @@ def test_adapter_maps_complete_search_and_detail_contract():
 		"Assembly Location": None,
 	}
 	assert listing["installed_addons"] == {
-		"items": [{"name": "Example Package", "price": 500}],
+		"items": [{"name": "Example Package", "price": 500, "code": "PKG1"}],
 		"total": 500,
 	}
 	assert listing["price_history"] == []
@@ -67,6 +69,8 @@ def test_adapter_maps_complete_search_and_detail_contract():
 	assert listing["source_data"]["detail_listing"]["pricing"] == detail["pricing"]
 	assert listing["source_data"]["search_listing"]["features"] == search["features"]
 	assert listing["provenance"]["title"]["kind"] == "calculated"
+	assert listing["provenance"]["msrp"]["api_path"] == "vehicle.build.combined_msrp"
+	assert listing["provenance"]["days_on_market"]["api_path"] == "days_on_market"
 	assert listing["provenance"]["additional_docs.carfax_url"]["reason"] == "not_provided_by_api"
 
 
@@ -101,6 +105,44 @@ def test_price_history_has_explicit_compatibility_shape_without_fabricated_field
 	assert "lowest" not in listing["price_history"][0]
 	assert "mileage" not in listing["price_history"][0]
 	assert listing["source_data"]["detail_listing"]["price_history"][0]["source"] == "dealer"
+
+
+def test_documented_price_history_maps_before_after_mileage_and_change():
+	listing = adapt_listing(
+		{"id": "one"},
+		{
+			"price_history": [{
+				"changed_at": "2026-01-02T00:00:00Z",
+				"miles": 25_000,
+				"price_before": 21_000,
+				"price_after": 20_000,
+			}]
+		},
+	)
+
+	assert listing["price_history"] == [{
+		"date": "2026-01-02T00:00:00Z",
+		"price": 20_000,
+		"price_change": -1_000,
+		"mileage": 25_000,
+		"price_before": 21_000,
+		"price_after": 20_000,
+	}]
+
+
+def test_search_msrp_is_used_when_detail_build_msrp_is_unavailable():
+	listing = adapt_listing({
+		"id": "one",
+		"msrp": 30_000,
+		"price": 28_000,
+		"miles": 40_000,
+		"days_on_market": 12,
+	})
+
+	assert listing["msrp"] == 30_000
+	assert listing["price"] == 28_000
+	assert listing["mileage"] == 40_000
+	assert listing["days_on_market"] == 12
 
 
 def test_search_envelope_and_facets_map_to_metadata_without_touching_listings():

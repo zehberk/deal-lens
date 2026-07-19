@@ -69,7 +69,9 @@ def _location(dealer: Mapping[str, Any]) -> str | None:
 	return " ".join(value for value in (city_state, str(postal_code) if postal_code else "") if value) or None
 
 
-def _adapt_options(value: Any) -> tuple[list[dict[str, Any]] | None, int | None]:
+def _adapt_options(
+	value: Any,
+) -> tuple[list[dict[str, Any]] | None, int | float | None]:
 	options = _sequence(value)
 	if options is None:
 		return None, None
@@ -78,7 +80,10 @@ def _adapt_options(value: Any) -> tuple[list[dict[str, Any]] | None, int | None]
 	for raw_option in options:
 		option = _mapping(raw_option)
 		price = option.get("msrp")
-		items.append({"name": option.get("name"), "price": price})
+		item = {"name": option.get("name"), "price": price}
+		if "code" in option:
+			item["code"] = option.get("code")
+		items.append(item)
 		if isinstance(price, (int, float)) and not isinstance(price, bool):
 			prices.append(price)
 	return items, sum(prices)
@@ -91,18 +96,35 @@ def _adapt_price_history(value: Any) -> list[dict[str, Any]] | None:
 	result = []
 	for raw_entry in history:
 		entry = _mapping(raw_entry)
-		result.append(
-			{
-				"date": _first(
-					entry.get("timestamp"),
-					entry.get("recorded_at"),
-					entry.get("changed_at"),
-					entry.get("date"),
-				),
-				"price": entry.get("price"),
-				"price_change": _first(entry.get("price_change"), entry.get("change")),
-			}
-		)
+		price_before = entry.get("price_before")
+		price_after = entry.get("price_after")
+		price_change = _first(entry.get("price_change"), entry.get("change"))
+		if (
+			price_change is None
+			and isinstance(price_before, (int, float))
+			and not isinstance(price_before, bool)
+			and isinstance(price_after, (int, float))
+			and not isinstance(price_after, bool)
+		):
+			price_change = price_after - price_before
+		adapted_entry = {
+			"date": _first(
+				entry.get("timestamp"),
+				entry.get("recorded_at"),
+				entry.get("changed_at"),
+				entry.get("date"),
+			),
+			"price": _first(entry.get("price"), price_after),
+			"price_change": price_change,
+		}
+		for target, source in (
+			("mileage", "miles"),
+			("price_before", "price_before"),
+			("price_after", "price_after"),
+		):
+			if source in entry:
+				adapted_entry[target] = entry.get(source)
+		result.append(adapted_entry)
 	return result
 
 
@@ -198,6 +220,27 @@ def adapt_listing(
 		"api_path": "price_history",
 	} if price_history is not None else {"kind": "unavailable", "reason": "not_requested_or_not_provided"}
 
+	msrp = _first(build.get("combined_msrp"), search.get("msrp"), build.get("base_msrp"))
+	if build.get("combined_msrp") is not None:
+		msrp_path = "vehicle.build.combined_msrp"
+	elif search.get("msrp") is not None:
+		msrp_path = "msrp"
+	elif build.get("base_msrp") is not None:
+		msrp_path = "vehicle.build.base_msrp"
+	else:
+		msrp_path = None
+	provenance["msrp"] = (
+		{"kind": "source_fact", "api_path": msrp_path}
+		if msrp_path else {"kind": "unavailable", "reason": "not_provided_by_api"}
+	)
+
+	days_on_market = search.get("days_on_market")
+	provenance["days_on_market"] = (
+		{"kind": "source_fact", "api_path": "days_on_market"}
+		if days_on_market is not None
+		else {"kind": "unavailable", "reason": "not_requested_or_not_provided"}
+	)
+
 	listing = {
 		"id": str(_first(detail.get("id"), search.get("id"))) if _first(detail.get("id"), search.get("id")) is not None else None,
 		"vin": _first(detail.get("vin"), vehicle.get("vin"), search.get("vin")),
@@ -205,8 +248,10 @@ def adapt_listing(
 		"year": year,
 		"trim": trim,
 		"condition": condition,
+		"msrp": msrp,
 		"price": _first(detail.get("price"), search.get("price")),
 		"mileage": _first(detail.get("miles"), search.get("miles")),
+		"days_on_market": days_on_market,
 		"listed": listed,
 		"listing_url": _first(detail.get("vdp_url"), search.get("vdp_url")),
 		"images": images,
