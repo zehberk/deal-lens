@@ -160,10 +160,17 @@ class VisorListingQuery:
 			params["include"] = LISTING_EXPANSIONS
 		return params
 
-	def fingerprint(self, max_listings: int) -> str:
+	def fingerprint(
+		self,
+		max_listings: int,
+		*,
+		include_projection: bool = True,
+	) -> str:
 		"""Return a deterministic cache fingerprint for equivalent API queries."""
 		parts = []
-		for name, value in sorted(self.api_params().items()):
+		for name, value in sorted(
+			self.api_params(include_projection=include_projection).items()
+		):
 			encoded = ",".join(value) if isinstance(value, tuple) else value
 			parts.append(f"{name}={encoded}")
 		return "&".join(parts) + f"|max={int(max_listings)}"

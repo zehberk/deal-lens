@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from visor_api import VisorListingQuery, cached_listing_search
+from visor_api import ListingSearchResponse, VisorListingQuery, cached_listing_search
 
 
 QUERY = VisorListingQuery.from_options({
@@ -26,14 +26,23 @@ class FakeClient:
 	def __init__(self) -> None:
 		self.calls: list[tuple[dict[str, str | tuple[str, ...]], int]] = []
 
-	def filter_all_listings(
+	def filter_all_listings_model(
 		self,
 		params: dict[str, str | tuple[str, ...]],
 		*,
 		max_listings: int,
-	) -> dict[str, Any]:
+	) -> ListingSearchResponse:
 		self.calls.append((params, max_listings))
-		return {"data": [{"id": f"call-{len(self.calls)}"}], "pagination": {}}
+		return ListingSearchResponse.from_dict({
+			"data": [{"id": f"call-{len(self.calls)}", "vin": "TESTVIN"}],
+			"pagination": {
+				"limit": max_listings,
+				"offset": 0,
+				"total": 1,
+				"next_offset": None,
+			},
+			"meta": {},
+		})
 
 
 @pytest.fixture
@@ -60,7 +69,9 @@ def test_first_search_calls_api_and_saves_metadata_cache(cache_dir):
 	assert result.metadata["query"]["min_mileage"] == "10000"
 	assert result.metadata["query"]["max_mileage"] == "80000"
 	assert result.metadata["query"]["sort"] == "price"
-	assert json.loads(result.cache_path.read_text(encoding="utf-8"))["response"] == result.response
+	assert "fields" not in result.metadata["query"]
+	assert "include" not in result.metadata["query"]
+	assert json.loads(result.cache_path.read_text(encoding="utf-8"))["response"] == result.response.to_dict()
 
 
 def test_same_search_uses_cache_without_api_call(cache_dir):
@@ -85,4 +96,4 @@ def test_force_search_calls_api_and_overrides_cache(cache_dir):
 	assert forced.cache_path == first.cache_path
 	assert forced.response != first.response
 	assert len(client.calls) == 2
-	assert json.loads(forced.cache_path.read_text(encoding="utf-8"))["response"] == forced.response
+	assert json.loads(forced.cache_path.read_text(encoding="utf-8"))["response"] == forced.response.to_dict()

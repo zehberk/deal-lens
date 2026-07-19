@@ -5,6 +5,8 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
 
+from visor_api.models import APIModel
+
 
 CONDITION_MAP = {
 	"new": "New",
@@ -32,6 +34,8 @@ SPEC_FIELDS = {
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:
+	if isinstance(value, APIModel):
+		return value.to_dict()
 	return value if isinstance(value, Mapping) else {}
 
 
@@ -103,8 +107,8 @@ def _adapt_price_history(value: Any) -> list[dict[str, Any]] | None:
 
 
 def adapt_listing(
-	search_listing: Mapping[str, Any] | None,
-	detail_listing: Mapping[str, Any] | None = None,
+	search_listing: Mapping[str, Any] | APIModel | None,
+	detail_listing: Mapping[str, Any] | APIModel | None = None,
 ) -> dict[str, Any]:
 	"""Combine a search row and optional detail object into one legacy listing.
 
@@ -224,8 +228,8 @@ def adapt_listing(
 		"market_velocity": None,
 		"source_data": {
 			"provider": "visor_api",
-			"search_listing": deepcopy(search_listing),
-			"detail_listing": deepcopy(detail_listing),
+			"search_listing": deepcopy(search),
+			"detail_listing": deepcopy(detail),
 		},
 		"provenance": provenance,
 	}
@@ -243,13 +247,14 @@ def adapt_listing(
 
 
 def adapt_facets_response(
-	response: Mapping[str, Any],
+	response: Mapping[str, Any] | APIModel,
 	*,
 	request_filters: Mapping[str, Any] | None = None,
 	captured_at: str | None = None,
 ) -> dict[str, Any]:
 	"""Preserve a facet result separately from individual listing records."""
-	data = _mapping(response.get("data"))
+	response_data = _mapping(response)
+	data = _mapping(response_data.get("data"))
 	return {
 		"total": data.get("total"),
 		"facets": deepcopy(data.get("facets")),
@@ -257,12 +262,12 @@ def adapt_facets_response(
 		"stats": deepcopy(data.get("stats")),
 		"request_filters": deepcopy(dict(request_filters or {})),
 		"captured_at": captured_at or datetime.now(timezone.utc).isoformat(),
-		"source_data": deepcopy(response),
+		"source_data": deepcopy(response_data),
 	}
 
 
 def adapt_search_response(
-	response: Mapping[str, Any],
+	response: Mapping[str, Any] | APIModel,
 	*,
 	details: Mapping[str, Mapping[str, Any]] | None = None,
 	request_filters: Mapping[str, Any] | None = None,
@@ -270,7 +275,8 @@ def adapt_search_response(
 	captured_at: str | None = None,
 ) -> dict[str, Any]:
 	"""Adapt a listing-search response to DealLens's metadata/listings envelope."""
-	rows = _sequence(response.get("data")) or []
+	response_data = _mapping(response)
+	rows = _sequence(response_data.get("data")) or []
 	detail_by_id = details or {}
 	listings = [adapt_listing(_mapping(row), detail_by_id.get(str(_mapping(row).get("id")))) for row in rows]
 	first = listings[0] if listings else {}
@@ -286,9 +292,9 @@ def adapt_search_response(
 		"site_info": {},
 		"runtime": {"timestamp": captured_at or datetime.now(timezone.utc).isoformat(), "source": "visor_api"},
 		"warnings": [],
-		"pagination": deepcopy(response.get("pagination")),
+		"pagination": deepcopy(response_data.get("pagination")),
 	}
-	result = {"metadata": metadata, "listings": listings, "source_data": {"listing_search": deepcopy(response)}}
+	result = {"metadata": metadata, "listings": listings, "source_data": {"listing_search": deepcopy(response_data)}}
 	if facets_response is not None:
 		facet_result = adapt_facets_response(facets_response, request_filters=request_filters, captured_at=captured_at)
 		result["facet_result"] = facet_result

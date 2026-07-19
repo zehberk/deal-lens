@@ -45,11 +45,12 @@ def main() -> None:
 		cache_dir=CACHE_DIR,
 		max_listings=MAX_LISTINGS,
 		force=args.force,
+		include_projection=False,
 	)
 	summary = {
 		"cache_used": result.cache_used,
 		"cache_path": str(result.cache_path),
-		"listing_count": len(result.response.get("data", [])),
+		"listing_count": len(result.response.data),
 		"metadata": result.metadata,
 	}
 	print(json.dumps(summary, indent=2, ensure_ascii=False))

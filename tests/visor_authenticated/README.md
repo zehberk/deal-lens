@@ -85,7 +85,9 @@ that a recall remains open; confirm that separately with NHTSA's VIN lookup.
 
 This probe performs a maximum 10-listing search for a 2020 Honda Civic in LX or
 Sport trim, with 10,000–80,000 miles, sorted by lowest price first. It writes an
-ignored JSON cache containing request metadata and the untouched API response:
+ignored JSON cache containing request metadata and the untouched API response.
+It uses Visor's standard response fields and does not request optional field
+projections, options, or price-history expansions:
 
 ```powershell
 .venv\Scripts\python.exe tests\visor_authenticated\api_cache_search.py
