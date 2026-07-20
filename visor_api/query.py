@@ -160,6 +160,14 @@ class VisorListingQuery:
 			params["include"] = LISTING_EXPANSIONS
 		return params
 
+	def market_filters(self) -> dict[str, str | tuple[str, ...]]:
+		"""Return filters that define inventory, excluding listing presentation."""
+		return {
+			name: value
+			for name, value in self.filters.items()
+			if name != "sort"
+		}
+
 	def fingerprint(
 		self,
 		max_listings: int,

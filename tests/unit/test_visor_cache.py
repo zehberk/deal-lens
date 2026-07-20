@@ -8,7 +8,12 @@ from typing import Any
 
 import pytest
 
-from visor_api import ListingSearchResponse, VisorListingQuery, cached_listing_search
+from visor_api import (
+	FacetResponse,
+	ListingSearchResponse,
+	VisorListingQuery,
+	cached_listing_search,
+)
 
 
 QUERY = VisorListingQuery.from_options({
@@ -25,6 +30,7 @@ QUERY = VisorListingQuery.from_options({
 class FakeClient:
 	def __init__(self) -> None:
 		self.calls: list[tuple[dict[str, str | tuple[str, ...]], int]] = []
+		self.facet_calls: list[dict[str, str | tuple[str, ...]]] = []
 
 	def filter_all_listings_model(
 		self,
@@ -42,6 +48,26 @@ class FakeClient:
 				"next_offset": None,
 			},
 			"meta": {},
+		})
+
+	def filter_facets_model(
+		self,
+		params: dict[str, str | tuple[str, ...]],
+	) -> FacetResponse:
+		self.facet_calls.append(params)
+		return FacetResponse.from_dict({
+			"data": {
+				"total": 321,
+				"facets": {},
+				"range_facets": {},
+				"stats": {},
+			},
+			"meta": {
+				"facets": [],
+				"metric": "count",
+				"sort": "-count",
+				"minimum_metric_count": 1,
+			},
 		})
 
 
@@ -62,6 +88,16 @@ def test_first_search_calls_api_and_saves_metadata_cache(cache_dir):
 
 	assert result.cache_used is False
 	assert len(client.calls) == 1
+	assert client.facet_calls == [{
+		"make": ("Honda",),
+		"model": ("Civic",),
+		"trim": ("LX", "Sport"),
+		"year": ("2020",),
+		"min_mileage": "10000",
+		"max_mileage": "80000",
+		"facets": "make",
+	}]
+	assert result.payload["metadata"]["site_info"]["total_for_sale"] == 321
 	assert result.cache_path.is_file()
 	assert result.metadata["query"]["make"] == ["Honda"]
 	assert result.metadata["query"]["trim"] == ["LX", "Sport"]
@@ -71,7 +107,9 @@ def test_first_search_calls_api_and_saves_metadata_cache(cache_dir):
 	assert result.metadata["query"]["sort"] == "price"
 	assert "fields" not in result.metadata["query"]
 	assert "include" not in result.metadata["query"]
-	assert json.loads(result.cache_path.read_text(encoding="utf-8"))["response"] == result.response.to_dict()
+	envelope = json.loads(result.cache_path.read_text(encoding="utf-8"))
+	assert envelope["response"] == result.response.to_dict()
+	assert envelope["facets_response"] == result.facets_response.to_dict()
 
 
 def test_same_search_uses_cache_without_api_call(cache_dir):
@@ -84,6 +122,8 @@ def test_same_search_uses_cache_without_api_call(cache_dir):
 	assert second.cache_path == first.cache_path
 	assert second.response == first.response
 	assert len(client.calls) == 1
+	assert len(client.facet_calls) == 1
+	assert second.payload["metadata"]["site_info"]["total_for_sale"] == 321
 
 
 def test_force_search_calls_api_and_overrides_cache(cache_dir):
@@ -96,4 +136,5 @@ def test_force_search_calls_api_and_overrides_cache(cache_dir):
 	assert forced.cache_path == first.cache_path
 	assert forced.response != first.response
 	assert len(client.calls) == 2
+	assert len(client.facet_calls) == 2
 	assert json.loads(forced.cache_path.read_text(encoding="utf-8"))["response"] == forced.response.to_dict()
