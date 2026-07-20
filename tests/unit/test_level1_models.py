@@ -2,7 +2,9 @@ import pytest
 
 from analysis.level1_models import (
 	ActiveInventoryMetrics,
+	ConfidenceLevel,
 	MarketCohort,
+	MarketConfidence,
 	MarketQueryProvenance,
 	MarketSearchScope,
 	MarketSnapshot,
@@ -70,6 +72,21 @@ def snapshot():
 				retrieved_at="2026-07-20T12:00:00+00:00",
 			),
 		),
+		confidence=MarketConfidence(
+			level=ConfidenceLevel.HIGH,
+			minimum_metric_count=5,
+			trim_bucket_count=1,
+			price_supported_bucket_count=1,
+			active_days_supported_bucket_count=1,
+			recent_sales_supported_bucket_count=1,
+			price_missing_rate=0,
+			mileage_missing_rate=0,
+			active_days_missing_rate=0,
+			recent_sales_missing_rate=0,
+			maximum_price_coefficient_of_variation=0.1,
+			maximum_mileage_coefficient_of_variation=0.1,
+			kbb_mapping_rate=1,
+		),
 		generated_at="2026-07-20T12:01:00+00:00",
 	)
 
@@ -84,6 +101,7 @@ def test_snapshot_contract_round_trips_as_json_compatible_data():
 	assert serialized["queries"][0]["cohort"] == "active"
 	assert serialized["scope"]["years"] == [2024]
 	assert serialized["queries"][0]["filters"]["year"] == ["2024"]
+	assert serialized["confidence"]["level"] == "high"
 
 
 def test_active_listing_age_and_sold_time_to_sale_are_distinct_fields():
@@ -133,6 +151,7 @@ def test_year_trim_summaries_must_be_unique_and_within_scope():
 			active=base.active,
 			recently_sold=base.recently_sold,
 			year_trim_summaries=(duplicate, duplicate),
+			confidence=base.confidence,
 			queries=base.queries,
 			generated_at=base.generated_at,
 		)

@@ -23,6 +23,30 @@ class MarketCohort(StrEnum):
 	RECENTLY_SOLD = "recently_sold"
 
 
+class ConfidenceLevel(StrEnum):
+	HIGH = "high"
+	MODERATE = "moderate"
+	LOW = "low"
+
+
+@dataclass(frozen=True, kw_only=True)
+class MarketConfidence:
+	level: ConfidenceLevel
+	minimum_metric_count: int
+	trim_bucket_count: int
+	price_supported_bucket_count: int
+	active_days_supported_bucket_count: int
+	recent_sales_supported_bucket_count: int
+	price_missing_rate: float | None
+	mileage_missing_rate: float | None
+	active_days_missing_rate: float | None
+	recent_sales_missing_rate: float | None
+	maximum_price_coefficient_of_variation: float | None
+	maximum_mileage_coefficient_of_variation: float | None
+	kbb_mapping_rate: float | None
+	limitations: tuple[str, ...] = ()
+
+
 @dataclass(frozen=True, kw_only=True)
 class MetricSummary:
 	"""A metric value together with its completeness and dispersion."""
@@ -145,6 +169,7 @@ class MarketSnapshot:
 	recently_sold: RecentlySoldMetrics
 	year_trim_summaries: tuple[YearTrimSummary, ...]
 	queries: tuple[MarketQueryProvenance, ...]
+	confidence: MarketConfidence
 	generated_at: str
 
 	def __post_init__(self) -> None:
@@ -187,12 +212,36 @@ class MarketSnapshot:
 				)
 				for item in value["queries"]
 			),
+			confidence=_confidence_from_dict(value["confidence"]),
 			generated_at=value["generated_at"],
 		)
 
 
 def _metric_from_dict(value: dict[str, Any]) -> MetricSummary:
 	return MetricSummary(**value)
+
+
+def _confidence_from_dict(value: dict[str, Any]) -> MarketConfidence:
+	return MarketConfidence(
+		level=ConfidenceLevel(value["level"]),
+		minimum_metric_count=value["minimum_metric_count"],
+		trim_bucket_count=value["trim_bucket_count"],
+		price_supported_bucket_count=value["price_supported_bucket_count"],
+		active_days_supported_bucket_count=value["active_days_supported_bucket_count"],
+		recent_sales_supported_bucket_count=value["recent_sales_supported_bucket_count"],
+		price_missing_rate=value["price_missing_rate"],
+		mileage_missing_rate=value["mileage_missing_rate"],
+		active_days_missing_rate=value["active_days_missing_rate"],
+		recent_sales_missing_rate=value["recent_sales_missing_rate"],
+		maximum_price_coefficient_of_variation=value[
+			"maximum_price_coefficient_of_variation"
+		],
+		maximum_mileage_coefficient_of_variation=value[
+			"maximum_mileage_coefficient_of_variation"
+		],
+		kbb_mapping_rate=value["kbb_mapping_rate"],
+		limitations=tuple(value.get("limitations", ())),
+	)
 
 
 def _active_from_dict(value: dict[str, Any]) -> ActiveInventoryMetrics:
