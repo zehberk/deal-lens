@@ -40,7 +40,7 @@ def is_natl_fresh(entry: dict) -> bool:
         return False
     natl_ts = datetime.fromisoformat(entry["natl_timestamp"])
 
-    return datetime.now() - natl_ts < CACHE_TTL
+    return datetime.now() - natl_ts < KBB_CACHE_TTL
 
 
 def is_local_fresh(entry: dict) -> bool:
@@ -48,7 +48,7 @@ def is_local_fresh(entry: dict) -> bool:
         return False
     fmv_ts = datetime.fromisoformat(entry["local_timestamp"])
 
-    return datetime.now() - fmv_ts < CACHE_TTL
+    return datetime.now() - fmv_ts < KBB_CACHE_TTL
 
 
 def cache_covers_all(
