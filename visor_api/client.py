@@ -181,15 +181,14 @@ class VisorClient:
 				break
 			offset = next_offset
 
+		last_pagination = last_response.get("pagination")
+		if not isinstance(last_pagination, dict):
+			last_pagination = {}
 		return {
 			**last_response,
 			"data": listings[:max_listings],
 			"pagination": {
-				**(
-					last_response.get("pagination")
-					if isinstance(last_response.get("pagination"), dict)
-					else {}
-				),
+				**last_pagination,
 				"limit": max_listings,
 				"offset": 0,
 			},
@@ -218,6 +217,15 @@ class VisorClient:
 
 		return FacetResponse.from_dict(self.filter_facets(params))
 
+	def filter_facets_model_with_headers(
+		self, params: QueryParams | None = None
+	) -> tuple["FacetResponse", dict[str, str]]:
+		"""Return a facet model and sanitized usage-related response headers."""
+		from visor_api.models import FacetResponse
+
+		body, headers = self._get_with_headers("/v1/facets", params)
+		return FacetResponse.from_dict(body), _usage_headers(headers)
+
 	def get_listing(
 		self,
 		listing_id: str,
@@ -238,6 +246,12 @@ class VisorClient:
 		return ListingDetailResponse.from_dict(self.get_listing(listing_id, params))
 
 	def _get(self, path: str, params: QueryParams | None) -> dict[str, Any]:
+		body, _ = self._get_with_headers(path, params)
+		return body
+
+	def _get_with_headers(
+		self, path: str, params: QueryParams | None
+	) -> tuple[dict[str, Any], Mapping[str, str] | Message]:
 		log_path = _log_path(path)
 		started_at = time.monotonic()
 		query = urlencode(_encode_params(params))
@@ -300,7 +314,7 @@ class VisorClient:
 					)
 					logger.error("%s", error)
 					raise error
-				return body
+				return body, response.headers
 
 			retry_after = response.headers.get("Retry-After")
 			if response.status in RETRYABLE_STATUS_CODES and attempt < self.max_retries:
@@ -375,6 +389,18 @@ def _log_rate_limits(path: str, headers: Mapping[str, str] | Message) -> None:
 			path,
 			", ".join(f"{name}={value}" for name, value in values.items()),
 		)
+
+
+def _usage_headers(headers: Mapping[str, str] | Message) -> dict[str, str]:
+	"""Keep billing/usage telemetry without retaining sensitive headers."""
+	usage_headers = {}
+	for name, value in headers.items():
+		normalized = name.lower()
+		if normalized.startswith("x-") and (
+			"usage" in normalized or "cost" in normalized
+		):
+			usage_headers[name] = value
+	return usage_headers
 
 
 def _encode_params(params: QueryParams | None) -> dict[str, str]:

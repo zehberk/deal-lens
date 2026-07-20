@@ -1,7 +1,7 @@
 """Execute and align facet responses for Level 1 market analysis."""
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Protocol
 
@@ -36,6 +36,7 @@ class RetrievedLevel1Facet:
 	query: Level1FacetQuery
 	response: FacetResponse
 	retrieved_at: str
+	usage_headers: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -77,17 +78,25 @@ def collect_level1_facets(
 	retrieved: list[RetrievedLevel1Facet] = []
 	for planned_query in build_level1_facet_query_plan(query):
 		response = client.filter_facets_model(planned_query.api_params())
-		_validate_response(planned_query, response)
 		retrieved.append(RetrievedLevel1Facet(
 			query=planned_query,
 			response=response,
 			retrieved_at=_aware_isoformat(now()),
 		))
 
-	years = sorted({item.query.year for item in retrieved})
+	return assemble_level1_facets(tuple(retrieved))
+
+
+def assemble_level1_facets(
+	responses: tuple[RetrievedLevel1Facet, ...],
+) -> Level1FacetCollection:
+	"""Validate and align already-retrieved Level 1 facet responses."""
+	for item in responses:
+		_validate_response(item.query, item.response)
+	years = sorted({item.query.year for item in responses})
 	return Level1FacetCollection(
-		years=tuple(_merge_year(year, retrieved) for year in years),
-		responses=tuple(retrieved),
+		years=tuple(_merge_year(year, list(responses)) for year in years),
+		responses=responses,
 	)
 
 

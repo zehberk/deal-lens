@@ -25,6 +25,7 @@ from visor_api.level1_service import (
 	RetrievedLevel1Facet,
 	collect_level1_facets,
 )
+from visor_api.level1_cache import CachedLevel1FacetResult, cached_level1_facets
 from visor_api.cache import CachedSearchResult, cached_listing_search
 from visor_api.models import (
 	APIModel,
@@ -72,6 +73,8 @@ __all__ = [
 	"Level1YearFacetResult",
 	"RetrievedLevel1Facet",
 	"collect_level1_facets",
+	"CachedLevel1FacetResult",
+	"cached_level1_facets",
 	"CachedSearchResult",
 	"cached_listing_search",
 	"APIModel",

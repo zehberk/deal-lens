@@ -5,6 +5,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from urllib3.exceptions import ConnectTimeoutError, ReadTimeoutError
+from urllib3.connectionpool import HTTPConnectionPool
 from urllib3.util import Timeout
 
 from visor_api import (
@@ -193,7 +194,11 @@ def test_documented_api_error_kind_and_code_are_explicit(
 			"connection timeout after 10 seconds",
 		),
 		(
-			ReadTimeoutError(None, "https://api.visor.vin", "timed out"),
+			ReadTimeoutError(
+				HTTPConnectionPool("api.visor.vin"),
+				"https://api.visor.vin",
+				"timed out",
+			),
 			VisorReadTimeoutError,
 			"response/read timeout after 30 seconds",
 		),
@@ -253,6 +258,32 @@ def test_debug_logging_reports_sanitized_completion_and_rate_limits(caplog):
 	assert "secret-api-key" not in caplog.text
 	assert "sensitive-listing-id" not in caplog.text
 	assert "80202" not in caplog.text
+
+
+def test_facet_model_with_headers_returns_only_usage_cost_headers():
+	response = FakeResponse({
+		"data": {"total": 0, "facets": {}, "range_facets": {}, "stats": {}},
+		"meta": {
+			"facets": [],
+			"metric": "count",
+			"sort": "-count",
+			"minimum_metric_count": 5,
+		},
+	})
+	response.headers = {
+		"X-Usage-Cost": "1",
+		"X-Visor-Request-Cost": "2",
+		"Set-Cookie": "sensitive",
+		"Authorization": "sensitive",
+	}
+	client = VisorClient("test-api-key", opener=FakeOpener(response))
+
+	_, headers = client.filter_facets_model_with_headers()
+
+	assert headers == {
+		"X-Usage-Cost": "1",
+		"X-Visor-Request-Cost": "2",
+	}
 
 
 @pytest.mark.parametrize("api_key", ["", "   "])
