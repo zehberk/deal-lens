@@ -93,6 +93,7 @@ Unless the repository configuration says otherwise:
 
 - Use the existing `pytest` setup.
 - The project uses `pytest-asyncio` with automatic asyncio handling; do not add `@pytest.mark.asyncio` unless repository configuration requires it.
+- Always check the IDE Problems view for diagnostics in changed files before reporting completion. Pylance type checking is configured in `standard` mode; resolve every reported error and report the result.
 - Add or update tests for changed behavior.
 - Mock external services in unit tests.
 - Use saved fixtures for API and legacy scraper payloads.
@@ -138,7 +139,7 @@ Before reporting completion:
 
 - Confirm the requested behavior is implemented.
 - Run relevant tests and report the exact result.
-- Run the configured IDE or static-analysis check on changed code, resolve all reported errors, and report the result.
+- Check the IDE Problems view with Pylance in `standard` type-checking mode, resolve all errors reported for changed code, and report the result.
 - Check that no secrets or user-specific data were added.
 - Note any compatibility impact on legacy scraper data.
 - Update documentation when setup, configuration, or behavior changed.
