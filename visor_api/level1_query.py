@@ -42,6 +42,8 @@ def build_level1_facet_query_plan(
 	The normalized market filters are copied to every request.  A multi-year
 	filter is replaced by the individual request year, and cohort filters are
 	controlled here so active and recently sold responses cannot be mixed.
+	Selected trims restrict the market population and therefore remain on every
+	request. Omitting a trim filter allows Visor to discover all trim buckets.
 	"""
 	base_filters = query.market_filters()
 	years = _requested_years(base_filters.get("year"))

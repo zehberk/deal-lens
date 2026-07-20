@@ -61,6 +61,23 @@ def test_every_query_preserves_market_scope_and_facet_settings():
 		assert "include" not in params
 
 
+def test_selected_trims_explicitly_restrict_every_market_cohort():
+	plan = build_level1_facet_query_plan(market_query(year="2024"))
+
+	assert all(
+		query.api_params()["trim"] == ("LX", "Sport")
+		for query in plan
+	)
+
+
+def test_omitting_selected_trims_discovers_the_whole_model_market():
+	plan = build_level1_facet_query_plan(
+		market_query(year="2024", trim=None)
+	)
+
+	assert all("trim" not in query.api_params() for query in plan)
+
+
 def test_only_recently_sold_query_has_the_fourteen_day_filter():
 	plan = build_level1_facet_query_plan(
 		market_query(year="2024", sold_within_days="30")

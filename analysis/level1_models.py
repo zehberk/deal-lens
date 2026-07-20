@@ -96,7 +96,10 @@ class MarketQueryProvenance:
 
 @dataclass(frozen=True, kw_only=True)
 class MarketSearchScope:
-	"""User-visible market boundaries shared by all Level 1 summaries."""
+	"""User-visible boundaries shared by all Level 1 summaries.
+
+	``selected_trims`` restricts the market; an empty tuple includes all trims.
+	"""
 
 	make: str
 	model: str
@@ -113,6 +116,10 @@ class MarketSearchScope:
 			raise ValueError("at least one model year is required")
 		if len(set(self.years)) != len(self.years):
 			raise ValueError("years must be unique")
+		if any(not trim.strip() for trim in self.selected_trims):
+			raise ValueError("selected trims cannot be empty")
+		if len({trim.casefold() for trim in self.selected_trims}) != len(self.selected_trims):
+			raise ValueError("selected trims must be unique")
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -136,3 +136,15 @@ def test_year_trim_summaries_must_be_unique_and_within_scope():
 			queries=base.queries,
 			generated_at=base.generated_at,
 		)
+
+
+def test_selected_trims_must_be_unique_canonical_display_values():
+	with pytest.raises(ValueError, match="unique"):
+		MarketSearchScope(
+			make="Honda",
+			model="Civic",
+			years=(2024,),
+			conditions=("used",),
+			geography={},
+			selected_trims=("Sport", "sport"),
+		)
