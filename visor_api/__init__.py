@@ -16,6 +16,7 @@ from visor_api.level1_query import (
 	LEVEL1_RECENT_SOLD_DAYS,
 	Level1FacetQuery,
 	build_level1_facet_query_plan,
+	build_level1_trim_enrichment_query_plan,
 )
 from visor_api.level1_service import (
 	Level1FacetCollection,
@@ -67,6 +68,7 @@ __all__ = [
 	"LEVEL1_RECENT_SOLD_DAYS",
 	"Level1FacetQuery",
 	"build_level1_facet_query_plan",
+	"build_level1_trim_enrichment_query_plan",
 	"Level1FacetCollection",
 	"Level1FacetResponseError",
 	"Level1TrimFacetBucket",

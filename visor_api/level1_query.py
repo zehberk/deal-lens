@@ -1,6 +1,6 @@
 """Build the facet request plan for facet-native Level 1 analysis."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from analysis.level1_models import MarketCohort
@@ -8,7 +8,7 @@ from visor_api.client import QueryValue
 from visor_api.query import VisorListingQuery
 
 
-LEVEL1_FACETS = "trim,price,miles,days_on_market"
+LEVEL1_FACETS = "trim"
 LEVEL1_FACET_VALUE_LIMIT = 100
 LEVEL1_FACET_SORT = "-count"
 LEVEL1_RECENT_SOLD_DAYS = 14
@@ -22,16 +22,20 @@ class Level1FacetQuery:
 	cohort: MarketCohort
 	metric: str
 	filters: dict[str, QueryValue]
+	facets: str = LEVEL1_FACETS
+	facet_value_limit: int | None = LEVEL1_FACET_VALUE_LIMIT
 
 	def api_params(self) -> dict[str, QueryValue]:
 		"""Return a fresh parameter mapping suitable for ``filter_facets``."""
-		return {
+		params: dict[str, QueryValue] = {
 			**self.filters,
-			"facets": LEVEL1_FACETS,
-			"facet_value_limit": LEVEL1_FACET_VALUE_LIMIT,
+			"facets": self.facets,
 			"sort": LEVEL1_FACET_SORT,
 			"metric": self.metric,
 		}
+		if self.facet_value_limit is not None:
+			params["facet_value_limit"] = self.facet_value_limit
+		return params
 
 
 def build_level1_facet_query_plan(
@@ -80,6 +84,42 @@ def build_level1_facet_query_plan(
 				},
 			),
 		))
+	return tuple(plan)
+
+
+def build_level1_trim_enrichment_query_plan(
+	query: VisorListingQuery,
+	trims_by_year: Mapping[int, Sequence[str]],
+) -> tuple[Level1FacetQuery, ...]:
+	"""Return active and sold statistics requests for every discovered trim."""
+	base_filters = query.market_filters()
+	base_filters.pop("year", None)
+	base_filters.pop("sold_within_days", None)
+	plan = []
+	for year, trims in sorted(trims_by_year.items()):
+		for trim in sorted(set(trims), key=str.casefold):
+			trim_filters = {**base_filters, "year": str(year), "trim": (trim,)}
+			plan.extend((
+				Level1FacetQuery(
+					year=year,
+					cohort=MarketCohort.ACTIVE,
+					metric="count",
+					filters=trim_filters,
+					facets="price,miles,days_on_market",
+					facet_value_limit=None,
+				),
+				Level1FacetQuery(
+					year=year,
+					cohort=MarketCohort.RECENTLY_SOLD,
+					metric="count",
+					filters={
+						**trim_filters,
+						"sold_within_days": LEVEL1_RECENT_SOLD_DAYS,
+					},
+					facets="days_on_market",
+					facet_value_limit=None,
+				),
+			))
 	return tuple(plan)
 
 

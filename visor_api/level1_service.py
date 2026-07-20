@@ -12,7 +12,7 @@ from visor_api.level1_query import (
 	Level1FacetQuery,
 	build_level1_facet_query_plan,
 )
-from visor_api.models import FacetResponse, FacetValue
+from visor_api.models import FacetResponse, FacetStats, FacetValue
 from visor_api.query import VisorListingQuery
 
 
@@ -51,6 +51,10 @@ class Level1TrimFacetBucket:
 	active_price_missing_reason: str | None = None
 	active_days_on_market_missing_reason: str | None = None
 	recently_sold_days_on_market_missing_reason: str | None = None
+	active_price_stats: FacetStats | None = None
+	active_mileage_stats: FacetStats | None = None
+	active_days_on_market_stats: FacetStats | None = None
+	recently_sold_days_on_market_stats: FacetStats | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -118,7 +122,15 @@ def _merge_year(
 	sold_days = _trim_map(sold_days_response)
 	trim_names = sorted({*price, *active_days, *sold_days}, key=str.casefold)
 	trims = tuple(
-		_merge_trim(year, trim, price.get(trim), active_days.get(trim), sold_days.get(trim))
+		_merge_trim(
+			year,
+			trim,
+			price.get(trim),
+			active_days.get(trim),
+			sold_days.get(trim),
+			_enrichment_response(year, trim, MarketCohort.ACTIVE, responses),
+			_enrichment_response(year, trim, MarketCohort.RECENTLY_SOLD, responses),
+		)
 		for trim in trim_names
 	)
 	return Level1YearFacetResult(
@@ -135,6 +147,8 @@ def _merge_trim(
 	price: FacetValue | None,
 	active_days: FacetValue | None,
 	sold_days: FacetValue | None,
+	active_stats: FacetResponse | None,
+	sold_stats: FacetResponse | None,
 ) -> Level1TrimFacetBucket:
 	active_count = price.count if price is not None else (
 		active_days.count if active_days is not None else None
@@ -153,7 +167,33 @@ def _merge_trim(
 		active_price_missing_reason=price_reason,
 		active_days_on_market_missing_reason=active_days_reason,
 		recently_sold_days_on_market_missing_reason=sold_days_reason,
+		active_price_stats=(active_stats.data.stats.get("price") if active_stats else None),
+		active_mileage_stats=(active_stats.data.stats.get("miles") if active_stats else None),
+		active_days_on_market_stats=(
+			active_stats.data.stats.get("days_on_market") if active_stats else None
+		),
+		recently_sold_days_on_market_stats=(
+			sold_stats.data.stats.get("days_on_market") if sold_stats else None
+		),
 	)
+
+
+def _enrichment_response(
+	year: int,
+	trim: str,
+	cohort: MarketCohort,
+	responses: list[RetrievedLevel1Facet],
+) -> FacetResponse | None:
+	for item in responses:
+		query_trim = item.query.filters.get("trim")
+		if (
+			item.query.year == year
+			and item.query.cohort is cohort
+			and item.query.metric == "count"
+			and query_trim == (trim,)
+		):
+			return item.response
+	return None
 
 
 def _trim_map(response: FacetResponse) -> dict[str, FacetValue]:
@@ -179,7 +219,10 @@ def _validate_response(query: Level1FacetQuery, response: FacetResponse) -> None
 		raise Level1FacetResponseError(
 			f"expected facet sort {LEVEL1_FACET_SORT!r}, received {response.meta.sort!r}"
 		)
-	if "trim" not in response.meta.facets or "trim" not in response.data.facets:
+	requested_facets = set(query.facets.split(","))
+	if not requested_facets.issubset(response.meta.facets):
+		raise Level1FacetResponseError("facet response metadata does not match the query")
+	if "trim" in requested_facets and "trim" not in response.data.facets:
 		raise Level1FacetResponseError("facet response is missing trim buckets")
 
 

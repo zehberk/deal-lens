@@ -3,7 +3,7 @@ import shutil
 import uuid
 
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -25,19 +25,37 @@ class FakeCachedFacetClient:
 			raise RuntimeError("simulated refresh failure")
 		metric = str(params["metric"])
 		total = 4 if "sold_within_days" in params else 10
+		facet_names = str(params["facets"]).split(",")
+		is_trim_metric = facet_names == ["trim"]
+		stats = {
+			name: {
+				"min": 1,
+				"max": 100,
+				"count": total - 1,
+				"missing": 1,
+				"mean": 20,
+				"median": 15,
+				"stddev": 5,
+			}
+			for name in facet_names
+			if name in {"price", "miles", "days_on_market"}
+		}
 		return FacetResponse.from_dict({
 			"data": {
 				"total": total,
-				"facets": {"trim": [{
-					"value": "LX",
-					"count": total,
-					"metric": {"name": metric, "value": len(self.calls)},
-				}]},
+				"facets": (
+					{"trim": [{
+						"value": "LX",
+						"count": total,
+						"metric": {"name": metric, "value": len(self.calls)},
+					}]}
+					if is_trim_metric else {}
+				),
 				"range_facets": {},
-				"stats": {},
+				"stats": stats,
 			},
 			"meta": {
-				"facets": ["trim", "price", "miles", "days_on_market"],
+				"facets": facet_names,
 				"metric": metric,
 				"sort": "-count",
 				"minimum_metric_count": 5,
@@ -76,10 +94,10 @@ def test_fresh_run_caches_each_complete_query(cache_dir):
 	)
 
 	assert result.cache_used is False
-	assert len(client.calls) == 6
+	assert len(client.calls) == 10
 	assert result.cache_path.is_file()
 	envelope = json.loads(result.cache_path.read_text(encoding="utf-8"))
-	assert len(envelope["entries"]) == 6
+	assert len(envelope["entries"]) == 10
 	assert all(
 		entry["usage_headers"] == {"X-Usage-Cost": "1"}
 		for entry in envelope["entries"].values()
@@ -97,7 +115,7 @@ def test_normal_rerun_uses_cache_without_api_calls(cache_dir):
 	second = cached_level1_facets(client, query(), cache_dir=cache_dir)
 
 	assert second.cache_used is True
-	assert len(client.calls) == 3
+	assert len(client.calls) == 5
 	assert second.collection == first.collection
 
 
@@ -109,14 +127,15 @@ def test_forced_refresh_replaces_every_response(cache_dir):
 	forced = cached_level1_facets(client, query(), cache_dir=cache_dir, force=True)
 
 	assert forced.cache_used is False
-	assert len(client.calls) == 6
+	assert len(client.calls) == 10
 	assert forced.cache_path.read_text(encoding="utf-8") != first_payload
 	values = []
-	for item in forced.collection.responses:
+	for item in forced.collection.responses[:3]:
 		metric = item.response.data.facets["trim"][0].metric
 		assert metric is not None
 		values.append(metric.value)
-	assert values == [4, 5, 6]
+	assert values == [6, 7, 8]
+	assert forced.collection.years[0].trims[0].active_price_stats is not None
 
 
 def test_failed_forced_refresh_preserves_complete_previous_cache(cache_dir):
@@ -153,4 +172,33 @@ def test_complete_query_changes_use_a_different_cache(cache_dir):
 	second = cached_level1_facets(client, changed, cache_dir=cache_dir)
 
 	assert first.cache_path != second.cache_path
-	assert len(client.calls) == 6
+	assert len(client.calls) == 10
+
+
+def test_cache_expires_after_the_local_calendar_day(cache_dir):
+	client = FakeCachedFacetClient()
+	local_zone = timezone(timedelta(hours=-6))
+	first = cached_level1_facets(
+		client,
+		query(),
+		cache_dir=cache_dir,
+		clock=lambda: datetime(2026, 7, 20, 8, tzinfo=local_zone),
+	)
+
+	same_day = cached_level1_facets(
+		client,
+		query(),
+		cache_dir=cache_dir,
+		clock=lambda: datetime(2026, 7, 20, 23, 59, tzinfo=local_zone),
+	)
+	next_day = cached_level1_facets(
+		client,
+		query(),
+		cache_dir=cache_dir,
+		clock=lambda: datetime(2026, 7, 21, 0, 1, tzinfo=local_zone),
+	)
+
+	assert first.cache_used is False
+	assert same_day.cache_used is True
+	assert next_day.cache_used is False
+	assert len(client.calls) == 10
