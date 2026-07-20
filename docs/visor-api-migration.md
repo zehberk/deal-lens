@@ -103,8 +103,9 @@ The captured search/detail contracts do not provide these scraper fields directl
 - warranty `overall_status` and coverage limits
 - provider-specific AutoCheck, CARFAX, and window-sticker URLs
 - seller map URL and scraper-enriched dealer fee list
-- scraper market-velocity values: vehicles sold in 14 days, seven-day sell chance,
-  and the page's comparison-specific average days on market
+- the page's comparison-specific average days on market as an exact Visor value
+- the page's seven-day sell chance as a direct API fact; DealLens may calculate and
+  disclose its own estimate as described below
 - price-history mileage and legacy `lowest` marker when absent from API entries
 - arbitrary labels from the scraped specification table
 - scraper warnings/errors and positional listing number
@@ -112,6 +113,96 @@ The captured search/detail contracts do not provide these scraper fields directl
 The API does provide `days_on_market`, facet-level days-on-market statistics, a
 generic `vhr_url`, structured options, and build verification. These are related but
 are not interchangeable with the missing legacy fields.
+
+## Market-overview source determination
+
+The current active-inventory facet response and a sold-inventory experiment establish
+the following source boundaries:
+
+| Market value | API source | Determination |
+| --- | --- | --- |
+| Total for sale | Active `/v1/facets` `data.total` | Direct source fact. |
+| Current days on market | Active `/v1/facets` `stats.days_on_market` | Direct aggregate for listings still in the filtered market. Keep count and missing count with the statistic. |
+| Sold in 14 days | `/v1/facets` with the same market filters plus `sold_within_days=14`; read `data.total` | Direct aggregate. Do not infer the window from individual `sold_date` values. |
+| Time to sale for recent sales | The same sold facet response's `stats.days_on_market` | Direct aggregate for the sold cohort; it is not interchangeable with active days on market. |
+| Market days supply | Active facet total and sold-within-14-days facet total | Calculated value requiring both cohorts. Record the formula and inputs; leave unavailable when the sales rate is zero. |
+| Historical market snapshot | Listing or facet request with `snapshot_date` | Separate historical cohort. Never combine it with current inventory without an explicitly labeled comparison. |
+| Seven-day sell chance | Listing `days_on_market` plus recent sold-cohort `stats.days_on_market` | Optional DealLens urgency estimate using a fitted Weibull distribution; never present it as a Visor API fact. |
+
+The authenticated experiment used identical year, make, and model filters for
+`/v1/listings` and `/v1/facets`, plus `sold_within_days=14`. Both endpoints reported
+378 matching records. Sample records had `status` and `inventory_status` set to
+`sold` while `sold_date` was null, confirming that the server-side rolling filter is
+the authoritative window for this workflow. Counts are time-dependent; 378 is test
+evidence, not a stable market value or fixture expectation.
+
+### Optional seven-day urgency estimate
+
+Visor's user-interface explanation describes its demand percentage as a comparison
+between the listing's current time on the lot and the distribution of how long
+similar vehicles took to sell. It identifies a Weibull distribution fitted from the
+sold cohort's mean and standard deviation, with the Gamma function evaluated using
+a Lanczos approximation. This description makes a comparable DealLens estimate
+possible, but it does not establish Visor's exact cohort selection, conditioning,
+rounding, or sparse-data rules.
+
+For a sold cohort with mean days to sale `mu` and standard deviation `sigma`, solve
+the Weibull shape `k` numerically from:
+
+```text
+(sigma / mu)^2 = Gamma(1 + 2/k) / Gamma(1 + 1/k)^2 - 1
+```
+
+Then calculate the scale `lambda`:
+
+```text
+lambda = mu / Gamma(1 + 1/k)
+```
+
+For a listing already active for `t` days, the proposed conditional probability of
+selling within the next `w` days is:
+
+```text
+1 - exp(-(((t + w) / lambda)^k - (t / lambda)^k))
+```
+
+Use `w = 7` for the user-facing urgency indicator. Python's standard-library
+`math.gamma` is sufficient; DealLens does not need its own Lanczos implementation.
+
+This value is optional and must be labeled as an estimate. It is intended only as a
+user-urgency signal, not as a verified vehicle fact, deterministic deal-rating
+input, or prediction that a particular vehicle will sell. Preserve these inputs and
+decisions with every calculated value:
+
+- the exact sold-cohort market filters and `sold_within_days` window;
+- facet retrieval timestamp;
+- sold sample `count` and `missing` count;
+- sold days-on-market mean and standard deviation;
+- listing days on market and forecast window;
+- fitted Weibull shape and scale;
+- calculation version and an explicit `kind: estimate` designation.
+
+Return the estimate as unavailable rather than inventing a value when the cohort is
+below a documented minimum sample size, the mean is not positive, the standard
+deviation is not positive, the fit has no stable positive solution, required inputs
+are missing, or numerical evaluation fails. The minimum sample size and any display
+rounding remain product decisions and must be fixed and tested before this metric is
+used in a report.
+
+## API query provenance
+
+Saved DealLens output records acquisition provenance under
+`metadata.sources.visor_api`. The `listings` entry contains the logical query,
+requested listing limit, endpoint, and UTC retrieval time. The `facets.overall`
+entry records the overall facet query and retrieval time, while `facets.by_trim`
+contains one equivalent entry for every explicitly selected trim.
+
+Retrieval times describe when DealLens received each API response. They are not the
+listing's source timestamp and must not be replaced when a cached response is read.
+Queries contain normalized URL parameters only; authorization headers and API keys
+must never be included. Pagination's requested maximum is recorded separately from
+the logical query because the client may issue multiple physical `limit`/`offset`
+requests to satisfy it.
 
 ## Unavailable-value policy
 

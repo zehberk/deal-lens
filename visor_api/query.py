@@ -47,7 +47,8 @@ SORT_VALUES = {
 SUPPORTED_PARAMETERS = frozenset({
 	"make", "model", "trim", "year", "inventory_type", "min_price",
 	"max_price", "min_mileage", "max_mileage", "postal_code", "radius",
-	"state", "latitude", "longitude", "sort",
+	"state", "latitude", "longitude", "sold_within_days", "snapshot_date",
+	"sort",
 })
 MULTI_VALUE_PARAMETERS = frozenset({
 	"make", "model", "trim", "year", "inventory_type", "state",
@@ -159,6 +160,14 @@ class VisorListingQuery:
 			params["fields"] = LISTING_FIELDS
 			params["include"] = LISTING_EXPANSIONS
 		return params
+
+	def market_filters(self) -> dict[str, str | tuple[str, ...]]:
+		"""Return filters that define inventory, excluding listing presentation."""
+		return {
+			name: value
+			for name, value in self.filters.items()
+			if name != "sort"
+		}
 
 	def fingerprint(
 		self,

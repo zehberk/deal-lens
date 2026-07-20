@@ -68,3 +68,9 @@ api.env
 tests/visor_authenticated/*
 !tests/visor_authenticated/api_cache_search.py
 !tests/visor_authenticated/README.md
+!tests/visor_authenticated/facet_experiments/
+!tests/visor_authenticated/facet_experiments/*.py
+!tests/visor_authenticated/facet_experiments/*.md
+!tests/visor_authenticated/sold_inventory_experiments/
+!tests/visor_authenticated/sold_inventory_experiments/*.py
+!tests/visor_authenticated/sold_inventory_experiments/*.md

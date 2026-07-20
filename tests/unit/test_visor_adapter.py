@@ -223,6 +223,63 @@ def test_search_envelope_and_facets_map_to_metadata_without_touching_listings():
 	assert result["metadata"]["pagination"] == search_response["pagination"]
 	assert result["facet_result"]["request_filters"] == {"make": "Example Make"}
 	assert result["facet_result"]["captured_at"] == "2026-07-18T12:00:00+00:00"
+	assert result["metadata"]["site_info"]["days_on_market"]["overall"] == (
+		facets_response["data"]["stats"]["days_on_market"]
+	)
+
+
+def test_trim_facet_stats_are_kept_separate_with_exact_queries():
+	search_response = fixture("listing_search.json")
+	overall = fixture("facets.json")
+	lx = fixture("facets.json")
+	lx["data"]["total"] = 40
+	lx["data"]["stats"]["days_on_market"]["count"] = 40
+	lx["data"]["stats"]["days_on_market"]["mean"] = 21.5
+
+	result = adapt_search_response(
+		search_response,
+		request_filters={"make": "Example Make", "trim": ["LX", "Sport"]},
+		facets_response=overall,
+		trim_facets_responses={"LX": lx},
+		captured_at="2026-07-18T12:00:00+00:00",
+	)
+
+	assert result["metadata"]["site_info"]["days_on_market"]["by_trim"]["LX"]["mean"] == 21.5
+	assert result["trim_facet_results"]["LX"]["total"] == 40
+	assert result["trim_facet_results"]["LX"]["request_filters"] == {
+		"make": "Example Make",
+		"trim": ["LX"],
+	}
+
+
+def test_source_metadata_is_copied_to_saved_metadata():
+	source_metadata = {
+		"listings": {
+			"endpoint": "/v1/listings",
+			"query": {"make": ["Example Make"]},
+			"max_listings": 10,
+			"retrieved_at": "2026-07-20T12:00:00+00:00",
+		},
+		"facets": {
+			"overall": {
+				"endpoint": "/v1/facets",
+				"query": {"make": ["Example Make"], "facets": "model"},
+				"retrieved_at": "2026-07-20T12:00:01+00:00",
+			},
+			"by_trim": {},
+		},
+	}
+
+	result = adapt_search_response(
+		fixture("listing_search.json"),
+		source_metadata=source_metadata,
+	)
+
+	assert result["metadata"]["sources"]["visor_api"] == source_metadata
+	source_metadata["listings"]["query"]["make"].append("Changed")
+	assert result["metadata"]["sources"]["visor_api"]["listings"]["query"] == {
+		"make": ["Example Make"],
+	}
 
 
 def test_facet_adapter_preserves_null_or_missing_sections():

@@ -51,6 +51,7 @@ def main() -> None:
 		"cache_used": result.cache_used,
 		"cache_path": str(result.cache_path),
 		"listing_count": len(result.response.data),
+		"total_for_sale": result.payload["metadata"]["site_info"]["total_for_sale"],
 		"metadata": result.metadata,
 	}
 	print(json.dumps(summary, indent=2, ensure_ascii=False))
