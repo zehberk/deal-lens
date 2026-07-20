@@ -47,7 +47,8 @@ SORT_VALUES = {
 SUPPORTED_PARAMETERS = frozenset({
 	"make", "model", "trim", "year", "inventory_type", "min_price",
 	"max_price", "min_mileage", "max_mileage", "postal_code", "radius",
-	"state", "latitude", "longitude", "sort",
+	"state", "latitude", "longitude", "sold_within_days", "snapshot_date",
+	"sort",
 })
 MULTI_VALUE_PARAMETERS = frozenset({
 	"make", "model", "trim", "year", "inventory_type", "state",

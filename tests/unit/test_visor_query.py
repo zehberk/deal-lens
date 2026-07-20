@@ -61,6 +61,20 @@ def test_market_filters_exclude_listing_sort_and_projection():
 	}
 
 
+def test_sold_window_and_snapshot_date_are_preserved_as_market_filters():
+	query = VisorListingQuery.from_url(
+		"https://visor.vin/search/listings?make=Honda&model=Civic"
+		"&sold_within_days=14&snapshot_date=2026-07-01"
+	)
+
+	assert query.market_filters() == {
+		"make": ("Honda",),
+		"model": ("Civic",),
+		"sold_within_days": "14",
+		"snapshot_date": "2026-07-01",
+	}
+
+
 def test_current_browser_geo_parameters_map_to_postal_radius_query():
 	query = VisorListingQuery.from_url(
 		"https://visor.vin/search/listings?make=Subaru&model=Forester"

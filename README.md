@@ -90,6 +90,14 @@ without copying the raw incompatible value. Facet responses can be supplied thro
 `facets_response`; aggregate market values are kept in metadata and a separate
 `facet_result`, never copied onto individual listings.
 
+Cached listing searches request model, trim, and days-on-market facets for the
+overall filtered market. When a search explicitly selects trims, DealLens also
+requests days-on-market facets separately for each selected trim and preserves the
+individual queries and responses alongside the overall market result.
+The saved DealLens metadata also records the logical `/v1/listings` query and every
+overall or per-trim `/v1/facets` query with the UTC time its response was retrieved.
+Cache hits retain the original retrieval times.
+
 The client sends the configured key only in the `Authorization: Bearer` header,
 uses a 10-second connection timeout and a 30-second response/read timeout, and
 retries rate-limit and temporary platform responses a bounded number of times.

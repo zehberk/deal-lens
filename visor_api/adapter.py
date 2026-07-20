@@ -431,7 +431,11 @@ def adapt_search_response(
 	details: Mapping[str, Mapping[str, Any]] | None = None,
 	request_filters: Mapping[str, Any] | None = None,
 	facets_response: Mapping[str, Any] | None = None,
+	trim_facets_responses: Mapping[str, Mapping[str, Any]] | None = None,
+	source_metadata: Mapping[str, Any] | None = None,
 	captured_at: str | None = None,
+	facets_captured_at: str | None = None,
+	trim_facets_captured_at: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
 	"""Adapt a listing-search response to DealLens's metadata/listings envelope."""
 	response_data = _mapping(response)
@@ -469,9 +473,15 @@ def adapt_search_response(
 		"warnings": warnings,
 		"pagination": deepcopy(response_data.get("pagination")),
 	}
+	if source_metadata is not None:
+		metadata["sources"] = {"visor_api": deepcopy(dict(source_metadata))}
 	result = {"metadata": metadata, "listings": listings, "source_data": {"listing_search": deepcopy(response_data)}}
 	if facets_response is not None:
-		facet_result = adapt_facets_response(facets_response, request_filters=request_filters, captured_at=captured_at)
+		facet_result = adapt_facets_response(
+			facets_response,
+			request_filters=request_filters,
+			captured_at=facets_captured_at or captured_at,
+		)
 		result["facet_result"] = facet_result
 		metadata["site_info"] = {
 			"total_for_sale": facet_result["total"],
@@ -479,4 +489,24 @@ def adapt_search_response(
 			"range_facets": facet_result["range_facets"],
 			"stats": facet_result["stats"],
 		}
+		overall_stats = _mapping(facet_result.get("stats")).get("days_on_market")
+		trim_facet_results = {}
+		trim_stats = {}
+		for trim, trim_response in (trim_facets_responses or {}).items():
+			trim_filters = {**dict(request_filters or {}), "trim": [trim]}
+			trim_result = adapt_facets_response(
+				trim_response,
+				request_filters=trim_filters,
+				captured_at=(trim_facets_captured_at or {}).get(trim)
+				or facets_captured_at
+				or captured_at,
+			)
+			trim_facet_results[trim] = trim_result
+			trim_stats[trim] = _mapping(trim_result.get("stats")).get("days_on_market")
+		metadata["site_info"]["days_on_market"] = {
+			"overall": deepcopy(overall_stats),
+			"by_trim": deepcopy(trim_stats),
+		}
+		if trim_facet_results:
+			result["trim_facet_results"] = trim_facet_results
 	return result
