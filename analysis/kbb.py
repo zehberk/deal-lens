@@ -382,19 +382,10 @@ async def get_or_fetch_local_pricing(
 
         fmr_low, fmr_high, fpp_local = await get_price_advisor_values(page)
 
-        nav_tabs = await page.locator(
-            "div.styled-nav-tabs.css-16wc4jq.empazup2 button"
-        ).all()
-
-        depreciation_exists = False
-        for button in nav_tabs:
-            aria_label = await button.get_attribute("aria-label")
-            if aria_label == "Depreciation":
-                depreciation_exists = True
-                break
-
-        if depreciation_exists:
-            depreciation_text = await page.inner_text("div.css-fbyg3h", timeout=10000)
+        # KBB can render the resale-value content after the initial page load.
+        # Wait for that specific element instead of treating an initially empty
+        # navigation tab list as a permanently missing value.
+        depreciation_text = await page.inner_text("div.css-fbyg3h", timeout=10000)
     except TimeoutError as t:
         logger.warning("KBB local pricing timed out for %s: %s", kbb_trim, t.message)
 
