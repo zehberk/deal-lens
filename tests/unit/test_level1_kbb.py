@@ -4,6 +4,7 @@ from datetime import datetime
 
 from analysis.level1_kbb import (
 	get_level1_kbb_valuations,
+	level1_kbb_model_variations,
 	level1_year_trims,
 	map_level1_kbb_valuations,
 )
@@ -70,6 +71,53 @@ def test_unique_year_trim_combinations_come_directly_from_facets():
 		2023: ("Sport",),
 		2024: ("LX",),
 	}
+
+
+def test_kbb_model_variations_are_resolved_before_pricing_lookup():
+	result = level1_kbb_model_variations(
+		"Honda",
+		"Civic",
+		{2023: ("EX", "Type-R")},
+		{"2023": {"Honda": ["Civic", "Civic Hybrid", "Civic Type R"]}},
+	)
+
+	assert result == {
+		(2023, "EX"): "Civic",
+		(2023, "Type-R"): "Civic Type R",
+	}
+
+
+def test_missing_variation_cache_keeps_base_model():
+	result = level1_kbb_model_variations(
+		"Honda",
+		"Civic",
+		{2023: ("Type-R",)},
+		{},
+	)
+
+	assert result == {(2023, "Type-R"): "Civic"}
+
+
+def test_mapping_reads_pricing_from_resolved_model_variation():
+	entries = {
+		"2023 Honda Civic Type R Type R Hatchback 4D": entry(
+			2023, "Type R Hatchback 4D"
+		),
+	}
+	entries["2023 Honda Civic Type R Type R Hatchback 4D"]["model"] = "Civic Type R"
+	entries["2023 Honda Civic Type R Type R Hatchback 4D"]["natl_source"] = (
+		"https://kbb.com/honda/civic-type-r/2023/"
+	)
+	result = map_level1_kbb_valuations(
+		"Honda",
+		"Civic",
+		{2023: ("Type-R",)},
+		entries,
+		model_by_year_trim={(2023, "Type-R"): "Civic Type R"},
+	)
+
+	assert result.failures == ()
+	assert result.matches[0].kbb_trim == "Type R Hatchback 4D"
 
 
 def test_mapping_keeps_model_years_separate_and_rejects_unrelated_trims():
