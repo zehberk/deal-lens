@@ -35,10 +35,10 @@ def test_plan_contains_exactly_three_facet_queries_per_year():
 	assert [(item.year, item.cohort, item.metric) for item in plan] == [
 		(2023, MarketCohort.ACTIVE, "price.median"),
 		(2023, MarketCohort.ACTIVE, "days_on_market.median"),
-		(2023, MarketCohort.RECENTLY_SOLD, "days_on_market.median"),
+		(2023, MarketCohort.RECENTLY_SOLD, "count"),
 		(2024, MarketCohort.ACTIVE, "price.median"),
 		(2024, MarketCohort.ACTIVE, "days_on_market.median"),
-		(2024, MarketCohort.RECENTLY_SOLD, "days_on_market.median"),
+		(2024, MarketCohort.RECENTLY_SOLD, "count"),
 	]
 
 
@@ -79,19 +79,19 @@ def test_omitting_selected_trims_discovers_the_whole_model_market():
 	assert all("trim" not in query.api_params() for query in plan)
 
 
-def test_enrichment_plan_requests_active_and_sold_stats_per_trim():
+def test_enrichment_plan_requests_only_active_stats_per_trim():
 	plan = build_level1_trim_enrichment_query_plan(
 		market_query(year="2024", trim=None),
 		{2024: ("LX", "Sport")},
 	)
 
-	assert len(plan) == 4
+	assert len(plan) == 2
 	assert plan[0].api_params()["facets"] == "price,miles,days_on_market"
 	assert plan[0].api_params()["metric"] == "count"
 	assert plan[0].api_params()["trim"] == ("LX",)
 	assert "sold_within_days" not in plan[0].api_params()
-	assert plan[1].api_params()["facets"] == "days_on_market"
-	assert plan[1].api_params()["sold_within_days"] == 14
+	assert plan[1].api_params()["trim"] == ("Sport",)
+	assert "sold_within_days" not in plan[1].api_params()
 
 
 def test_only_recently_sold_query_has_the_fourteen_day_filter():

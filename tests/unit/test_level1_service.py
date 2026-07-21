@@ -71,7 +71,7 @@ def test_service_executes_three_calls_per_year_without_listing_requests():
 		responses.extend((
 			facet_response("price.median", 10, [("LX", 10, 25_000)]),
 			facet_response("days_on_market.median", 10, [("LX", 10, 30)]),
-			facet_response("days_on_market.median", 4, [("LX", 4, 22)]),
+			facet_response("count", 4, [("LX", 4, 4)]),
 		))
 	client = FakeFacetClient(responses)
 
@@ -97,7 +97,7 @@ def test_service_matches_partial_trim_buckets_and_records_missing_reasons():
 			("Sport", 2, "below_minimum_metric_count"),
 		]),
 		facet_response("days_on_market.median", 12, [("LX", 10, 30)]),
-		facet_response("days_on_market.median", 3, [("Sport", 3, 20)]),
+		facet_response("count", 3, [("Sport", 3, 3)]),
 	])
 
 	result = collect_level1_facets(client, query())
@@ -109,14 +109,14 @@ def test_service_matches_partial_trim_buckets_and_records_missing_reasons():
 	assert by_trim["Sport"].active_price_missing_reason == "below_minimum_metric_count"
 	assert by_trim["Sport"].active_days_on_market_missing_reason == "trim_bucket_not_returned"
 	assert by_trim["LX"].recently_sold_inventory_count is None
-	assert by_trim["LX"].recently_sold_days_on_market_missing_reason == "trim_bucket_not_returned"
+	assert by_trim["LX"].recently_sold_days_on_market_missing_reason == "metric_not_requested"
 
 
 def test_service_distinguishes_missing_metric_object_from_missing_value():
 	client = FakeFacetClient([
 		facet_response("price.median", 2, [("Sport", 2, "missing_metric")]),
 		facet_response("days_on_market.median", 2, [("Sport", 2, 12)]),
-		facet_response("days_on_market.median", 0, []),
+		facet_response("count", 0, []),
 	])
 
 	bucket = collect_level1_facets(client, query()).years[0].trims[0]
@@ -128,7 +128,7 @@ def test_service_rejects_response_for_the_wrong_metric():
 	responses = [
 		facet_response("days_on_market.median", 10, [("LX", 10, 30)]),
 		facet_response("days_on_market.median", 10, [("LX", 10, 30)]),
-		facet_response("days_on_market.median", 4, [("LX", 4, 22)]),
+		facet_response("count", 4, [("LX", 4, 4)]),
 	]
 
 	with pytest.raises(Level1FacetResponseError, match="expected metric"):
@@ -139,7 +139,7 @@ def test_service_tolerates_inventory_changes_between_facet_calls():
 	client = FakeFacetClient([
 		facet_response("price.median", 10, [("LX", 10, 25_000)]),
 		facet_response("days_on_market.median", 9, [("LX", 9, 30)]),
-		facet_response("days_on_market.median", 4, [("LX", 4, 22)]),
+		facet_response("count", 4, [("LX", 4, 4)]),
 	])
 
 	result = collect_level1_facets(client, query())
@@ -152,9 +152,29 @@ def test_service_tolerates_inventory_changes_between_facet_calls():
 def test_service_rejects_naive_retrieval_timestamps():
 	client = FakeFacetClient([
 		facet_response("price.median", 0, []),
-		facet_response("days_on_market.median", 0, []),
+		facet_response("count", 0, []),
 		facet_response("days_on_market.median", 0, []),
 	])
 
 	with pytest.raises(ValueError, match="aware datetime"):
 		collect_level1_facets(client, query(), clock=lambda: datetime(2026, 7, 20))
+
+
+def test_service_accepts_empty_responses_without_trim_facets():
+	responses = [
+		FacetResponse.from_dict({
+			"data": {"total": 0, "facets": {}, "range_facets": {}, "stats": {}},
+			"meta": {
+				"facets": ["trim", "price", "miles", "days_on_market"],
+				"metric": metric,
+				"sort": "-count",
+				"minimum_metric_count": 5,
+			},
+		})
+		for metric in ("price.median", "days_on_market.median", "count")
+	]
+
+	result = collect_level1_facets(FakeFacetClient(responses), query())
+
+	assert result.years[0].active_inventory_count == 0
+	assert result.years[0].trims == ()

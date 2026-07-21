@@ -94,18 +94,24 @@ def test_fresh_run_caches_each_complete_query(cache_dir):
 	)
 
 	assert result.cache_used is False
-	assert len(client.calls) == 10
+	assert len(client.calls) == 8
 	assert result.cache_path.is_file()
 	envelope = json.loads(result.cache_path.read_text(encoding="utf-8"))
-	assert len(envelope["entries"]) == 10
+	assert len(envelope["entries"]) == 8
 	assert all(
 		entry["usage_headers"] == {"X-Usage-Cost": "1"}
+		for entry in envelope["entries"].values()
+	)
+	assert all(
+		entry["request_url"].startswith("https://api.visor.vin/v1/facets?")
+		and "postal_code=80202" in entry["request_url"]
 		for entry in envelope["entries"].values()
 	)
 	assert all(
 		item.retrieved_at == "2026-07-20T00:00:00+00:00"
 		for item in result.collection.responses
 	)
+	assert all(item.request_url for item in result.collection.responses)
 
 
 def test_normal_rerun_uses_cache_without_api_calls(cache_dir):
@@ -115,7 +121,7 @@ def test_normal_rerun_uses_cache_without_api_calls(cache_dir):
 	second = cached_level1_facets(client, query(), cache_dir=cache_dir)
 
 	assert second.cache_used is True
-	assert len(client.calls) == 5
+	assert len(client.calls) == 4
 	assert second.collection == first.collection
 
 
@@ -127,14 +133,14 @@ def test_forced_refresh_replaces_every_response(cache_dir):
 	forced = cached_level1_facets(client, query(), cache_dir=cache_dir, force=True)
 
 	assert forced.cache_used is False
-	assert len(client.calls) == 10
+	assert len(client.calls) == 8
 	assert forced.cache_path.read_text(encoding="utf-8") != first_payload
 	values = []
 	for item in forced.collection.responses[:3]:
 		metric = item.response.data.facets["trim"][0].metric
 		assert metric is not None
 		values.append(metric.value)
-	assert values == [6, 7, 8]
+	assert values == [5, 6, 7]
 	assert forced.collection.years[0].trims[0].active_price_stats is not None
 
 
@@ -172,7 +178,7 @@ def test_complete_query_changes_use_a_different_cache(cache_dir):
 	second = cached_level1_facets(client, changed, cache_dir=cache_dir)
 
 	assert first.cache_path != second.cache_path
-	assert len(client.calls) == 10
+	assert len(client.calls) == 8
 
 
 def test_cache_expires_after_the_local_calendar_day(cache_dir):
@@ -201,4 +207,4 @@ def test_cache_expires_after_the_local_calendar_day(cache_dir):
 	assert first.cache_used is False
 	assert same_day.cache_used is True
 	assert next_day.cache_used is False
-	assert len(client.calls) == 10
+	assert len(client.calls) == 8
