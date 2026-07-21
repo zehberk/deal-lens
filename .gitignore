@@ -33,7 +33,7 @@ output/*
 .session/*
 
 # Local cache files
-cache/*.cache
+cache/*
 !cache/kbb.cache
 cache/visor-api-test/
 
