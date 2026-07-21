@@ -1,0 +1,38 @@
+@page { size: A4; margin: 12mm; }
+* { box-sizing: border-box; }
+body { margin: 0; color: #18212b; font: 9pt/1.35 "Segoe UI", Arial, sans-serif; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+header { border-bottom: 2px solid #163a5f; padding-bottom: 8px; }
+.title-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.title-row img { width: 135px; height: 40px; object-fit: contain; object-position: right center; }
+.report-title { min-width: 0; }
+.eyebrow { margin: 0 0 2px; color: #40729f; font-size: 8pt; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+h1 { margin: 0; font-size: 21pt; font-weight: 650; }
+h2 { margin: 13px 0 6px; color: #163a5f; font-size: 11pt; }
+.scope { margin: 4px 0 0; color: #52606d; }
+.snapshot { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 10px 0; }
+.snapshot div { display: grid; grid-template-rows: 28px 25px; min-height: 58px; padding: 7px; background: #f1f5f8; border-top: 3px solid #8ca5bb; }
+.snapshot span, .snapshot small, td small, th small { display: block; color: #607080; font-size: 7pt; }
+.snapshot span { align-self: start; line-height: 1.25; }
+.snapshot strong { display: flex; align-items: center; font-size: 13pt; line-height: 1; }
+.snapshot .confidence.high { border-color: #2f855a; }
+.snapshot .confidence.moderate { border-color: #c58b1a; }
+.snapshot .confidence.low { border-color: #c2413b; }
+table { width: 100%; border-collapse: collapse; font-size: 7.7pt; }
+thead { display: table-header-group; }
+tr { break-inside: avoid; }
+th { padding: 5px; color: #fff; background: #294f73; text-align: right; vertical-align: bottom; }
+th small { color: #d9e7f2; font-weight: 400; }
+th:first-child, td:first-child { text-align: left; }
+td { padding: 5px; border-bottom: 1px solid #dbe3ea; text-align: right; vertical-align: top; }
+tbody tr:nth-child(even) { background: #f7f9fb; }
+.table-note { margin: 5px 0 0; color: #586775; font-size: 7.2pt; }
+.lower-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; break-inside: avoid; }
+ul { margin: 4px 0; padding-left: 16px; }
+li { margin-bottom: 3px; }
+footer { margin-top: 12px; padding-top: 7px; border-top: 1px solid #aebdca; color: #586775; font-size: 7pt; }
+footer h2 { margin-top: 0; }
+footer p { margin: 3px 0; }
+footer span { display: block; }
+.source { margin: 5px 0; }
+.source span { overflow-wrap: anywhere; }
