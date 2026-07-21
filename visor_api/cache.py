@@ -6,14 +6,14 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from visor_api.adapter import adapt_search_response
 from visor_api.query import VisorListingQuery
 from visor_api.models import FacetResponse, ListingSearchResponse
 
 
-CACHE_SCHEMA_VERSION = 3
+CACHE_SCHEMA_VERSION = 4
 
 
 class ListingSearchClient(Protocol):
@@ -53,6 +53,7 @@ def cached_listing_search(
 	max_listings: int = 10,
 	force: bool = False,
 	include_projection: bool = False,
+	clock: Callable[[], datetime] | None = None,
 ) -> CachedSearchResult:
 	"""Return a cached search or fetch and atomically replace its cache file.
 
@@ -63,6 +64,8 @@ def cached_listing_search(
 		raise ValueError("max_listings must be greater than zero")
 	if query.unsupported:
 		raise ValueError(f"unsupported query options: {sorted(query.unsupported)}")
+	now = clock or (lambda: datetime.now(timezone.utc))
+	cache_date = _local_date(now())
 
 	request_params = query.api_params(include_projection=include_projection)
 	market_filters = query.market_filters()
@@ -79,6 +82,7 @@ def cached_listing_search(
 			"facets_response" in envelope
 			and envelope.get("metadata", {}).get("cache_schema")
 			== CACHE_SCHEMA_VERSION
+			and envelope.get("metadata", {}).get("cache_date") == cache_date
 			and set(cached_trim_facets) == set(selected_trims)
 		):
 			response = ListingSearchResponse.from_dict(envelope["response"])
@@ -104,13 +108,13 @@ def cached_listing_search(
 		request_params,
 		max_listings=max_listings,
 	)
-	listing_retrieved_at = datetime.now(timezone.utc).isoformat()
+	listing_retrieved_at = now().isoformat()
 	facet_params = {
 		**market_filters,
 		"facets": "model,trim,days_on_market",
 	}
 	facets_response = client.filter_facets_model(facet_params)
-	facet_retrieved_at = datetime.now(timezone.utc).isoformat()
+	facet_retrieved_at = now().isoformat()
 	trim_facet_params = {
 		trim: {**market_filters, "trim": (trim,), "facets": "days_on_market"}
 		for trim in selected_trims
@@ -119,10 +123,11 @@ def cached_listing_search(
 	trim_facets_retrieved_at = {}
 	for trim, params in trim_facet_params.items():
 		trim_facets_responses[trim] = client.filter_facets_model(params)
-		trim_facets_retrieved_at[trim] = datetime.now(timezone.utc).isoformat()
+		trim_facets_retrieved_at[trim] = now().isoformat()
 	metadata = {
 		"provider": "visor_api",
 		"cache_schema": CACHE_SCHEMA_VERSION,
+		"cache_date": cache_date,
 		"fingerprint": fingerprint,
 		"query": _json_query(request_params),
 		"market_filters": _json_query(market_filters),
@@ -229,3 +234,9 @@ def _json_query(params: dict[str, str | tuple[str, ...]]) -> dict[str, Any]:
 		name: list(value) if isinstance(value, tuple) else value
 		for name, value in params.items()
 	}
+
+
+def _local_date(value: datetime) -> str:
+	if value.tzinfo is None or value.utcoffset() is None:
+		raise ValueError("listing cache clock must return an aware datetime")
+	return value.astimezone().date().isoformat()

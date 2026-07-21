@@ -33,7 +33,7 @@ output/*
 .session/*
 
 # Local cache files
-cache/*.cache
+cache/*
 !cache/kbb.cache
 cache/visor-api-test/
 
@@ -74,3 +74,4 @@ tests/visor_authenticated/*
 !tests/visor_authenticated/sold_inventory_experiments/
 !tests/visor_authenticated/sold_inventory_experiments/*.py
 !tests/visor_authenticated/sold_inventory_experiments/*.md
+issue-226-level-1-task-breakdown.txt

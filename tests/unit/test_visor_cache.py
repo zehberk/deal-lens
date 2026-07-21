@@ -3,6 +3,7 @@ import shutil
 import uuid
 
 from collections.abc import Iterator
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -56,7 +57,7 @@ class FakeClient:
 	) -> FacetResponse:
 		self.facet_calls.append(params)
 		trims = params.get("trim", ())
-		trim = trims[0] if len(trims) == 1 else None
+		trim = trims[0] if isinstance(trims, tuple) and len(trims) == 1 else ""
 		total, mean, median = {
 			"LX": (406, 50.0, 25),
 			"Sport": (427, 54.0, 27),
@@ -234,3 +235,31 @@ def test_search_without_selected_trims_uses_only_overall_facets(cache_dir):
 	}]
 	assert result.trim_facets_responses == {}
 	assert result.payload["metadata"]["site_info"]["days_on_market"]["by_trim"] == {}
+
+
+def test_listing_cache_expires_after_the_local_calendar_day(cache_dir):
+	client = FakeClient()
+	local_zone = timezone(timedelta(hours=-6))
+	cached_listing_search(
+		client,
+		QUERY,
+		cache_dir=cache_dir,
+		clock=lambda: datetime(2026, 7, 20, 8, tzinfo=local_zone),
+	)
+	same_day = cached_listing_search(
+		client,
+		QUERY,
+		cache_dir=cache_dir,
+		clock=lambda: datetime(2026, 7, 20, 23, 59, tzinfo=local_zone),
+	)
+	next_day = cached_listing_search(
+		client,
+		QUERY,
+		cache_dir=cache_dir,
+		clock=lambda: datetime(2026, 7, 21, 0, 1, tzinfo=local_zone),
+	)
+
+	assert same_day.cache_used is True
+	assert next_day.cache_used is False
+	assert len(client.calls) == 2
+	assert len(client.facet_calls) == 6

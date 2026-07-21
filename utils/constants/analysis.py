@@ -12,7 +12,7 @@ KBB_LOOKUP_TRIM_URL = KBB_LOOKUP_BASE_URL + "{trim}/"
 KBB_VARIANT_CACHE = Path("cache") / "kbb.cache"
 PRICING_CACHE = Path("cache") / "pricing.cache"
 ANALYSIS_CACHE = Path("cache") / "analysis.cache"
-CACHE_TTL = timedelta(days=7)
+KBB_CACHE_TTL = timedelta(days=7)
 
 BAD_STRINGS = {"", "unavailable", "n/a", "none", "null", "-", "not specified"}
 DRIVETRAINS = {"4x4", "4wd", "2wd", "4xe", "awd", "rwd"}

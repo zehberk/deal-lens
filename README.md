@@ -94,6 +94,11 @@ Cached listing searches request model, trim, and days-on-market facets for the
 overall filtered market. When a search explicitly selects trims, DealLens also
 requests days-on-market facets separately for each selected trim and preserves the
 individual queries and responses alongside the overall market result.
+
+Facet-native Level 1 reports treat user-provided trims as market restrictions.
+Every active and recently sold query applies the selected trims, so the report
+contains only those trim buckets. Omit the trim filter to discover and compare all
+trims returned for the model market.
 The saved DealLens metadata also records the logical `/v1/listings` query and every
 overall or per-trim `/v1/facets` query with the UTC time its response was retrieved.
 Cache hits retain the original retrieval times.
