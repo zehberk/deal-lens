@@ -28,19 +28,16 @@ def calculate_market_confidence(
 	active_days_supported = _supported_count(
 		buckets, lambda bucket: bucket.active_days_on_market_stats, minimum_count
 	)
-	recent_sales_supported = _supported_count(
-		buckets,
-		lambda bucket: bucket.recently_sold_days_on_market_stats,
-		minimum_count,
+	recent_sales_supported = sum(
+		1 for bucket in buckets
+		if (bucket.recently_sold_inventory_count or 0) >= minimum_count
 	)
 	price_missing = _missing_rate(buckets, lambda bucket: bucket.active_price_stats)
 	mileage_missing = _missing_rate(buckets, lambda bucket: bucket.active_mileage_stats)
 	active_days_missing = _missing_rate(
 		buckets, lambda bucket: bucket.active_days_on_market_stats
 	)
-	recent_sales_missing = _missing_rate(
-		buckets, lambda bucket: bucket.recently_sold_days_on_market_stats
-	)
+	recent_sales_missing = None
 	price_dispersion = _maximum_cv(buckets, lambda bucket: bucket.active_price_stats)
 	mileage_dispersion = _maximum_cv(
 		buckets, lambda bucket: bucket.active_mileage_stats

@@ -108,6 +108,7 @@ class MarketQueryProvenance:
 	filters: dict[str, str | tuple[str, ...]]
 	minimum_metric_count: int
 	retrieved_at: str
+	request_url: str | None = None
 
 	def __post_init__(self) -> None:
 		if not self.metric.strip():
@@ -116,6 +117,8 @@ class MarketQueryProvenance:
 			raise ValueError("endpoint cannot be empty")
 		_validate_count(self.minimum_metric_count, "minimum_metric_count")
 		_validate_timestamp(self.retrieved_at)
+		if self.request_url is not None and not self.request_url.startswith(("http://", "https://")):
+			raise ValueError("request_url must be an absolute HTTP URL")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -209,6 +212,7 @@ class MarketSnapshot:
 					filters=_query_filters(item["filters"]),
 					minimum_metric_count=item["minimum_metric_count"],
 					retrieved_at=item["retrieved_at"],
+					request_url=item.get("request_url"),
 				)
 				for item in value["queries"]
 			),

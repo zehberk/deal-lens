@@ -19,6 +19,7 @@ from visor_api.query import VisorListingQuery
 TRIM_BUCKET_NOT_RETURNED = "trim_bucket_not_returned"
 METRIC_NOT_RETURNED = "metric_not_returned"
 METRIC_VALUE_UNAVAILABLE = "metric_value_unavailable"
+METRIC_NOT_REQUESTED = "metric_not_requested"
 
 
 class FacetClient(Protocol):
@@ -37,6 +38,7 @@ class RetrievedLevel1Facet:
 	response: FacetResponse
 	retrieved_at: str
 	usage_headers: dict[str, str] = field(default_factory=dict)
+	request_url: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -86,6 +88,7 @@ def collect_level1_facets(
 			query=planned_query,
 			response=response,
 			retrieved_at=_aware_isoformat(now()),
+			request_url=planned_query.request_url(),
 		))
 
 	return assemble_level1_facets(tuple(retrieved))
@@ -115,28 +118,27 @@ def _merge_year(
 	}
 	price_response = by_key[(MarketCohort.ACTIVE, "price.median")]
 	active_days_response = by_key[(MarketCohort.ACTIVE, "days_on_market.median")]
-	sold_days_response = by_key[(MarketCohort.RECENTLY_SOLD, "days_on_market.median")]
+	sold_response = by_key[(MarketCohort.RECENTLY_SOLD, "count")]
 
 	price = _trim_map(price_response)
 	active_days = _trim_map(active_days_response)
-	sold_days = _trim_map(sold_days_response)
-	trim_names = sorted({*price, *active_days, *sold_days}, key=str.casefold)
+	sold = _trim_map(sold_response)
+	trim_names = sorted({*price, *active_days, *sold}, key=str.casefold)
 	trims = tuple(
 		_merge_trim(
 			year,
 			trim,
 			price.get(trim),
 			active_days.get(trim),
-			sold_days.get(trim),
+			sold.get(trim),
 			_enrichment_response(year, trim, MarketCohort.ACTIVE, responses),
-			_enrichment_response(year, trim, MarketCohort.RECENTLY_SOLD, responses),
 		)
 		for trim in trim_names
 	)
 	return Level1YearFacetResult(
 		year=year,
 		active_inventory_count=price_response.data.total,
-		recently_sold_inventory_count=sold_days_response.data.total,
+		recently_sold_inventory_count=sold_response.data.total,
 		trims=trims,
 	)
 
@@ -148,14 +150,12 @@ def _merge_trim(
 	active_days: FacetValue | None,
 	sold_days: FacetValue | None,
 	active_stats: FacetResponse | None,
-	sold_stats: FacetResponse | None,
 ) -> Level1TrimFacetBucket:
 	active_count = price.count if price is not None else (
 		active_days.count if active_days is not None else None
 	)
 	price_value, price_reason = _metric_value(price)
 	active_days_value, active_days_reason = _metric_value(active_days)
-	sold_days_value, sold_days_reason = _metric_value(sold_days)
 	return Level1TrimFacetBucket(
 		year=year,
 		trim=trim,
@@ -163,18 +163,16 @@ def _merge_trim(
 		recently_sold_inventory_count=(sold_days.count if sold_days is not None else None),
 		active_price_median=price_value,
 		active_days_on_market_median=active_days_value,
-		recently_sold_days_on_market_median=sold_days_value,
+		recently_sold_days_on_market_median=None,
 		active_price_missing_reason=price_reason,
 		active_days_on_market_missing_reason=active_days_reason,
-		recently_sold_days_on_market_missing_reason=sold_days_reason,
+		recently_sold_days_on_market_missing_reason=METRIC_NOT_REQUESTED,
 		active_price_stats=(active_stats.data.stats.get("price") if active_stats else None),
 		active_mileage_stats=(active_stats.data.stats.get("miles") if active_stats else None),
 		active_days_on_market_stats=(
 			active_stats.data.stats.get("days_on_market") if active_stats else None
 		),
-		recently_sold_days_on_market_stats=(
-			sold_stats.data.stats.get("days_on_market") if sold_stats else None
-		),
+		recently_sold_days_on_market_stats=None,
 	)
 
 
@@ -222,7 +220,11 @@ def _validate_response(query: Level1FacetQuery, response: FacetResponse) -> None
 	requested_facets = set(query.facets.split(","))
 	if not requested_facets.issubset(response.meta.facets):
 		raise Level1FacetResponseError("facet response metadata does not match the query")
-	if "trim" in requested_facets and "trim" not in response.data.facets:
+	if (
+		response.data.total > 0
+		and "trim" in requested_facets
+		and "trim" not in response.data.facets
+	):
 		raise Level1FacetResponseError("facet response is missing trim buckets")
 
 

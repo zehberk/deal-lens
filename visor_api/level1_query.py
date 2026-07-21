@@ -2,6 +2,7 @@
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from urllib.parse import urlencode
 
 from analysis.level1_models import MarketCohort
 from visor_api.client import QueryValue
@@ -12,6 +13,7 @@ LEVEL1_FACETS = "trim"
 LEVEL1_FACET_VALUE_LIMIT = 100
 LEVEL1_FACET_SORT = "-count"
 LEVEL1_RECENT_SOLD_DAYS = 14
+LEVEL1_FACET_ENDPOINT = "https://api.visor.vin/v1/facets"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -36,6 +38,15 @@ class Level1FacetQuery:
 		if self.facet_value_limit is not None:
 			params["facet_value_limit"] = self.facet_value_limit
 		return params
+
+	def request_url(self) -> str:
+		"""Return the complete credential-free API URL for provenance."""
+		encoded = {
+			name: ",".join(str(item) for item in value)
+			if isinstance(value, (list, tuple)) else value
+			for name, value in self.api_params().items()
+		}
+		return f"{LEVEL1_FACET_ENDPOINT}?{urlencode(encoded)}"
 
 
 def build_level1_facet_query_plan(
@@ -76,7 +87,7 @@ def build_level1_facet_query_plan(
 			Level1FacetQuery(
 				year=year,
 				cohort=MarketCohort.RECENTLY_SOLD,
-				metric="days_on_market.median",
+				metric="count",
 				filters={
 					**base_filters,
 					"year": str(year),
@@ -99,7 +110,7 @@ def build_level1_trim_enrichment_query_plan(
 	for year, trims in sorted(trims_by_year.items()):
 		for trim in sorted(set(trims), key=str.casefold):
 			trim_filters = {**base_filters, "year": str(year), "trim": (trim,)}
-			plan.extend((
+			plan.append(
 				Level1FacetQuery(
 					year=year,
 					cohort=MarketCohort.ACTIVE,
@@ -107,19 +118,8 @@ def build_level1_trim_enrichment_query_plan(
 					filters=trim_filters,
 					facets="price,miles,days_on_market",
 					facet_value_limit=None,
-				),
-				Level1FacetQuery(
-					year=year,
-					cohort=MarketCohort.RECENTLY_SOLD,
-					metric="count",
-					filters={
-						**trim_filters,
-						"sold_within_days": LEVEL1_RECENT_SOLD_DAYS,
-					},
-					facets="days_on_market",
-					facet_value_limit=None,
-				),
-			))
+				)
+			)
 	return tuple(plan)
 
 

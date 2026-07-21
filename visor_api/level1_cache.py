@@ -24,7 +24,7 @@ from visor_api.models import FacetResponse
 from visor_api.query import VisorListingQuery
 
 
-LEVEL1_CACHE_SCHEMA_VERSION = 2
+LEVEL1_CACHE_SCHEMA_VERSION = 3
 
 
 class CachedFacetClient(Protocol):
@@ -116,9 +116,11 @@ def _fetch_queries(
 			response=response,
 			retrieved_at=retrieved_at,
 			usage_headers=usage_headers,
+			request_url=planned_query.request_url(),
 		))
 		entries[fingerprint] = {
 			"query": _json_query(planned_query.api_params()),
+			"request_url": planned_query.request_url(),
 			"retrieved_at": retrieved_at,
 			"usage_headers": usage_headers,
 			"response": response.to_dict(),
@@ -167,6 +169,7 @@ def _load_entries(
 				response=FacetResponse.from_dict(entry["response"]),
 				retrieved_at=entry["retrieved_at"],
 				usage_headers=dict(entry.get("usage_headers", {})),
+				request_url=entry.get("request_url") or planned_query.request_url(),
 			))
 		return tuple(responses)
 	except (KeyError, TypeError, ValueError):
