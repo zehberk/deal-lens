@@ -25,35 +25,39 @@
 			<div class="confidence {{ snapshot.confidence.level.value }}"><span>Market confidence</span><strong>{{ snapshot.confidence.level.value | title }}</strong></div>
 		</section>
 
-		<section>
+		<section class="comparison">
 			<h2>Year and trim comparison</h2>
 			<table>
 				<thead><tr><th>Year / trim</th><th>Active<small>vehicles</small></th><th>Market share<small>of active inventory</small></th><th>Median asking price</th><th>Median active age<small>current listings</small></th><th>Sold<small>last 14 days</small></th><th>KBB benchmark<small>asking difference</small></th></tr></thead>
 				<tbody>
 				{% for row in rows %}
 					<tr>
-						<td><strong>{{ row.year }} {{ row.trim }}</strong></td>
+						<td><strong><a class="listing-link" href="{{ row.listing_url }}">{{ row.year }} {{ row.trim }}</a></strong></td>
 						<td>{{ row.active_count }}</td><td>{{ format_percent(row.active_share) }}</td>
 						<td>{{ format_money(row.price) }}</td><td>{{ format_number(row.active_days) }} days</td>
-						<td>{{ row.sold_count }}</td>
+						<td>{{ row.sold_count }}<small>{{ format_percent(row.activity_ratio) }} of active</small><progress class="activity-track" max="1" value="{{ row.activity_ratio if row.activity_ratio is not none else 0 }}"></progress></td>
 						<td>{% if row.kbb_benchmark is not none %}{{ format_money(row.kbb_benchmark) }} {{ row.kbb_label }}<small>{{ format_money(row.price_delta) }} asking difference</small>{% else %}—<small>KBB unavailable</small>{% endif %}</td>
 					</tr>
 				{% endfor %}
 				</tbody>
 			</table>
-			<p class="table-note"><strong>Active</strong> is the number currently listed; <strong>market share</strong> is that trim’s portion of all active inventory. <strong>Median asking price</strong> is the middle current list price. <strong>Median active age</strong> is how long current listings have been advertised. <strong>KBB benchmark</strong> uses FMV for used/certified-only searches and FPP for new-only searches; the difference is median asking price minus that benchmark.</p>
+			<p class="table-note"><strong>Active</strong> is the number currently listed; <strong>market share</strong> is that trim’s portion of all active inventory. <strong>Median asking price</strong> is the middle current list price. <strong>Median active age</strong> is how long current listings have been advertised. <strong>KBB benchmark</strong> uses local fair purchase price (FPP) when available, then national FPP, then MSRP; the difference is median asking price minus that benchmark.</p>
 		</section>
+
+		<div class="market-visuals">
+			<section class="price-position"><h2>Trim-level price position</h2><p>Active inventory grouped by how each year-and-trim median asking price compares with its KBB benchmark. These are market groups, not ratings of individual listings.</p><div class="position-bins">{% for bin in price_position_bins %}<div class="{{ bin.name }}"><strong>{{ bin.label }}</strong><span>{{ bin.trim_count }} trim group{% if bin.trim_count != 1 %}s{% endif %}</span><span>{{ bin.active_count }} active · {{ format_percent(bin.active_share) }}</span></div>{% endfor %}</div></section>
+			<section class="market-ranges"><h2>Market ranges</h2><p>Each bar shows where the median falls between the lowest and highest returned values.</p>{% for range in market_ranges %}<div class="range-row"><strong>{{ range.label }}</strong><progress class="range-track" max="100" value="{{ range.position }}"></progress><div class="range-labels"><span>{{ range.minimum }}</span><span>Median {{ range.median }}</span><span>{{ range.maximum }}</span></div></div>{% endfor %}</section>
+		</div>
 
 		<div class="lower-grid">
 			<section><h2>Market observations</h2><ul>{% for item in observations %}<li>{{ item }}</li>{% endfor %}</ul></section>
-			<section><h2>Confidence and limitations</h2><p><strong>{{ snapshot.confidence.level.value | title }} confidence.</strong> Metrics require at least {{ snapshot.confidence.minimum_metric_count }} samples per bucket.</p>{% if limitations %}<ul>{% for item in limitations %}<li>{{ item }}</li>{% endfor %}</ul>{% else %}<p>No material aggregate-data limitations were detected.</p>{% endif %}</section>
+			<section><h2>How reliable is this report?</h2><p><strong>{{ snapshot.confidence.level.value | title }} confidence.</strong> {{ confidence_summary }}</p><p>A year-and-trim comparison needs usable data from at least {{ snapshot.confidence.minimum_metric_count }} matching vehicles to be considered well supported.</p>{% if limitations %}<ul>{% for item in limitations %}<li>{{ item }}</li>{% endfor %}</ul>{% else %}<p>No major data gaps were found.</p>{% endif %}</section>
 		</div>
 
 		<footer>
 			<h2>Sources and retrieval</h2>
-			<p>Visor API aggregate facets and KBB year/trim valuations. Active age describes current listings; recent sales count vehicles sold within the prior 14 days.</p>
-			{% for item in retrievals %}<div class="source"><strong>{{ item.cohort }} · {{ item.metric }}</strong><span>{{ item.request_url }}</span><span>Retrieved {{ format_timestamp(item.retrieved_at) }}</span></div>{% endfor %}
-			{% for source in kbb_sources %}<div class="source"><strong>KBB</strong><span>{{ source }}</span></div>{% endfor %}
+			<div class="source-group"><h3>Visor API calls</h3>{% for item in visor_sources %}<div class="source"><span>{{ item.endpoint }} — {{ item.call_count }} call{% if item.call_count != 1 %}s{% endif %}</span></div>{% endfor %}<p>Vehicle inventory, asking-price, listing-age, and recent-sales data provided by the Visor Vehicle Market Data API.</p></div>
+			<div class="source-group"><h3>Kelley Blue Book®</h3>{% for source in kbb_sources %}<div class="source"><span>{{ source }}</span></div>{% endfor %}<p>Vehicle MSRP and Fair Purchase Price data provided by Kelley Blue Book and accessed through KBB.com.</p></div>
 			<p>Report generated {{ format_timestamp(snapshot.generated_at) }}.</p>
 		</footer>
 	</body>

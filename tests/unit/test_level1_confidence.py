@@ -104,16 +104,18 @@ def test_complete_supported_market_has_high_confidence():
 	assert result.limitations == ()
 
 
-def test_missing_sparse_and_dispersed_data_reduce_confidence():
+def test_missing_data_reduces_confidence_without_treating_market_variation_as_error():
 	result = calculate_market_confidence(
 		collection(sold_count=2, price_missing=5, price_stddev=75),
 		kbb(),
 	)
 
-	assert result.level is ConfidenceLevel.LOW
-	assert "sparse_recent_sales" in result.limitations
+	assert result.level is ConfidenceLevel.MODERATE
 	assert "price_missing_rate_above_20_percent" in result.limitations
-	assert "high_price_dispersion" in result.limitations
+	assert "sparse_recent_sales" not in result.limitations
+	assert "high_price_dispersion" not in result.limitations
+	assert result.recent_sales_supported_bucket_count == 0
+	assert result.maximum_price_coefficient_of_variation == 0.75
 
 
 def test_missing_kbb_mapping_is_explicit_and_low_confidence():

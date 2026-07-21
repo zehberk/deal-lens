@@ -111,7 +111,13 @@ async def get_or_fetch_national_pricing(
     page: Page, make: str, model: str, model_slug: str, year: str, cache_entries: dict
 ) -> tuple[list[tuple[str, str, str, str, str, str]], str | None]:
     pricing_data = []
-    relevant_entries = get_relevant_entries(cache_entries, make, model, year)
+    relevant_entries = {
+        key: entry
+        for key, entry in get_relevant_entries(
+            cache_entries, make, model, year
+        ).items()
+        if str(entry.get("model", "")).casefold() == model.casefold()
+    }
 
     all_fresh = bool(relevant_entries) and all(
         is_natl_fresh(e) for e in relevant_entries.values()
@@ -199,7 +205,10 @@ async def get_or_fetch_national_pricing(
                     continue
                 table_trim = (await tds[0].inner_text()).strip()
                 msrp = (await tds[1].inner_text()).strip()
-                natl_fpp = None
+                natl_fpp = (
+                    (await tds[2].inner_text()).strip()
+                    if len(tds) >= 3 else None
+                )
 
             # Skips other placeholder values
             if not is_dollar_amount(msrp) and msrp != "TBD":
@@ -247,13 +256,34 @@ async def populate_pricing_for_year(
         page, make, model, model_slug, year, cache_entries
     )
 
-    # Error message first, then default message
-    if error:
-        logger.warning("KBB lookup failed for %s %s %s: %s", year, make, model, error)
-        return error
     if not natl_data:
-        logger.warning("KBB returned no pricing rows for %s %s %s", year, make, model)
-        return "No KBB data found"
+        logger.warning(
+            "KBB returned no national pricing rows for %s %s %s; "
+            "trying requested trim URLs directly",
+            year, make, model,
+        )
+        natl_source = KBB_LOOKUP_BASE_URL.format(
+            make=make_string_url_safe(make), model=model_slug, year=year
+        )
+        natl_data = [
+            (trim, None, None, natl_source, None, datetime.now().isoformat())
+            for trim in sorted(trims)
+        ]
+
+    prefix = f"{year} {make} {model}"
+    natl_data = [
+        (
+            table_trim[len(prefix):].strip()
+            if table_trim.casefold().startswith(prefix.casefold()) else table_trim,
+            msrp,
+            natl_fpp,
+            natl_source,
+            trim_source,
+            natl_ts,
+        )
+        for table_trim, msrp, natl_fpp, natl_source, trim_source, natl_ts
+        in natl_data
+    ]
 
     best_matches: set[str] = set()
     all_kbb_trims = [kbb_trim[0] for kbb_trim in natl_data]
@@ -265,14 +295,6 @@ async def populate_pricing_for_year(
             logger.warning("No KBB trim match for %s %s", year, trim)
 
     for table_trim, msrp, natl_fpp, natl_source, trim_source, natl_ts in natl_data:
-        prefix = f"{year} {make} {model}"
-        # If the pricing data is from the cache, strip the prefix
-        if table_trim.lower().startswith(prefix.lower()):
-            table_trim = table_trim.replace(prefix, "").strip()
-
-        # if table_trim not in trims:
-        # Look for a best match
-
         kbb_trim = f"{prefix} {table_trim}"
 
         fmr_low: int | None = None
@@ -284,13 +306,24 @@ async def populate_pricing_for_year(
 
         # only here do we call FMV
         if table_trim in best_matches:
+            local_trim = table_trim
+            if make_string_url_safe(table_trim) == model_slug:
+                previous_trim = _previous_local_trim(
+                    cache_entries, make, model, year
+                )
+                if previous_trim:
+                    local_trim = previous_trim
+                    logger.info(
+                        "Using prior-year KBB trim path %s for %s",
+                        local_trim, kbb_trim,
+                    )
             fmr_low, fmr_high, fpp_local, fmv, fpp_source = (
                 await get_or_fetch_local_pricing(
                     page,
                     year,
                     make,
                     model_slug,
-                    table_trim,
+                    local_trim,
                     kbb_trim,
                     cache_entries,
                     postal_code,
@@ -321,13 +354,14 @@ async def populate_pricing_for_year(
         entry["local_source"] = fpp_source
         entry["postal_code"] = postal_code
 
-        if natl_val is None:
+        if not any((entry["msrp"], natl_val, fpp_local)):
             entry["skip_reason"] = f"There is currently no pricing data for this trim."
             logger.warning("KBB pricing is incomplete for %s", kbb_trim)
         else:
+            entry.pop("skip_reason", None)
             logger.info(
-                "KBB pricing saved for %s: national_fpp=%s local_fpp=%s fmv=%s",
-                kbb_trim, natl_val, fpp_local, fmv,
+                "KBB pricing saved for %s: msrp=%s national_fpp=%s local_fpp=%s",
+                kbb_trim, entry["msrp"], natl_val, fpp_local,
             )
 
         entry["natl_timestamp"] = natl_ts
@@ -338,6 +372,35 @@ async def populate_pricing_for_year(
         year, make, model, len(best_matches),
     )
     return error
+
+
+def _previous_local_trim(
+    cache_entries: dict[str, dict],
+    make: str,
+    model: str,
+    year: str,
+) -> str | None:
+    """Return the sole local-pricing trim from the nearest prior model year."""
+    matches: dict[int, set[str]] = {}
+    target_year = int(year)
+    for key, entry in cache_entries.items():
+        if str(entry.get("model", "")).casefold() != model.casefold():
+            continue
+        if not entry.get("fpp_local") or not entry.get("local_source"):
+            continue
+        match = re.match(r"^(\d{4})\s+", key)
+        if not match or int(match.group(1)) >= target_year:
+            continue
+        entry_year = int(match.group(1))
+        prefix = f"{entry_year} {make} {model} "
+        if not key.casefold().startswith(prefix.casefold()):
+            continue
+        matches.setdefault(entry_year, set()).add(key[len(prefix):])
+    if not matches:
+        return None
+    nearest_year = max(matches)
+    trims = matches[nearest_year]
+    return next(iter(trims)) if len(trims) == 1 else None
 
 
 async def get_or_fetch_local_pricing(

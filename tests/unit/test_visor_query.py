@@ -61,6 +61,26 @@ def test_market_filters_exclude_listing_sort_and_projection():
 	}
 
 
+def test_normalized_filters_build_a_compatible_browser_url():
+	query = VisorListingQuery.from_options({
+		"make": "Honda",
+		"model": "Civic",
+		"year": "2024",
+		"trim": "Sport Touring",
+		"inventory_type": "used",
+		"min_price": "20000",
+		"postal_code": "80202",
+		"radius": "150",
+	})
+
+	url = query.browser_url()
+
+	assert url.startswith("https://visor.vin/search/listings?")
+	assert "make=Honda&model=Civic" in url
+	assert "car_type=used" in url
+	assert VisorListingQuery.from_url(url).filters == query.filters
+
+
 def test_sold_window_and_snapshot_date_are_preserved_as_market_filters():
 	query = VisorListingQuery.from_url(
 		"https://visor.vin/search/listings?make=Honda&model=Civic"

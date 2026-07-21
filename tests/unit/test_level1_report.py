@@ -13,7 +13,7 @@ from analysis.level1_models import (
 	RecentlySoldMetrics,
 	YearTrimSummary,
 )
-from analysis.level1_report import render_level1_html
+from analysis.level1_report import _format_percent, render_level1_html
 from utils.models import TrimValuation
 
 
@@ -148,12 +148,13 @@ def report_data():
 def test_report_contains_required_aggregate_sections_only():
 	snapshot, kbb = report_data()
 	html = render_level1_html(snapshot, kbb)
+	assert "$25,200 FPP" in html
 
 	for text in (
 		"Overall market snapshot",
 		"Year and trim comparison",
 		"Market observations",
-		"Confidence and limitations",
+		"How reliable is this report?",
 		"Sources and retrieval",
 		"Median of trim active-age medians",
 		"Median of trim asking-price medians",
@@ -161,11 +162,89 @@ def test_report_contains_required_aggregate_sections_only():
 		"This report covers used 2024 Honda Civics, within 100 mi radius of 80202.",
 		"Market share",
 		"KBB benchmark",
-		"https://api.visor.vin/v1/facets?make=Honda",
+		"Trim-level price position",
+		"Market ranges",
+		"33% of active",
+		"Near KBB",
+		"Well above KBB",
+		"widest selection among 2024 models",
+		"The Sport is the easiest trim to find",
+		"The 2024 LX trim sells the fastest",
+		"The 2024 LX tends to sit on the market the longest",
+		"https://api.visor.vin/v1/facets — 3 calls",
+		"Kelley Blue Book®",
+		"https://www.kbb.com/honda/civic/",
+		"data provided by Kelley Blue Book",
 	):
 		assert text in html
 	for forbidden in ("VIN", "Seller", "Deal rating", "Risk rating"):
 		assert forbidden not in html
+
+
+def test_report_falls_back_to_annotated_msrp():
+	snapshot, kbb = report_data()
+	first = kbb.matches[0]
+	valuation = replace(
+		first.valuation,
+		fpp_local=None,
+		fpp_natl=None,
+		fmv=None,
+	)
+	result = Level1KBBResult(
+		matches=(replace(first, valuation=valuation), *kbb.matches[1:]),
+		failures=(),
+	)
+
+	html = render_level1_html(snapshot, result)
+
+	assert "$27,000 (MSRP)" in html
+
+
+def test_report_explains_confidence_in_plain_language():
+	snapshot, kbb = report_data()
+	snapshot = replace(
+		snapshot,
+		confidence=replace(
+			snapshot.confidence,
+			level=ConfidenceLevel.MODERATE,
+			limitations=(
+				"price_samples_below_api_minimum",
+				"sparse_recent_sales",
+			),
+		),
+	)
+
+	html = render_level1_html(snapshot, kbb)
+
+	assert "some comparisons are based on limited or inconsistent data" in html
+	assert "too few priced vehicles" in html
+	assert "very few recent sales" in html
+	assert "sample size" not in html
+	assert "bucket" not in html
+
+
+def test_report_groups_sources_instead_of_listing_each_request():
+	snapshot, kbb = report_data()
+
+	html = render_level1_html(snapshot, kbb)
+
+	assert html.count("https://api.visor.vin/v1/facets") == 1
+	assert "metric=price.median" not in html
+	assert html.count("https://www.kbb.com/honda/civic/") == 1
+	assert "2024/lx" not in html
+	assert 'href="https://visor.vin/search/listings?' in html
+	assert "trim=LX" in html
+	assert "car_type=used" in html
+	assert "geo_origin_value=80202" in html
+	assert 'style="' not in html
+	assert '<progress class="activity-track"' in html
+	assert '<progress class="range-track"' in html
+
+
+def test_market_share_below_one_percent_is_not_rounded_to_zero():
+	assert _format_percent(0.004) == "< 1%"
+	assert _format_percent(0) == "0%"
+	assert _format_percent(0.016) == "2%"
 
 
 def test_report_condenses_nonconsecutive_years_and_formats_kilometers():

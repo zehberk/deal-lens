@@ -9,9 +9,6 @@ from visor_api.models import FacetStats
 
 
 HIGH_MISSING_RATE = 0.20
-HIGH_DISPERSION_CV = 0.50
-
-
 def calculate_market_confidence(
 	facets: Level1FacetCollection,
 	kbb: Level1KBBResult,
@@ -50,8 +47,6 @@ def calculate_market_confidence(
 		limitations.append("price_samples_below_api_minimum")
 	if active_days_supported < len(buckets):
 		limitations.append("active_days_samples_below_api_minimum")
-	if recent_sales_supported < len(buckets):
-		limitations.append("sparse_recent_sales")
 	for name, rate in (
 		("price", price_missing),
 		("mileage", mileage_missing),
@@ -60,16 +55,12 @@ def calculate_market_confidence(
 	):
 		if rate is not None and rate > HIGH_MISSING_RATE:
 			limitations.append(f"{name}_missing_rate_above_20_percent")
-	if price_dispersion is not None and price_dispersion > HIGH_DISPERSION_CV:
-		limitations.append("high_price_dispersion")
-	if mileage_dispersion is not None and mileage_dispersion > HIGH_DISPERSION_CV:
-		limitations.append("high_mileage_dispersion")
 	if kbb_rate is not None and kbb_rate < 1:
 		limitations.append("kbb_mapping_incomplete")
 
 	if not buckets or price_supported == 0 or active_days_supported == 0:
 		level = ConfidenceLevel.LOW
-	elif recent_sales_supported == 0 or not mapped:
+	elif not mapped:
 		level = ConfidenceLevel.LOW
 	elif limitations:
 		level = ConfidenceLevel.MODERATE

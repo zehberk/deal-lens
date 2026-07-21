@@ -93,7 +93,7 @@ Unless the repository configuration says otherwise:
 
 - Use the existing `pytest` setup.
 - The project uses `pytest-asyncio` with automatic asyncio handling; do not add `@pytest.mark.asyncio` unless repository configuration requires it.
-- Always check the IDE Problems view for diagnostics in changed files before reporting completion. Pylance type checking is configured in `standard` mode; resolve every reported error and report the result.
+- Always check the IDE Problems view for diagnostics in changed files before reporting completion. This includes Pylance in `standard` mode and the VS Code HTML/CSS language-service diagnostics used for HTML, CSS, and Jinja templates. Resolve every reported error and report the result.
 - Add or update tests for changed behavior.
 - Mock external services in unit tests.
 - Use saved fixtures for API and legacy scraper payloads.
@@ -139,7 +139,7 @@ Before reporting completion:
 
 - Confirm the requested behavior is implemented.
 - Run relevant tests and report the exact result.
-- Check the IDE Problems view with Pylance in `standard` type-checking mode, resolve all errors reported for changed code, and report the result.
+- Check the IDE Problems view for every changed file, including Pylance in `standard` type-checking mode and VS Code HTML/CSS language-service diagnostics for templates and stylesheets. Resolve all reported errors and report the result.
 - Check that no secrets or user-specific data were added.
 - Note any compatibility impact on legacy scraper data.
 - Update documentation when setup, configuration, or behavior changed.

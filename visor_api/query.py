@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import parse_qsl, urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse
 
 
 LISTING_FIELDS = (
@@ -19,6 +19,14 @@ LEGACY_PARAMETER_NAMES = {
 	"miles_min": "min_mileage",
 	"miles_max": "max_mileage",
 	"zip": "postal_code",
+}
+
+BROWSER_PARAMETER_NAMES = {
+	"inventory_type": "car_type",
+	"min_price": "price_min",
+	"max_price": "price_max",
+	"min_mileage": "miles_min",
+	"max_mileage": "miles_max",
 }
 
 GEO_BROWSER_PARAMETERS = frozenset({
@@ -168,6 +176,37 @@ class VisorListingQuery:
 			for name, value in self.filters.items()
 			if name != "sort"
 		}
+
+	def browser_url(self) -> str:
+		"""Return a Visor listing-search URL for these normalized filters."""
+		filters = self.market_filters()
+		postal_code = filters.pop("postal_code", None)
+		radius = filters.pop("radius", None)
+		filters.pop("sold_within_days", None)
+		filters.pop("snapshot_date", None)
+		params: dict[str, str] = {}
+		for name, raw_value in filters.items():
+			browser_name = BROWSER_PARAMETER_NAMES.get(name, name)
+			values = raw_value if isinstance(raw_value, tuple) else (raw_value,)
+			if name == "inventory_type":
+				values = tuple({
+					"new": "new",
+					"used": "used",
+					"certified": "cpo",
+				}.get(str(value).casefold(), str(value)) for value in values)
+			params[browser_name] = ",".join(str(value) for value in values)
+		if postal_code:
+			params.update({
+				"geo_origin_kind": "postal_code",
+				"geo_origin_value": str(postal_code),
+			})
+		if radius:
+			params.update({
+				"geo_mode": "radius",
+				"geo_distance_value": str(radius),
+				"geo_distance_unit": "mi",
+			})
+		return f"https://visor.vin/search/listings?{urlencode(params)}"
 
 	def fingerprint(
 		self,
