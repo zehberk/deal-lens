@@ -113,7 +113,6 @@ def _visor_listing_url(snapshot: MarketSnapshot, year: int, trim: str) -> str:
 		"model": snapshot.scope.model,
 		"year": str(year),
 		"trim": trim,
-		"inventory_type": snapshot.scope.conditions,
 		**snapshot.scope.additional_filters,
 	}
 	geography = snapshot.scope.geography
@@ -204,7 +203,12 @@ def _range_visual(
 def _scope_summary(snapshot: MarketSnapshot) -> str:
 	scope = snapshot.scope
 	years = _format_years(scope.years)
-	conditions = _natural_join(tuple(item.lower() for item in scope.conditions))
+	condition_set = {item.casefold() for item in scope.conditions}
+	conditions = (
+		"the overall"
+		if condition_set >= {"new", "used", "certified"}
+		else _natural_join(tuple(item.lower() for item in scope.conditions))
+	)
 	if scope.selected_trims:
 		vehicle = (
 			f"{years} {scope.make} {scope.model} "
@@ -270,12 +274,7 @@ def _logo_data_uri(path: Path) -> str | None:
 def _kbb_benchmark(snapshot: MarketSnapshot, valuation) -> tuple[int | None, str | None]:
 	if valuation is None:
 		return None, None
-	conditions = {item.casefold() for item in snapshot.scope.conditions}
-	if conditions and conditions <= {"new"}:
-		return _kbb_purchase_benchmark(valuation)
-	if conditions and conditions <= {"used", "certified"}:
-		return _kbb_purchase_benchmark(valuation)
-	return None, None
+	return _kbb_purchase_benchmark(valuation)
 
 
 def _kbb_purchase_benchmark(valuation) -> tuple[int | None, str | None]:

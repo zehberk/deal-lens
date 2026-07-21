@@ -67,8 +67,29 @@ def test_previous_year_variation_supplies_sole_local_trim():
 	}
 
 	assert _previous_local_trim(
-		cache_entries, "Honda", "Civic Type R", "2025"
+		cache_entries, "Honda", "Civic Type R", "2025", "Type-R"
 	) == "Hatchback Sedan 4D"
+
+
+def test_previous_year_base_uses_kbb_base_body_style():
+	cache_entries = {
+		"2024 Subaru Outback Wagon 4D": {
+			"model": "Outback",
+			"fpp_local": 26_100,
+			"local_source": "https://kbb.com/subaru/outback/2024/wagon-4d/",
+		},
+		"2024 Subaru Outback Premium Wagon 4D": {
+			"model": "Outback",
+			"fpp_local": 28_400,
+			"local_source": (
+				"https://kbb.com/subaru/outback/2024/premium-wagon-4d/"
+			),
+		},
+	}
+
+	assert _previous_local_trim(
+		cache_entries, "Subaru", "Outback", "2025", "Base"
+	) == "Wagon 4D"
 
 
 async def test_missing_national_table_attempts_direct_local_trim(monkeypatch):

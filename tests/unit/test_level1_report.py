@@ -234,7 +234,7 @@ def test_report_groups_sources_instead_of_listing_each_request():
 	assert "2024/lx" not in html
 	assert 'href="https://visor.vin/search/listings?' in html
 	assert "trim=LX" in html
-	assert "car_type=used" in html
+	assert "car_type=" not in html
 	assert "geo_origin_value=80202" in html
 	assert 'style="' not in html
 	assert '<progress class="activity-track"' in html
@@ -263,3 +263,17 @@ def test_report_condenses_nonconsecutive_years_and_formats_kilometers():
 
 	assert "used 2021, 2023-2024, 2026 Honda Civics" in html
 	assert "within 75 km radius of V6B 1A1" in html
+
+
+def test_report_describes_blended_inventory_as_overall_market():
+	snapshot, kbb = report_data()
+	scope = replace(
+		snapshot.scope,
+		conditions=("new", "used", "certified"),
+	)
+
+	html = render_level1_html(replace(snapshot, scope=scope), kbb)
+
+	assert "This report covers the overall 2024 Honda Civics" in html
+	assert "$25,200 FPP" in html
+	assert "car_type=" not in html

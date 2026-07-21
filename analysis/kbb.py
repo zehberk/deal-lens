@@ -285,12 +285,12 @@ async def populate_pricing_for_year(
         in natl_data
     ]
 
-    best_matches: set[str] = set()
+    best_matches: dict[str, str] = {}
     all_kbb_trims = [kbb_trim[0] for kbb_trim in natl_data]
     for trim in trims:
         best_match = best_kbb_trim_match(trim, all_kbb_trims)
         if best_match:
-            best_matches.add(best_match)
+            best_matches.setdefault(best_match, trim)
         else:
             logger.warning("No KBB trim match for %s %s", year, trim)
 
@@ -306,10 +306,11 @@ async def populate_pricing_for_year(
 
         # only here do we call FMV
         if table_trim in best_matches:
+            requested_trim = best_matches[table_trim]
             local_trim = table_trim
             if make_string_url_safe(table_trim) == model_slug:
                 previous_trim = _previous_local_trim(
-                    cache_entries, make, model, year
+                    cache_entries, make, model, year, requested_trim
                 )
                 if previous_trim:
                     local_trim = previous_trim
@@ -379,9 +380,10 @@ def _previous_local_trim(
     make: str,
     model: str,
     year: str,
+    requested_trim: str,
 ) -> str | None:
-    """Return the sole local-pricing trim from the nearest prior model year."""
-    matches: dict[int, set[str]] = {}
+    """Match a requested trim to local pricing from the nearest prior year."""
+    matches: dict[int, list[str]] = {}
     target_year = int(year)
     for key, entry in cache_entries.items():
         if str(entry.get("model", "")).casefold() != model.casefold():
@@ -395,12 +397,14 @@ def _previous_local_trim(
         prefix = f"{entry_year} {make} {model} "
         if not key.casefold().startswith(prefix.casefold()):
             continue
-        matches.setdefault(entry_year, set()).add(key[len(prefix):])
+        trim = key[len(prefix):]
+        year_matches = matches.setdefault(entry_year, [])
+        if trim not in year_matches:
+            year_matches.append(trim)
     if not matches:
         return None
     nearest_year = max(matches)
-    trims = matches[nearest_year]
-    return next(iter(trims)) if len(trims) == 1 else None
+    return best_kbb_trim_match(requested_trim, matches[nearest_year])
 
 
 async def get_or_fetch_local_pricing(
