@@ -1,5 +1,6 @@
 """Adapt facet-native Level 1 trim buckets to the existing KBB workflow."""
 
+import logging
 import re
 
 from dataclasses import dataclass
@@ -13,6 +14,9 @@ from utils.common import make_string_url_safe
 from utils.constants import PRICING_CACHE
 from utils.models import TrimValuation
 from visor_api.level1_service import Level1FacetCollection
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -42,6 +46,7 @@ async def get_level1_kbb_valuations(
 	facets: Level1FacetCollection,
 	cache: dict,
 	*,
+	postal_code: str | None = None,
 	cache_path: Path = PRICING_CACHE,
 ) -> Level1KBBResult:
 	"""Return one cached KBB mapping for every unique Visor year/trim."""
@@ -51,9 +56,15 @@ async def get_level1_kbb_valuations(
 	stale_years = {
 		year: trims
 		for year, trims in trims_by_year.items()
-		if not _year_cache_covers_trims(entries, make, model, year, trims)
+		if not _year_cache_covers_trims(
+			entries, make, model, year, trims, postal_code
+		)
 	}
 	if stale_years:
+		logger.info(
+			"Refreshing KBB pricing for %s %s across %d model years",
+			make, model, len(stale_years),
+		)
 		request, browser, context, page = await create_kbb_browser()
 		try:
 			for year, trims in stale_years.items():
@@ -67,6 +78,7 @@ async def get_level1_kbb_valuations(
 					str(year),
 					entries,
 					set(trims),
+					postal_code,
 				)
 		finally:
 			await page.close()
@@ -74,7 +86,17 @@ async def get_level1_kbb_valuations(
 			await browser.close()
 			await request.dispose()
 			save_cache(cache, cache_path)
-	return map_level1_kbb_valuations(make, model, trims_by_year, entries)
+	result = map_level1_kbb_valuations(make, model, trims_by_year, entries)
+	logger.info(
+		"Level 1 KBB lookup completed for %s %s: %d matches, %d failures",
+		make, model, len(result.matches), len(result.failures),
+	)
+	for failure in result.failures:
+		logger.warning(
+			"Level 1 KBB value unavailable for %s %s: %s",
+			failure.year, failure.visor_trim, failure.reason,
+		)
+	return result
 
 
 def level1_year_trims(
@@ -132,6 +154,7 @@ def _year_cache_covers_trims(
 	model: str,
 	year: int,
 	trims: tuple[str, ...],
+	postal_code: str | None,
 ) -> bool:
 	year_entries = get_relevant_entries(entries, make, model, str(year))
 	display_to_key = _display_trim_keys(year, make, model, year_entries)
@@ -141,7 +164,7 @@ def _year_cache_covers_trims(
 		if matched is None:
 			return False
 		entry = year_entries[display_to_key[matched]]
-		if not is_entry_fresh(entry) or not (
+		if entry.get("postal_code") != postal_code or not is_entry_fresh(entry) or not (
 			entry.get("local_source") or entry.get("skip_reason")
 		):
 			return False

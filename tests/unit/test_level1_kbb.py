@@ -1,3 +1,5 @@
+import logging
+
 from datetime import datetime
 
 from analysis.level1_kbb import (
@@ -58,6 +60,7 @@ def entry(year, trim):
 		"fmv": 18_000,
 		"natl_source": f"https://kbb.com/honda/civic/{year}/",
 		"local_source": f"https://kbb.com/honda/civic/{year}/{trim.lower()}/",
+		"postal_code": "80202",
 	}
 	return value
 
@@ -100,7 +103,7 @@ def test_missing_year_is_recorded_instead_of_silently_dropped():
 	assert result.failures[0].reason == "kbb_trim_not_found"
 
 
-async def test_fresh_seven_day_cache_avoids_kbb_browser(monkeypatch):
+async def test_fresh_seven_day_cache_avoids_kbb_browser(monkeypatch, caplog):
 	cached_entry = entry(2023, "Sport")
 	cached_entry["natl_timestamp"] = datetime.now().isoformat()
 	cached_entry["local_timestamp"] = datetime.now().isoformat()
@@ -111,17 +114,20 @@ async def test_fresh_seven_day_cache_avoids_kbb_browser(monkeypatch):
 	monkeypatch.setattr(
 		"analysis.level1_kbb.create_kbb_browser", unexpected_browser
 	)
-	result = await get_level1_kbb_valuations(
-		"Honda",
-		"Civic",
-		Level1FacetCollection(
-			years=(collection().years[0],),
-			responses=(),
-		),
-		{"entries": {"2023 Honda Civic Sport": cached_entry}},
-	)
+	with caplog.at_level(logging.INFO, logger="analysis.level1_kbb"):
+		result = await get_level1_kbb_valuations(
+			"Honda",
+			"Civic",
+			Level1FacetCollection(
+				years=(collection().years[0],),
+				responses=(),
+			),
+			{"entries": {"2023 Honda Civic Sport": cached_entry}},
+			postal_code="80202",
+		)
 
 	assert result.matches[0].visor_trim == "Sport"
+	assert "1 matches, 0 failures" in caplog.text
 
 
 def test_kbb_cache_ttl_is_seven_days():

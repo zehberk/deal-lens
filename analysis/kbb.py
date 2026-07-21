@@ -1,4 +1,5 @@
-import json, re
+import json, logging, re
+import urllib.parse
 
 from datetime import datetime
 from playwright.async_api import (
@@ -28,6 +29,9 @@ from analysis.analysis_utils import (
     to_int,
 )
 from utils.common import make_string_url_safe
+
+
+logger = logging.getLogger(__name__)
 from utils.constants import *
 from utils.models import TrimValuation
 
@@ -114,6 +118,10 @@ async def get_or_fetch_national_pricing(
     )
 
     if all_fresh:
+        logger.info(
+            "Using %d cached national KBB rows for %s %s %s",
+            len(relevant_entries), year, make, model,
+        )
         for e in relevant_entries.values():
             pricing_data.append(
                 (
@@ -132,10 +140,12 @@ async def get_or_fetch_national_pricing(
         )
 
         await goto_with_retry(page, natl_url)
+        logger.info("Loaded national KBB page for %s %s %s", year, make, model)
 
         try:
             body = await page.inner_text("body")
             if "We're sorry, our experts haven't reviewed this car yet" in body:
+                logger.warning("KBB has not reviewed %s %s %s", year, make, model)
                 return (
                     pricing_data,
                     f"KBB does not have data for this trim: {year} {make} {model}",
@@ -149,6 +159,10 @@ async def get_or_fetch_national_pricing(
                 await table.first.wait_for(timeout=5000)
                 rows = await table.all()
             except TimeoutError as t2:
+                logger.warning(
+                    "KBB national pricing table was unavailable for %s %s %s",
+                    year, make, model,
+                )
                 return (
                     pricing_data,
                     f"KBB does not have data for this trim: {year} {make} {model}",
@@ -166,6 +180,10 @@ async def get_or_fetch_national_pricing(
             divs = await row.locator("div").all()
             if divs:
                 if len(divs) < 3:
+                    logger.warning(
+                        "Skipping incomplete KBB table row for %s %s %s: %d divs",
+                        year, make, model, len(divs),
+                    )
                     continue
 
                 table_trim = (await divs[0].inner_text()).strip()
@@ -174,6 +192,10 @@ async def get_or_fetch_national_pricing(
             else:
                 tds = await row.locator("td").all()
                 if len(tds) < 2:
+                    logger.warning(
+                        "Skipping incomplete KBB table row for %s %s %s: %d cells",
+                        year, make, model, len(tds),
+                    )
                     continue
                 table_trim = (await tds[0].inner_text()).strip()
                 msrp = (await tds[1].inner_text()).strip()
@@ -193,7 +215,15 @@ async def get_or_fetch_national_pricing(
                     datetime.now().isoformat(),
                 )
             )
+            if natl_fpp:
+                logger.info("Parsed national KBB pricing for %s %s", year, table_trim)
+            else:
+                logger.warning("National KBB FPP is missing for %s %s", year, table_trim)
 
+    logger.info(
+        "National KBB lookup completed for %s %s %s with %d rows",
+        year, make, model, len(pricing_data),
+    )
     return pricing_data, None
 
 
@@ -205,7 +235,12 @@ async def populate_pricing_for_year(
     year: str,
     cache_entries: dict,
     trims: set[str],
+    postal_code: str | None = None,
 ) -> str | None:
+    logger.info(
+        "Starting KBB pricing lookup for %s %s %s (%d requested trims)",
+        year, make, model, len(trims),
+    )
 
     # Get MSRP/National FPP first, will return only entries that need an FMV
     natl_data, error = await get_or_fetch_national_pricing(
@@ -214,8 +249,10 @@ async def populate_pricing_for_year(
 
     # Error message first, then default message
     if error:
+        logger.warning("KBB lookup failed for %s %s %s: %s", year, make, model, error)
         return error
     if not natl_data:
+        logger.warning("KBB returned no pricing rows for %s %s %s", year, make, model)
         return "No KBB data found"
 
     best_matches: set[str] = set()
@@ -224,6 +261,8 @@ async def populate_pricing_for_year(
         best_match = best_kbb_trim_match(trim, all_kbb_trims)
         if best_match:
             best_matches.add(best_match)
+        else:
+            logger.warning("No KBB trim match for %s %s", year, trim)
 
     for table_trim, msrp, natl_fpp, natl_source, trim_source, natl_ts in natl_data:
         prefix = f"{year} {make} {model}"
@@ -254,6 +293,7 @@ async def populate_pricing_for_year(
                     table_trim,
                     kbb_trim,
                     cache_entries,
+                    postal_code,
                 )
             )
         else:
@@ -279,13 +319,24 @@ async def populate_pricing_for_year(
         entry["fmv"] = fmv
         entry["natl_source"] = natl_source
         entry["local_source"] = fpp_source
+        entry["postal_code"] = postal_code
 
         if natl_val is None:
             entry["skip_reason"] = f"There is currently no pricing data for this trim."
+            logger.warning("KBB pricing is incomplete for %s", kbb_trim)
+        else:
+            logger.info(
+                "KBB pricing saved for %s: national_fpp=%s local_fpp=%s fmv=%s",
+                kbb_trim, natl_val, fpp_local, fmv,
+            )
 
         entry["natl_timestamp"] = natl_ts
         entry["local_timestamp"] = local_ts
 
+    logger.info(
+        "KBB pricing lookup completed for %s %s %s: %d matched trims",
+        year, make, model, len(best_matches),
+    )
     return error
 
 
@@ -297,11 +348,13 @@ async def get_or_fetch_local_pricing(
     trim: str,
     kbb_trim: str,
     cache_entries: dict[str, dict],
+    postal_code: str | None = None,
 ):
     entry = cache_entries.setdefault(kbb_trim, {})
 
     # Check cache first
-    if is_entry_fresh(entry):
+    if is_entry_fresh(entry) and entry.get("postal_code") == postal_code:
+        logger.info("Using cached local KBB pricing for %s", kbb_trim)
         return (
             entry.get("fmr_low"),
             entry.get("fmr_high"),
@@ -315,6 +368,9 @@ async def get_or_fetch_local_pricing(
     local_url = KBB_LOOKUP_TRIM_URL.format(
         make=safe_make, model=model_slug, year=year, trim=safe_trim
     )
+    if postal_code:
+        local_url = f"{local_url}?{urllib.parse.urlencode({'zip': postal_code})}"
+    logger.info("Loading local KBB pricing for %s", kbb_trim)
 
     fmr_low: int | None = None
     fmr_high: int | None = None
@@ -340,12 +396,19 @@ async def get_or_fetch_local_pricing(
         if depreciation_exists:
             depreciation_text = await page.inner_text("div.css-fbyg3h", timeout=10000)
     except TimeoutError as t:
-        print("Timeout: ", local_url)
-        print(t.message)
+        logger.warning("KBB local pricing timed out for %s: %s", kbb_trim, t.message)
 
     match = re.search(r"current resale value of \$([\d,]+)", depreciation_text)
     if match:
         fmv = int(match.group(1).replace(",", ""))
+    if fpp_local is None:
+        logger.warning("Local KBB FPP is missing for %s", kbb_trim)
+    if fmv is None:
+        logger.warning("KBB resale value is missing for %s", kbb_trim)
+    logger.info(
+        "Local KBB lookup completed for %s: local_fpp=%s fmv=%s",
+        kbb_trim, fpp_local, fmv,
+    )
 
     return fmr_low, fmr_high, fpp_local, fmv, local_url
 
@@ -373,8 +436,7 @@ async def get_price_advisor_values(
 
             await svg_page.close()
     except TimeoutError as t:
-        print("Timeout waiting for FMR and local FPP")
-        print(t.message)
+        logger.warning("Timed out waiting for KBB price-advisor values: %s", t.message)
 
     if price_values:
         fmr_text, fpp_text = price_values
