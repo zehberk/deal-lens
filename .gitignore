@@ -75,3 +75,4 @@ tests/visor_authenticated/*
 !tests/visor_authenticated/sold_inventory_experiments/*.py
 !tests/visor_authenticated/sold_inventory_experiments/*.md
 issue-226-level-1-task-breakdown.txt
+issue-226-level-2-task-breakdown.txt

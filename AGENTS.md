@@ -132,6 +132,9 @@ If the repository defines a different command, use that instead.
 - Keep changes scoped to the requested task.
 - Do not modify generated output files unless the task specifically concerns them.
 - When asked to make git commit messages, always follow Angular conventions and the 50/72 rule. Do not automatically commit when asked for the message only.
+- After every task that changes code, provide a suggested git commit message for
+  the entire uncommitted worktree. Follow Angular conventions and the 50/72 rule,
+  and do not commit unless explicitly asked.
 
 ## Completion Checklist
 
@@ -144,6 +147,8 @@ Before reporting completion:
 - Note any compatibility impact on legacy scraper data.
 - Update documentation when setup, configuration, or behavior changed.
 - Summarize changed files, important decisions, and remaining risks.
+- For code changes, include the suggested commit message covering all uncommitted
+  worktree changes.
 
 ## Important Links
 
