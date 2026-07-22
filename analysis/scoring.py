@@ -182,7 +182,10 @@ def rate_risk_level1(listing, price, compare_value) -> str:
 
 
 def adjust_deal_for_risk(
-    base_bin: str, risk: float, narrative: Optional[list[str]] = None
+    base_bin: str,
+    risk: float,
+    narrative: Optional[list[str]] = None,
+    favorable_evidence: bool = False,
 ) -> str:
     """
     Adjusts deal grading for level 2 based on the risk.
@@ -199,7 +202,9 @@ def adjust_deal_for_risk(
         return "Suspicious"
 
     idx = DEAL_ORDER.index(base_bin)
-    if risk <= 2:
+    if risk == 0 and favorable_evidence:
+        shift = -1 if idx > 0 else 0
+    elif risk <= 2:
         shift = 0
     elif risk <= 4:
         shift = 1
@@ -214,10 +219,14 @@ def adjust_deal_for_risk(
             )
         return "Bad"
 
-    new_deal = DEAL_ORDER[min(idx + shift, len(DEAL_ORDER) - 1)]
+    new_deal = DEAL_ORDER[max(0, min(idx + shift, len(DEAL_ORDER) - 1))]
 
     if narrative is not None:
-        if shift == 0:
+        if shift < 0:
+            narrative.append(
+                f"Originally rated {base_bin} based on price alone, but is now upgraded to {new_deal} due to very low calculated risk."
+            )
+        elif shift == 0:
             narrative.append(
                 f"Deal rating is fixed at {base_bin} based on price and {"low" if risk else "no"} risk factors."
             )
@@ -229,9 +238,9 @@ def adjust_deal_for_risk(
     return new_deal
 
 
-def rate_risk_level2(
+def calculate_risk_level2(
     carfax: CarfaxData, listing: dict, narrative: Optional[list[str]] = None
-) -> int:
+) -> float:
     """
     Scores multiple areas of the carfax report to return a risk level
 
@@ -242,12 +251,26 @@ def rate_risk_level2(
         Listing data containing at least "year" and "mileage" fields.
 
     Returns:
-        float: A continuous risk modifier between 0.0 and 10.0.
+        float: The raw, unclamped risk score. Negative values represent favorable
+        evidence that can support a one-bin deal upgrade.
     """
     score: float = score_title_status(carfax, narrative)
     score += score_mileage_use(carfax, listing, narrative)
     score += score_warranty_status(carfax, listing, narrative)
+    return score
+
+
+def rate_risk_level2(
+    carfax: CarfaxData, listing: dict, narrative: Optional[list[str]] = None
+) -> int:
+    """Return the displayed 0-10 risk score after preserving raw evidence internally."""
+    score = calculate_risk_level2(carfax, listing, narrative)
     return round(max(min(score, 10.0), 0.0))
+
+
+def supports_deal_upgrade(raw_risk: float) -> bool:
+    """Require substantial favorable evidence before improving a price-based bin."""
+    return raw_risk <= -2.0
 
 
 def score_title_status(

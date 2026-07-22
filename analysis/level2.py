@@ -6,9 +6,10 @@ from analysis.analysis_utils import get_report_dir
 from analysis.reporting import render_level2_pdf
 from analysis.scoring import (
     adjust_deal_for_risk,
+    calculate_risk_level2,
     classify_deal_rating,
     determine_best_price,
-    rate_risk_level2,
+    supports_deal_upgrade,
 )
 from analysis.workflow import prepare_level2_analysis
 
@@ -140,10 +141,16 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
         carfax: CarfaxData = get_carfax_data(report)
         lc.carfax = carfax
 
-        risk = rate_risk_level2(carfax, listing, narrative)
+        raw_risk = calculate_risk_level2(carfax, listing, narrative)
+        risk = round(max(min(raw_risk, 10.0), 0.0))
         lc.risk_score = risk
 
-        deal = adjust_deal_for_risk(deal, risk, narrative)
+        deal = adjust_deal_for_risk(
+            deal,
+            risk,
+            narrative,
+            favorable_evidence=supports_deal_upgrade(raw_risk),
+        )
         lc.deal_rating = deal
         lc.narrative = narrative
 
