@@ -94,6 +94,9 @@ Unless the repository configuration says otherwise:
 - Use the existing `pytest` setup.
 - The project uses `pytest-asyncio` with automatic asyncio handling; do not add `@pytest.mark.asyncio` unless repository configuration requires it.
 - Always check the IDE Problems view for diagnostics in changed files before reporting completion. This includes Pylance in `standard` mode and the VS Code HTML/CSS language-service diagnostics used for HTML, CSS, and Jinja templates. Resolve every reported error and report the result.
+- Treat the VS Code built-in HTML and CSS language services as required validation for templates, including CSS diagnostics reported inside HTML `style` attributes. Do not rely only on successful Jinja rendering, browser output, or pytest when the Problems view reports template errors.
+- Avoid placing Jinja expressions directly inside CSS property values because the CSS language service parses them as invalid CSS. Prefer static classes, `data-*` attributes, or values prepared outside the CSS syntax, while preserving correct rendered output.
+- If the IDE Problems view is unavailable to the agent, do not describe it as checked or clean. Run every available template validation, state that IDE diagnostics remain unverified, and ask for the Problems view to be confirmed before considering template work complete.
 - Add or update tests for changed behavior.
 - Mock external services in unit tests.
 - Use saved fixtures for API and legacy scraper payloads.
