@@ -5,6 +5,7 @@ from analysis.reporting import (
 	build_level2_bins,
 	create_report_filter_summary,
 	display_dealer_location,
+	display_listing_condition,
 	logo_data_uri,
 	summarize_level2_failures,
 )
@@ -168,6 +169,9 @@ def test_level2_branding_and_dealer_location_helpers():
 	assert logo_data_uri(Path("img/deallens-logo.svg")).startswith(
 		"data:image/svg+xml;base64,"
 	)
+	assert display_listing_condition("Certified") == "CPO"
+	assert display_listing_condition("Used") == "Used"
+	assert display_listing_condition(None) == "Unknown"
 
 
 def test_level2_template_keeps_jinja_out_of_inline_css():

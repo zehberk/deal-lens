@@ -12,6 +12,7 @@ from analysis.scoring import (
     deal_score_from_position,
     determine_best_price,
     favorable_evidence_bonus,
+    format_deal_score_narrative,
 )
 from analysis.workflow import prepare_level2_analysis
 
@@ -163,9 +164,12 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
             price_deal = deal
             deal = deal_rating_from_score(float(pricing_visual["deal_score"]))
             narrative.append(
-                f"Deal Score is {pricing_visual['deal_score']:.0f}%: price starts at {price_score:.0f}%, "
-                f"risk is {raw_risk:.1f}/10, and favorable evidence contributes "
-                f"{favorable_evidence_bonus(favorable_evidence, raw_risk):.0f} points."
+                format_deal_score_narrative(
+                    float(pricing_visual["deal_score"]),
+                    price_score,
+                    raw_risk,
+                    favorable_evidence_bonus(favorable_evidence, raw_risk),
+                )
             )
             if deal != price_deal:
                 narrative.append(

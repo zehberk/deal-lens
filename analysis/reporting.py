@@ -215,6 +215,13 @@ def display_dealer_location(value: str | None) -> str:
     return re.sub(r"\s+\d{5}(?:-\d{4})?$", "", value).strip()
 
 
+def display_listing_condition(value: str | None) -> str:
+    """Return a compact, user-facing condition label without inferring a value."""
+    if not value:
+        return "Unknown"
+    return "CPO" if value.casefold() in {"certified", "cpo"} else value.title()
+
+
 def logo_data_uri(path: Path) -> str | None:
     try:
         encoded = base64.b64encode(path.read_bytes()).decode("ascii")
@@ -324,6 +331,7 @@ async def render_level2_pdf(
         rating_bins=rating_bins,
         all_ratings=all_ratings,
         display_dealer_location=display_dealer_location,
+        display_listing_condition=display_listing_condition,
         great_bin=rating_bins["Great"],
         good_bin=rating_bins["Good"],
         fair_bin=rating_bins["Fair"],

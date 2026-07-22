@@ -326,6 +326,28 @@ def favorable_evidence_bonus(favorable_evidence: float, risk: float) -> float:
     )
 
 
+def format_deal_score_narrative(
+    score: float,
+    price_score: float,
+    risk: float,
+    favorable_bonus: float,
+) -> str:
+    """Explain Deal Score inputs without displaying meaningless zero values."""
+    parts = [f"Deal Score is {score:.0f}%: price starts at {price_score:.0f}%"]
+    parts.append("no risk was identified" if risk <= 0 else f"risk is {risk:.1f}/10")
+    if favorable_bonus <= 0:
+        parts.append("there is no favorable evidence")
+    elif favorable_bonus < 1:
+        parts.append("favorable evidence adds less than 1 point")
+    else:
+        rounded_bonus = round(favorable_bonus)
+        parts.append(
+            f"favorable evidence adds {rounded_bonus} point"
+            f"{'s' if rounded_bonus != 1 else ''}"
+        )
+    return ", ".join(parts) + "."
+
+
 def deal_rating_from_score(score: float) -> str:
     """Derive the displayed rating from the final continuous Deal Score."""
     if score >= 80:
@@ -613,20 +635,15 @@ def score_warranty_status(
             miles_nums = to_int(basic.get("miles_left", ""))
             basic_miles = miles_nums * 1000 if miles_nums else 0
 
-    if basic_months > 12 and basic_miles > 12000:
-        rating = -2.0
-    elif basic_months > 12 or basic_miles > 12000:
-        rating = -1.5
-    elif basic_months > 6 or basic_miles > 6000:
-        rating = -1.0
-    elif basic_months > 0 and basic_miles > 0:
-        rating = -0.5
-    else:
-        rating = 0.0
+    miles_per_month = 15000 / 12
+    mileage_months = basic_miles / miles_per_month if basic_miles > 0 else 0.0
+    effective_months = min(float(basic_months), mileage_months)
+    rating = -min(effective_months / 6.0, 2.0) if effective_months > 0 else 0.0
 
     if rating and narrative is not None:
         narrative.append(
-            f"Basic warranty is active with {basic_months} months left and {basic_miles} miles left."
+            f"Basic warranty is active with {basic_months} months left and {basic_miles} miles left; "
+            f"at 15,000 miles per year, the limiting coverage is about {effective_months:.1f} months."
         )
 
     return rating
@@ -685,32 +702,32 @@ def score_mileage_use(
     if deviation <= -0.20:
         if narrative is not None:
             narrative.append(
-                f"Vehicle has been driven significantly less than expected for it's age ({percent_diff:.1f}%)."
+                f"Vehicle has been driven significantly less than expected for its age ({percent_diff:.1f}%)."
             )
         score = -1.0
     elif deviation <= -0.10:
         if narrative is not None:
             narrative.append(
-                f"Vehicle has been driven less than expected for it's age ({percent_diff:.1f}%)."
+                f"Vehicle has been driven less than expected for its age ({percent_diff:.1f}%)."
             )
         score = -1.0 + (deviation + 0.20) * 5  # smooth ramp -1 → -0.5
     elif deviation < 0.10:
         if narrative is not None:
             narrative.append(
-                f"Vehicle has been driven an expected amount for it's age."
+                "Vehicle has been driven an expected amount for its age."
             )
         score = 0.0
     elif deviation < 0.40:
         if narrative is not None:
             narrative.append(
-                f"Vehicle has been driven more than expected for it's age ({percent_diff:.1f}%)."
+                f"Vehicle has been driven more than expected for its age ({percent_diff:.1f}%)."
             )
         # from +10% → +40%, interpolate 0 → 2.0
         score = ((deviation - 0.10) / 0.30) * 2.0
     else:
         if narrative is not None:
             narrative.append(
-                f"Vehicle has been driven much more than expected for it's age ({percent_diff:.1f}%)."
+                f"Vehicle has been driven much more than expected for its age ({percent_diff:.1f}%)."
             )
         score = 2.0
 

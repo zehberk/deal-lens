@@ -37,6 +37,7 @@ h2 { margin: 13px 0 6px; color: #163a5f; font-size: 11pt; break-after: avoid; }
 .visor-link { position: absolute; right: 0; color: #1769aa; font-size: 7.5pt; font-weight: 500; text-decoration: underline; }
 .downgrade-tag { display: inline-block; margin-left: 5px; padding: 1px 5px; color: #8b2020; background: #f8d7d7; border-radius: 3px; font-size: 7pt; }
 .deal-rating { display: inline-block; margin-left: 6px; padding: 1px 7px; color: #fff; background: var(--accent-color); border-radius: 9px; font-size: 7pt; font-weight: 700; vertical-align: 1px; }
+.condition-badge { display: inline-block; margin-left: 6px; padding: 1px 6px; color: #40576b; background: #fff; border: 1px solid #9badbc; border-radius: 9px; font-size: 6.5pt; font-weight: 700; text-transform: uppercase; vertical-align: 1px; }
 
 .compact-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; row-gap: 1px; font-size: 8pt; }
 .compact-grid div { min-width: 0; overflow-wrap: anywhere; }

@@ -1,11 +1,15 @@
+import pytest
+
 from analysis.scoring import (
 	deal_score_from_position,
 	calculate_deal_score,
 	deal_rating_from_score,
 	risk_penalty,
 	get_structure_score,
+	format_deal_score_narrative,
+	score_warranty_status,
 )
-from utils.models import StructuralStatus
+from utils.models import CarfaxData, StructuralStatus
 
 
 def test_favorable_evidence_crosses_nearby_good_to_great_boundary():
@@ -66,6 +70,10 @@ def test_risk_penalty_accelerates_as_risk_increases():
 	assert risk_penalty(10) == 100
 
 
+def test_adverse_mileage_risk_subtracts_from_deal_score():
+	assert calculate_deal_score(60, 4) < calculate_deal_score(60, 0)
+
+
 def test_zero_score_requires_bottom_price_and_maximum_risk():
 	assert calculate_deal_score(0, 0) == 10
 	assert calculate_deal_score(0, 4) > 0
@@ -79,3 +87,34 @@ def test_rating_is_derived_from_continuous_score():
 	assert deal_rating_from_score(40) == "Fair"
 	assert deal_rating_from_score(20) == "Poor"
 	assert deal_rating_from_score(19.9) == "Bad"
+
+
+def test_zero_score_components_use_plain_language():
+	narrative = format_deal_score_narrative(50, 50, 0, 0)
+
+	assert "no risk was identified" in narrative
+	assert "there is no favorable evidence" in narrative
+	assert "0.0/10" not in narrative
+	assert "0 points" not in narrative
+	assert "less than 1 point" in format_deal_score_narrative(50, 50, 0, 0.4)
+	assert "adds 1 point." in format_deal_score_narrative(50, 50, 0, 1.2)
+
+
+def test_warranty_bonus_uses_limiting_mileage_at_typical_use():
+	carfax = CarfaxData(
+		summary={},
+		accident_damage={},
+		reliability_section={},
+		additional_history={
+			"Structural Damage": "No structural damage reported to CARFAX.",
+			"Basic Warranty": "Original warranty estimated to have 5 months or 687 miles remaining.",
+		},
+		ownership_history={},
+		detailed_history=[],
+	)
+	narrative = []
+
+	result = score_warranty_status(carfax, {"coverages": []}, narrative)
+
+	assert result == pytest.approx(-0.0916, abs=0.001)
+	assert "about 0.5 months" in narrative[-1]

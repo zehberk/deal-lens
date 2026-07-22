@@ -45,6 +45,7 @@
 			<div class="listing-content">
 			<div class="listing-title">
 				{{ listing.title }}
+				<span class="condition-badge">{{ display_listing_condition(listing.get("condition")) }}</span>
 				<span class="deal-rating">{{ deal }}</span>
 				{% if is_downgraded %}<span class="downgrade-tag">Downgraded</span>{% endif %}
 				<a class="visor-link" href="{{ listing.visor_listing }}">View on Visor</a>
