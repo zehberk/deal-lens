@@ -249,8 +249,8 @@ def adjust_deal_for_evidence(
     if base_bin == "Suspicious":
         return adjust_deal_for_risk(base_bin, displayed_risk, narrative)
 
-    evidence_adjustment = round(raw_risk * increment * RISK_PRICE_ADJUSTMENT_RATIO)
-    adjusted_position = price + evidence_adjustment
+    adjusted_position = evidence_adjusted_price(price, raw_risk, increment)
+    evidence_adjustment = adjusted_position - price
     great_high, good_high, fair_high, poor_high = cutoffs
 
     if adjusted_position <= great_high:
@@ -277,6 +277,35 @@ def adjust_deal_for_evidence(
             )
 
     return adjusted_bin
+
+
+def evidence_adjusted_price(price: int, raw_risk: float, increment: int) -> int:
+    """Return a comparison position only; this never changes the listing price."""
+    return price + round(raw_risk * increment * RISK_PRICE_ADJUSTMENT_RATIO)
+
+
+def deal_strength_within_bin(
+    deal: str,
+    adjusted_position: int,
+    cutoffs: tuple[int, int, int, int],
+) -> float | None:
+    """Return 0-100 position within a deal bin, where 100 is nearer a better bin."""
+    if deal == "Suspicious":
+        return None
+
+    great_high, good_high, fair_high, poor_high = cutoffs
+    leading_width = max(good_high - great_high, 1)
+    trailing_width = max(poor_high - fair_high, 1)
+    bounds = {
+        "Great": (great_high - leading_width, great_high),
+        "Good": (great_high, good_high),
+        "Fair": (good_high, fair_high),
+        "Poor": (fair_high, poor_high),
+        "Bad": (poor_high, poor_high + trailing_width),
+    }
+    low, high = bounds[deal]
+    strength = (high - adjusted_position) / max(high - low, 1) * 100
+    return max(0.0, min(100.0, strength))
 
 
 def calculate_risk_level2(

@@ -14,18 +14,21 @@ h2 { margin: 13px 0 6px; color: #163a5f; font-size: 11pt; break-after: avoid; }
 
 .intro { margin: 8px 0 6px; color: #52606d; }
 .intro p { margin: 3px 0; }
+.rating-guide { margin: 6px 0; padding: 5px 7px; border-left: 3px solid #40729f; background: #f2f6f9; color: #31465a; font-size: 7.5pt; }
 .generated, .footnote { color: #607080; font-size: 7pt; }
 .generated { font-style: italic; }
 .report-counts { margin: 7px 0 10px; }
 
 .deal-bin { margin: 0; }
-.listing { margin: 0 0 12px; padding: 7px 9px 8px 12px; border-left: 7px solid; border-radius: 3px; break-inside: avoid; page-break-inside: avoid; }
-.great-listing { --accent-color: #2f855a; border-color: var(--accent-color); background: #edf7f1; }
-.good-listing { --accent-color: #4d8fb8; border-color: var(--accent-color); background: #eef6fa; }
-.fair-listing { --accent-color: #c5a12f; border-color: var(--accent-color); background: #fbf8e9; }
-.poor-listing { --accent-color: #d47736; border-color: var(--accent-color); background: #fcf2eb; }
-.bad-listing { --accent-color: #c2413b; border-color: var(--accent-color); background: #fbeeee; }
-.suspicious-listing { --accent-color: #7a8793; border-color: var(--accent-color); background: #f1f3f5; }
+.listing { position: relative; margin: 0 0 12px; padding: 7px 9px 8px 12px; border-left: 7px solid #dbe3ea; border-radius: 3px; break-inside: avoid; page-break-inside: avoid; }
+.deal-strength-track { position: absolute; top: 0; bottom: 0; left: -7px; width: 7px; overflow: hidden; background: #dbe3ea; border-radius: 3px 0 0 3px; }
+.deal-strength-track span { position: absolute; right: 0; bottom: 0; left: 0; background: var(--accent-color); }
+.great-listing { --accent-color: #2f855a; background: #edf7f1; }
+.good-listing { --accent-color: #4d8fb8; background: #eef6fa; }
+.fair-listing { --accent-color: #c5a12f; background: #fbf8e9; }
+.poor-listing { --accent-color: #d47736; background: #fcf2eb; }
+.bad-listing { --accent-color: #c2413b; background: #fbeeee; }
+.suspicious-listing { --accent-color: #7a8793; background: #f1f3f5; }
 
 .image-viewer { display: flex; align-items: center; gap: 6px; width: 100%; height: 105px; margin-bottom: 4px; overflow: hidden; }
 .image-viewer img { width: calc((100% - 12px) / 3); height: 105px; object-fit: contain; border-radius: 3px; background: #eef2f5; }
@@ -42,14 +45,10 @@ h2 { margin: 13px 0 6px; color: #163a5f; font-size: 11pt; break-after: avoid; }
 .price-position { margin: 5px 0 12px; font-size: 7pt; }
 .price-track { position: relative; height: 15px; overflow: visible; border-radius: 2px; background: #dbe3ea; }
 .price-segment { position: absolute; top: 0; height: 15px; overflow: hidden; color: #fff; font-size: 5.8pt; font-weight: 650; line-height: 15px; text-align: center; }
-.price-segment.great { left: 0; background: #2f855a; border-radius: 2px 0 0 2px; }
-.price-segment.good { background: #4d8fb8; }
-.price-segment.fair { color: #3d3208; background: #d9bd4a; }
-.price-segment.poor { background: #d47736; }
-.price-segment.bad { background: #c2413b; border-radius: 0 2px 2px 0; }
-.listing-marker { position: absolute; top: -5px; z-index: 2; transform: translateX(-50%); }
-.listing-marker::before { content: ""; position: absolute; top: -3px; left: 50%; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid #101820; transform: translateX(-50%); }
-.listing-marker span { display: block; width: 5px; height: 25px; background: #101820; border: 1px solid #fff; border-radius: 2px; box-shadow: 0 0 0 1px #101820; }
+.price-segment.great { left: 0; border-radius: 2px 0 0 2px; }
+.price-segment.fair { color: #3d3208; }
+.price-segment.bad { border-radius: 0 2px 2px 0; }
+.listing-marker { position: absolute; top: -3px; z-index: 2; width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 21px solid #fff; filter: drop-shadow(0 0 1px #18212b); transform: translateX(-50%); }
 .price-cutoffs { position: relative; height: 10px; color: #52606d; font-size: 5.8pt; }
 .price-cutoffs span { position: absolute; top: 1px; transform: translateX(-50%); white-space: nowrap; }
 

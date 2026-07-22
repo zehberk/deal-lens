@@ -176,3 +176,4 @@ def test_level2_template_keeps_jinja_out_of_inline_css():
 	assert "style=" not in template
 	assert "data-left-pct=" in template
 	assert "data-width-pct=" in template
+	assert "data-height-pct=" in template

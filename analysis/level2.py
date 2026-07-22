@@ -8,7 +8,9 @@ from analysis.scoring import (
     adjust_deal_for_evidence,
     calculate_risk_level2,
     classify_deal_rating,
+    deal_strength_within_bin,
     determine_best_price,
+    evidence_adjusted_price,
 )
 from analysis.workflow import prepare_level2_analysis
 
@@ -86,6 +88,8 @@ def _price_assessment(
         "good_end_pct": good_end_pct,
         "fair_end_pct": fair_end_pct,
         "poor_end_pct": poor_end_pct,
+        "scale_low": scale_low,
+        "scale_high": scale_high,
     }
     return deal, midpoint, increment, percent, pricing_visual
 
@@ -156,6 +160,27 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
                 int(pricing_visual["poor_high"]),
             ),
             narrative,
+        )
+        cutoffs = (
+            int(pricing_visual["great_high"]),
+            int(pricing_visual["good_high"]),
+            int(pricing_visual["fair_high"]),
+            int(pricing_visual["poor_high"]),
+        )
+        adjusted_position = evidence_adjusted_price(
+            int(listing["price"]), raw_risk, int(assessment[2])
+        )
+        pricing_visual["deal_strength"] = deal_strength_within_bin(
+            deal, adjusted_position, cutoffs
+        )
+        scale_low = int(pricing_visual["scale_low"])
+        scale_high = int(pricing_visual["scale_high"])
+        pricing_visual["marker_pct"] = max(
+            0.0,
+            min(
+                100.0,
+                (adjusted_position - scale_low) / max(scale_high - scale_low, 1) * 100,
+            ),
         )
         lc.deal_rating = deal
         lc.narrative = narrative

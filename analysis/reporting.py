@@ -348,7 +348,7 @@ async def render_level2_pdf(
         await page.set_content(html_out, wait_until="load")
         await page.add_style_tag(path=str(css_path))
         await page.eval_on_selector_all(
-            "[data-left-pct], [data-width-pct]",
+            "[data-left-pct], [data-width-pct], [data-height-pct]",
             """elements => elements.forEach(element => {
                 if (element.dataset.leftPct !== undefined) {
                     element.style.left = `${element.dataset.leftPct}%`;
@@ -356,6 +356,19 @@ async def render_level2_pdf(
                 if (element.dataset.widthPct !== undefined) {
                     element.style.width = `${element.dataset.widthPct}%`;
                 }
+                if (element.dataset.heightPct !== undefined) {
+                    element.style.height = `${element.dataset.heightPct}%`;
+                }
+            })""",
+        )
+        await page.eval_on_selector_all(
+            ".price-track",
+            """tracks => tracks.forEach(track => {
+                const great = track.dataset.greatEndPct;
+                const good = track.dataset.goodEndPct;
+                const fair = track.dataset.fairEndPct;
+                const poor = track.dataset.poorEndPct;
+                track.style.background = `linear-gradient(90deg, #2f855a 0%, #4d8fb8 ${great}%, #d9bd4a ${good}%, #d47736 ${fair}%, #c2413b ${poor}%, #c2413b 100%)`;
             })""",
         )
         await page.pdf(path=str(out_file), format="A4", print_background=True)

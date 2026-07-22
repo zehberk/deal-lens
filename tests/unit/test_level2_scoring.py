@@ -1,6 +1,7 @@
 from analysis.scoring import (
 	adjust_deal_for_evidence,
 	adjust_deal_for_risk,
+	deal_strength_within_bin,
 	get_structure_score,
 )
 from utils.models import StructuralStatus
@@ -70,3 +71,10 @@ def test_possible_structure_wording_does_not_claim_confirmed_damage():
 	get_structure_score(StructuralStatus.POSSIBLE, 1.0, narrative)
 
 	assert "does not confirm structural damage" in narrative[-1]
+
+
+def test_deal_strength_shows_position_within_assigned_bin():
+	assert deal_strength_within_bin("Fair", 27620, SPORT_CUTOFFS) < 1
+	assert deal_strength_within_bin("Fair", 27254, SPORT_CUTOFFS) == 50
+	assert deal_strength_within_bin("Bad", 30241, SPORT_CUTOFFS) == 0
+	assert deal_strength_within_bin("Suspicious", 20000, SPORT_CUTOFFS) is None
