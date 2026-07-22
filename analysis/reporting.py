@@ -183,11 +183,11 @@ async def render_level1_pdf(
 
 
 def build_level2_bins(ratings: list) -> dict[str, list]:
-    bins = {name: [] for name in ("Great", "Good", "Fair", "Poor", "Bad", "Suspicious")}
+    bins = {name: [] for name in ("Great", "Good", "Fair", "Poor", "Bad")}
 
     # 0 - listing, 1 - deal, 2 - risk, 3 - narrative
     for rating in ratings:
-        bins.get(rating[1], bins["Suspicious"]).append(rating)
+        bins.get(rating[1], bins["Bad"]).append(rating)
 
     # Show the strongest listing first within each rating.
     for name in bins:
@@ -309,7 +309,7 @@ async def render_level2_pdf(
     rating_bins = build_level2_bins(ratings)
     all_ratings = [
         rating
-        for name in ("Great", "Good", "Fair", "Poor", "Bad", "Suspicious")
+        for name in ("Great", "Good", "Fair", "Poor", "Bad")
         for rating in rating_bins[name]
     ]
     all_images = collect_all_images(rating_bins)
@@ -337,7 +337,6 @@ async def render_level2_pdf(
         fair_bin=rating_bins["Fair"],
         poor_count=len(rating_bins["Poor"]),
         bad_count=len(rating_bins["Bad"]),
-        sus_count=len(rating_bins["Suspicious"]),
         all_images=all_images,
     )
 

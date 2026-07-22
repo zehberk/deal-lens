@@ -115,6 +115,31 @@ The saved DealLens metadata also records the logical `/v1/listings` query and ev
 overall or per-trim `/v1/facets` query with the UTC time its response was retrieved.
 Cache hits retain the original retrieval times.
 
+### Interpreting Level 2 risk and Deal Score
+
+Risk Score measures identified adverse evidence on a 0–10 scale. It includes title,
+damage, structural, odometer, and above-expected-mileage evidence. It is not a
+probability of failure or a universal statement that a vehicle is acceptable. A
+buyer may reasonably treat evidence such as a salvage or rebuilt title as a hard
+stop regardless of the numeric result.
+
+Deal Score measures value after risk rather than vehicle desirability by itself. It
+starts with the listing's linear position on the full price scale, applies an
+exponential risk penalty, and then applies any eligible low-mileage or remaining-
+warranty bonus. Favorable evidence declines as risk rises and contributes nothing at
+risk 4 or above. Consequently, a deeply discounted vehicle with moderate risk can
+receive a higher Deal Score than an exceptionally clean but badly overpriced
+vehicle. The report preserves both Deal Score and Risk Score so buyers can reject a
+vehicle whose risk exceeds their personal tolerance even when its price-adjusted
+value is competitive.
+
+Risk is deliberately nonlinear: movement near the high end costs increasingly more
+Deal Score than the same movement near zero. Roughly, 0–2 represents limited
+identified risk, 3 is a noticeable concern, 4 is a serious-review threshold, 5–6
+receives a major penalty, and 7–10 represents severe evidence that becomes
+increasingly difficult for price to overcome. These descriptions are interpretation
+guidance, not guarantees about condition or future reliability.
+
 The client sends the configured key only in the `Authorization: Bearer` header,
 uses a 10-second connection timeout and a 30-second response/read timeout, and
 retries rate-limit and temporary platform responses a bounded number of times.

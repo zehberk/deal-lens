@@ -71,14 +71,14 @@ def test_level2_bins_retain_unfavorable_complete_ratings():
 	ratings = [
 		({"id": "poor", "price": 20000}, "Poor", 2, []),
 		({"id": "bad", "price": 21000}, "Bad", 3, []),
-		({"id": "suspicious", "price": 10000}, "Suspicious", 7, []),
+		({"id": "great", "price": 10000}, "Great", 7, []),
 	]
 
 	bins = build_level2_bins(ratings)
 
 	assert bins["Poor"] == [ratings[0]]
 	assert bins["Bad"] == [ratings[1]]
-	assert bins["Suspicious"] == [ratings[2]]
+	assert bins["Great"] == [ratings[2]]
 
 
 def test_report_summary_accepts_single_condition_string():
@@ -95,7 +95,7 @@ def test_report_summarizes_unevaluated_reasons_without_listing_rows():
 		"level2.html"
 	)
 	empty_bins = {
-		name: [] for name in ("Great", "Good", "Fair", "Poor", "Bad", "Suspicious")
+		name: [] for name in ("Great", "Good", "Fair", "Poor", "Bad")
 	}
 	html = template.render(
 		make="Subaru",
@@ -114,7 +114,6 @@ def test_report_summarizes_unevaluated_reasons_without_listing_rows():
 		fair_bin=[],
 		poor_count=0,
 		bad_count=0,
-		sus_count=0,
 		all_images={},
 	)
 
@@ -180,6 +179,27 @@ def test_price_assessment_explains_percent_from_fair_midpoint():
 	level2._price_assessment(lc, narrative)
 
 	assert "Listing price is 1.9% above the fair-price midpoint." in narrative
+
+
+def test_price_below_displayed_great_range_remains_great_and_caps_marker():
+	lc = ListingContext(
+		listing_id="one",
+		listing={"price": 24000},
+		pricing=PricingAnchors(
+			fpp_natl=26000,
+			fpp_local=25000,
+			fmv=24000,
+			fmr_high=28000,
+		),
+	)
+
+	inside_great = level2._price_assessment(lc, [])
+	lc.listing["price"] = 21999
+	below_great = level2._price_assessment(lc, [])
+
+	assert inside_great is not None and inside_great[0] == "Great"
+	assert below_great is not None and below_great[0] == "Great"
+	assert below_great[4]["marker_pct"] == 0
 
 
 def test_level2_branding_and_dealer_location_helpers():

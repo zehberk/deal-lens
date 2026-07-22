@@ -52,9 +52,6 @@ def _price_assessment(
         narrative.append(
             f"Listing price is {abs(price_difference_pct):.1f}% {direction} the fair-price midpoint."
         )
-    if deal == "Great" and midpoint and price < midpoint - increment * 3:
-        deal = "Suspicious"
-
     boundaries = [
         midpoint - increment * 3,
         midpoint - increment,
@@ -159,30 +156,24 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
         )
         risk = round(raw_risk)
         lc.risk_score = risk
-        price_score = deal_score_from_position(
-            float(pricing_visual["marker_pct"]), deal
+        price_score = deal_score_from_position(float(pricing_visual["marker_pct"]))
+        pricing_visual["deal_score"] = int(
+            calculate_deal_score(price_score, raw_risk, favorable_evidence)
         )
-        if price_score is None:
-            pricing_visual["deal_score"] = None
-            narrative.append("Deal remains Suspicious because its price is outside the reliable comparison range.")
-        else:
-            pricing_visual["deal_score"] = int(
-                calculate_deal_score(price_score, raw_risk, favorable_evidence)
+        price_deal = deal
+        deal = deal_rating_from_score(float(pricing_visual["deal_score"]))
+        narrative.append(
+            format_deal_score_narrative(
+                float(pricing_visual["deal_score"]),
+                price_score,
+                raw_risk,
+                favorable_evidence_bonus(favorable_evidence, raw_risk),
             )
-            price_deal = deal
-            deal = deal_rating_from_score(float(pricing_visual["deal_score"]))
+        )
+        if deal != price_deal:
             narrative.append(
-                format_deal_score_narrative(
-                    float(pricing_visual["deal_score"]),
-                    price_score,
-                    raw_risk,
-                    favorable_evidence_bonus(favorable_evidence, raw_risk),
-                )
+                f"The combined score changes the price-only rating from {price_deal} to {deal}."
             )
-            if deal != price_deal:
-                narrative.append(
-                    f"The combined score changes the price-only rating from {price_deal} to {deal}."
-                )
         lc.deal_rating = deal
         lc.narrative = narrative
 

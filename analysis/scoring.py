@@ -193,17 +193,6 @@ def adjust_deal_for_risk(
     """
     Adjusts deal grading for level 2 based on the risk.
     """
-    if base_bin == "Suspicious":
-        if risk > 5:
-            if narrative is not None:
-                narrative.append(
-                    "Deal rating has been downgraded to Bad due to risk and suspicious pricing."
-                )
-            return "Bad"
-        if narrative is not None:
-            narrative.append("Deal is set as Suspicious due to extreme pricing.")
-        return "Suspicious"
-
     idx = DEAL_ORDER.index(base_bin)
     if risk <= 2:
         shift = 0
@@ -248,10 +237,6 @@ def adjust_deal_for_evidence(
     narrative: Optional[list[str]] = None,
 ) -> str:
     """Move the price position continuously, then classify only crossed cutoffs."""
-    displayed_risk = round(max(min(raw_risk, 10.0), 0.0))
-    if base_bin == "Suspicious":
-        return adjust_deal_for_risk(base_bin, displayed_risk, narrative)
-
     adjusted_position = evidence_adjusted_price(price, raw_risk, increment)
     evidence_adjustment = adjusted_position - price
     great_high, good_high, fair_high, poor_high = cutoffs
@@ -287,10 +272,8 @@ def evidence_adjusted_price(price: int, raw_risk: float, increment: int) -> int:
     return price + round(raw_risk * increment * RISK_PRICE_ADJUSTMENT_RATIO)
 
 
-def deal_score_from_position(marker_pct: float, deal: str) -> float | None:
+def deal_score_from_position(marker_pct: float) -> float:
     """Convert the full price-scale position to a comparable 0-100 deal score."""
-    if deal == "Suspicious":
-        return None
     return max(0.0, min(100.0, 100.0 - marker_pct))
 
 
@@ -367,9 +350,6 @@ def deal_strength_within_bin(
     cutoffs: tuple[int, int, int, int],
 ) -> float | None:
     """Return 0-100 position within a deal bin, where 100 is nearer a better bin."""
-    if deal == "Suspicious":
-        return None
-
     great_high, good_high, fair_high, poor_high = cutoffs
     leading_width = max(good_high - great_high, 1)
     trailing_width = max(poor_high - fair_high, 1)
@@ -580,7 +560,7 @@ def get_branded_score(
             narrative.append("Vehicle was declared a total loss.")
 
     if damage_score <= 0:
-        return 7.0  # suspicious: title issue with no visible damage
+        return 7.0  # anomalous: title issue with no visible damage
 
     scale = ((damage_score / 10) ** 1.3) * 1.05
     return 4.0 + min(scale, 1.0) * 5.0  # branded curve: 4 → 9

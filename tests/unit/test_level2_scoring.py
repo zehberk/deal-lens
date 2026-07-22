@@ -42,10 +42,6 @@ def test_favorable_evidence_does_not_rescue_price_far_into_bad_bin():
 	assert deal_rating_from_score(score) == "Bad"
 
 
-def test_suspicious_price_handling_remains_ambiguous():
-	assert deal_score_from_position(50, "Suspicious") is None
-
-
 def test_possible_structure_wording_does_not_claim_confirmed_damage():
 	narrative = []
 
@@ -55,10 +51,10 @@ def test_possible_structure_wording_does_not_claim_confirmed_damage():
 
 
 def test_deal_score_uses_the_full_price_scale():
-	assert deal_score_from_position(9, "Great") == 91
-	assert deal_score_from_position(42, "Fair") == 58
-	assert deal_score_from_position(88, "Bad") == 12
-	assert deal_score_from_position(50, "Suspicious") is None
+	assert deal_score_from_position(9) == 91
+	assert deal_score_from_position(42) == 58
+	assert deal_score_from_position(88) == 12
+	assert deal_score_from_position(-10) == 100
 
 
 def test_risk_penalty_accelerates_as_risk_increases():

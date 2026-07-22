@@ -26,7 +26,6 @@ h2 { margin: 13px 0 6px; color: #163a5f; font-size: 11pt; break-after: avoid; }
 .fair-listing { --accent-color: #c5a12f; background: #fbf8e9; }
 .poor-listing { --accent-color: #d47736; background: #fcf2eb; }
 .bad-listing { --accent-color: #c2413b; background: #fbeeee; }
-.suspicious-listing { --accent-color: #7a8793; background: #f1f3f5; }
 
 .listing-layout.has-images { display: grid; grid-template-columns: 126px minmax(0, 1fr); gap: 9px; align-items: start; }
 .listing-content { min-width: 0; }
