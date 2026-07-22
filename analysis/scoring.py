@@ -284,6 +284,13 @@ def evidence_adjusted_price(price: int, raw_risk: float, increment: int) -> int:
     return price + round(raw_risk * increment * RISK_PRICE_ADJUSTMENT_RATIO)
 
 
+def deal_score_from_position(marker_pct: float, deal: str) -> float | None:
+    """Convert the full price-scale position to a comparable 0-100 deal score."""
+    if deal == "Suspicious":
+        return None
+    return max(0.0, min(100.0, 100.0 - marker_pct))
+
+
 def deal_strength_within_bin(
     deal: str,
     adjusted_position: int,

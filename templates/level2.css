@@ -21,11 +21,6 @@ h2 { margin: 13px 0 6px; color: #163a5f; font-size: 11pt; break-after: avoid; }
 
 .deal-bin { margin: 0; }
 .listing { position: relative; margin: 0 0 12px; padding: 7px 9px 8px 12px; border-left: 7px solid var(--accent-color); border-radius: 3px; break-inside: avoid; page-break-inside: avoid; }
-.deal-strength-track { position: absolute; top: 0; bottom: 0; left: -7px; width: 7px; overflow: visible; background: var(--accent-color); border-radius: 3px 0 0 3px; }
-.deal-strength-marker { position: absolute; right: -5px; width: 12px; height: 3px; border-top: 2px solid #fff; filter: drop-shadow(0 0 1px #18212b); transform: translateY(50%); }
-.deal-strength-marker b { position: absolute; top: -7px; right: 13px; min-width: 27px; padding: 1px 3px; color: #fff; background: var(--accent-color); border: 1px solid #fff; border-radius: 5px; font-size: 5.5pt; line-height: 9px; text-align: center; white-space: nowrap; }
-.deal-strength-marker.marker-high b { top: 0; }
-.deal-strength-marker.marker-low b { top: -14px; }
 .great-listing { --accent-color: #2f855a; background: #edf7f1; }
 .good-listing { --accent-color: #4d8fb8; background: #eef6fa; }
 .fair-listing { --accent-color: #c5a12f; background: #fbf8e9; }
@@ -38,7 +33,7 @@ h2 { margin: 13px 0 6px; color: #163a5f; font-size: 11pt; break-after: avoid; }
 .image-viewer { display: flex; flex-direction: column; gap: 5px; width: 126px; overflow: hidden; }
 .image-viewer img { width: 126px; height: 82px; object-fit: contain; border-radius: 3px; background: #eef2f5; }
 .listing-title { position: relative; padding-right: 105px; color: #18212b; font-size: 11pt; font-weight: 650; }
-.listing-title-bar { width: 100%; height: 2px; margin: 2px 0 4px; background: var(--accent-color); opacity: .55; }
+.listing-title-bar { width: 100%; height: 2px; margin: 5px 0 4px; background: var(--accent-color); opacity: .55; }
 .visor-link { position: absolute; right: 0; color: #1769aa; font-size: 7.5pt; font-weight: 500; text-decoration: underline; }
 .downgrade-tag { display: inline-block; margin-left: 5px; padding: 1px 5px; color: #8b2020; background: #f8d7d7; border-radius: 3px; font-size: 7pt; }
 .deal-rating { display: inline-block; margin-left: 6px; padding: 1px 7px; color: #fff; background: var(--accent-color); border-radius: 9px; font-size: 7pt; font-weight: 700; vertical-align: 1px; }
@@ -46,8 +41,13 @@ h2 { margin: 13px 0 6px; color: #163a5f; font-size: 11pt; break-after: avoid; }
 .compact-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; row-gap: 1px; font-size: 8pt; }
 .compact-grid div { min-width: 0; overflow-wrap: anywhere; }
 .dealer-link { color: #1769aa; font-weight: 600; text-decoration: underline; }
+.listing-evaluation.has-score { display: grid; grid-template-columns: minmax(0, 1fr) 82px; gap: 9px; align-items: stretch; }
+.listing-measures { min-width: 0; }
+.deal-score { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60px; padding: 2px 8px; color: var(--accent-color); background: rgba(255, 255, 255, .72); border: 2px solid var(--accent-color); border-radius: 5px; text-align: center; }
+.deal-score strong { font-size: 7pt; }
+.deal-score span { color: #18212b; font-size: 23pt; font-weight: 650; line-height: 1.05; }
 
-.price-position { margin: 5px 0 12px; font-size: 7pt; }
+.price-position { margin: 9px 0 12px; font-size: 7pt; }
 .price-track { position: relative; height: 15px; overflow: visible; border-radius: 2px; background: #dbe3ea; }
 .price-segment { position: absolute; top: 0; height: 15px; overflow: hidden; color: #fff; font-size: 5.8pt; font-weight: 650; line-height: 15px; text-align: center; }
 .price-segment.great { left: 0; border-radius: 2px 0 0 2px; }

@@ -8,7 +8,7 @@ from analysis.scoring import (
     adjust_deal_for_evidence,
     calculate_risk_level2,
     classify_deal_rating,
-    deal_strength_within_bin,
+    deal_score_from_position,
     determine_best_price,
     evidence_adjusted_price,
 )
@@ -170,9 +170,6 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
         adjusted_position = evidence_adjusted_price(
             int(listing["price"]), raw_risk, int(assessment[2])
         )
-        pricing_visual["deal_strength"] = deal_strength_within_bin(
-            deal, adjusted_position, cutoffs
-        )
         scale_low = int(pricing_visual["scale_low"])
         scale_high = int(pricing_visual["scale_high"])
         pricing_visual["marker_pct"] = max(
@@ -181,6 +178,9 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
                 100.0,
                 (adjusted_position - scale_low) / max(scale_high - scale_low, 1) * 100,
             ),
+        )
+        pricing_visual["deal_score"] = deal_score_from_position(
+            float(pricing_visual["marker_pct"]), deal
         )
         lc.deal_rating = deal
         lc.narrative = narrative

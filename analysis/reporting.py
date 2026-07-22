@@ -194,7 +194,7 @@ def build_level2_bins(ratings: list) -> dict[str, list]:
         bins[name] = sorted(
             bins[name],
             key=lambda r: (
-                -(r[4].get("deal_strength") or 0) if len(r) > 4 else 0,
+                -(r[4].get("deal_score") or 0) if len(r) > 4 else 0,
                 r[2],
                 r[0].get("price") or 0,
             ),

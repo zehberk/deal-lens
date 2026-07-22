@@ -1,6 +1,7 @@
 from analysis.scoring import (
 	adjust_deal_for_evidence,
 	adjust_deal_for_risk,
+	deal_score_from_position,
 	deal_strength_within_bin,
 	get_structure_score,
 )
@@ -78,3 +79,10 @@ def test_deal_strength_shows_position_within_assigned_bin():
 	assert deal_strength_within_bin("Fair", 27254, SPORT_CUTOFFS) == 50
 	assert deal_strength_within_bin("Bad", 30241, SPORT_CUTOFFS) == 0
 	assert deal_strength_within_bin("Suspicious", 20000, SPORT_CUTOFFS) is None
+
+
+def test_deal_score_uses_the_full_price_scale():
+	assert deal_score_from_position(9, "Great") == 91
+	assert deal_score_from_position(42, "Fair") == 58
+	assert deal_score_from_position(88, "Bad") == 12
+	assert deal_score_from_position(50, "Suspicious") is None
