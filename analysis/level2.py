@@ -16,6 +16,37 @@ from utils.carfax_parser import get_carfax_data
 from utils.models import CarfaxData
 
 
+def _listing_key(listing: dict) -> str:
+    return str(listing.get("id") or listing.get("vin") or "")
+
+
+def _price_assessment(lc, narrative: list[str]) -> tuple[str, int, int, float] | None:
+    listing = lc.listing
+    price_val = listing.get("price")
+    if price_val is None:
+        return None
+
+    price = int(price_val)
+    fpp_natl = int(lc.pricing.fpp_natl or 0)
+    fpp_local = int(lc.pricing.fpp_local or 0)
+    fmr_high = int(lc.pricing.fmr_high or 0)
+    fmv = int(lc.pricing.fmv or 0)
+    if not (fpp_natl and fpp_local and fmv):
+        return None
+
+    narrative.append(f"This vehicle is being listed at ${price}.")
+    best_comparison = determine_best_price(price, fpp_local, fpp_natl, fmv, narrative)
+    deal, midpoint, increment, percent = classify_deal_rating(
+        price, best_comparison, fmv, fpp_local, fmr_high
+    )
+    narrative.append(
+        f"Deal bins are set at ${increment * 2} ({percent * 200}%) in size, placing the Fair midpoint at ${midpoint}."
+    )
+    if deal == "Great" and midpoint and price < midpoint - increment * 3:
+        deal = "Suspicious"
+    return deal, midpoint, increment, percent
+
+
 def report_stats(label: str, values: list[float]):
     if not values:
         return f"{label}: no data\n"
@@ -34,52 +65,32 @@ def report_stats(label: str, values: list[float]):
 async def start_level2_analysis(metadata: dict, listings: list[dict], filename: str):
     ctx = await prepare_level2_analysis(metadata, listings, filename)
 
-    if len(ctx.listings) == 0:
-        print("No listings met the criteria for level 2 analysis.")
-        return None
-
     # listing, deal, risk, narrative
     ratings: list[tuple[dict, str, int, list[str]]] = []
+    # listing, price assessment, narrative
+    price_only: list[tuple[dict, str, list[str]]] = []
+    # listing, concrete reason
+    information_only: list[tuple[dict, str]] = []
 
     # Extract Carfax report
     for lc in sorted(ctx.listings, key=lambda x: str(x.listing.get("id", ""))):
         listing = lc.listing
-        price_val = listing.get("price")
-        if price_val is None:
-            continue
-
         report = Path(lc.report_path) if lc.report_path else None
-        if report is None or not report.exists():
-            continue
-
         narrative: list[str] = []
-
-        price = int(price_val)
-        fpp_natl = int(lc.pricing.fpp_natl or 0)
-        fpp_local = int(lc.pricing.fpp_local or 0)
-        fmr_high = int(lc.pricing.fmr_high or 0)
-        fmv = int(lc.pricing.fmv or 0)
-
-        if not (fpp_natl and fpp_local and fmv):
-            narrative.append(
-                "Unable to provide ratings for this vehicle: no pricing data is available for this vehicle."
+        assessment = _price_assessment(lc, narrative)
+        if assessment is None:
+            information_only.append(
+                (listing, "Complete KBB pricing is unavailable for this configuration.")
             )
             continue
 
-        # Initial deal ratings
-        narrative.append(f"This vehicle is being listed at ${price}.")
-        best_comparison = determine_best_price(
-            price, fpp_local, fpp_natl, fmv, narrative
-        )
-
-        deal, midpoint, increment, percent = classify_deal_rating(
-            price, best_comparison, fmv, fpp_local, fmr_high
-        )
-        narrative.append(
-            f"Deal bins are set at ${increment * 2} ({percent * 200}%) in size, placing the Fair midpoint at ${midpoint}."
-        )
-        if deal == "Great" and midpoint and price < midpoint - increment * 3:
-            deal = "Suspicious"
+        deal = assessment[0]
+        if report is None or not report.exists():
+            narrative.append(
+                "A vehicle-history report was not collected, so risk and the final Level 2 rating are unavailable."
+            )
+            price_only.append((listing, deal, narrative))
+            continue
 
         # Risk ratings and deal adjustment
         carfax: CarfaxData = get_carfax_data(report)
@@ -94,8 +105,35 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
 
         ratings.append((listing, deal, risk, narrative))
 
+    for listing in ctx.skipped_listings:
+        reason = (
+            "Listing price is unavailable."
+            if not listing.get("price")
+            else "The listing trim could not be mapped to compatible KBB pricing."
+        )
+        information_only.append((listing, reason))
+
+    accounted = len(ratings) + len(price_only) + len(information_only)
+    if accounted != len(listings):
+        seen = {
+            _listing_key(item[0])
+            for group in (ratings, price_only, information_only)
+            for item in group
+        }
+        for listing in listings:
+            if _listing_key(listing) not in seen:
+                information_only.append(
+                    (listing, "The listing could not be prepared for Level 2 analysis.")
+                )
+
     await render_level2_pdf(
-        ctx.make, ctx.model, len(listings), len(ctx.listings), ratings, metadata
+        ctx.make,
+        ctx.model,
+        len(listings),
+        ratings,
+        price_only,
+        information_only,
+        metadata,
     )
 
 

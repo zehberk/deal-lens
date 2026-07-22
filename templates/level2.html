@@ -15,15 +15,17 @@
 				title status, and other long-term risk factors influencing fair value.
 			</p>
 			<p class="footnote">
-				Only vehicles with a Carfax report have been analyzed.
+				A complete Level 2 rating requires both compatible KBB pricing and a
+				vehicle-history report. Listings without that evidence remain visible
+				below as price assessments or information-only listings.
 			</p>
 		</section>
 
-		{{ valid_count }} listings were eligible for Level 2 analysis. Of those
-		listings, <strong>{{ great_bin|length }}</strong> are considered a great
-		deal, <strong>{{ good_bin|length }}</strong> are considered a good deal, and
-		<strong>{{ fair_bin|length }}</strong> are considered a fair deal.
-		<strong>Deals are sorted from best to worst.</strong>
+		Of {{ total_count }} returned listings, <strong>{{ full_count }}</strong>
+		received a complete risk-adjusted Level 2 rating,
+		<strong>{{ price_only|length }}</strong> received a price assessment while
+		awaiting a history report, and <strong>{{ information_only|length }}</strong>
+		could not be evaluated. <strong>Every returned listing is shown.</strong>
 		{% macro miles(n) -%}{{ "{:,}".format(n) }}{%- endmacro %}
 		{% macro money(n) -%}{{ "${:,.0f}".format(n) }}{%- endmacro %}
 
@@ -99,6 +101,39 @@
 				</div>
 			{% endif %}
 		{%- endmacro %}
+
+		{% macro candidate_row(candidate) -%}
+			{% set listing = candidate[0] %}
+			{% set assessment = candidate[1] %}
+			{% set narrative = candidate[2] %}
+			<div class="listing pending-listing">
+				<div class="listing-title">{{ listing.title }}{% if listing.visor_listing %}<a class="visor-link" href="{{ listing.visor_listing }}">View on Visor</a>{% endif %}</div>
+				<div class="listing-title-bar"></div>
+				<div class="listing-specs compact-grid">
+					<div class="listing-specs-item">VIN: <strong>{{ listing.vin or "N/A" }}</strong></div>
+					<div class="listing-specs-item">Mileage: <strong>{{ miles(listing.mileage) if listing.mileage is not none else "N/A" }}</strong></div>
+					<div class="listing-specs-item">Listing Price: <strong>{{ money(listing.price) if listing.price is not none else "N/A" }}</strong></div>
+					<div class="listing-specs-item">Price Assessment: <strong>{{ assessment }}</strong></div>
+					<div class="listing-specs-item">Risk: <strong>Not enough evidence</strong></div>
+					<div class="listing-specs-item">Final Level 2 Rating: <strong>Pending history report</strong></div>
+				</div>
+				<div class="listing-notes"><strong>Notes:</strong><ul>{% for line in narrative %}<li class="note-line">{{ line }}</li>{% endfor %}</ul></div>
+			</div>
+		{%- endmacro %}
+
+		{% macro information_row(item) -%}
+			{% set listing = item[0] %}
+			<div class="listing unavailable-listing">
+				<div class="listing-title">{{ listing.title or "Untitled listing" }}{% if listing.visor_listing %}<a class="visor-link" href="{{ listing.visor_listing }}">View on Visor</a>{% endif %}</div>
+				<div class="listing-title-bar"></div>
+				<div class="listing-specs compact-grid">
+					<div class="listing-specs-item">VIN: <strong>{{ listing.vin or "N/A" }}</strong></div>
+					<div class="listing-specs-item">Listing Price: <strong>{{ money(listing.price) if listing.price is not none else "N/A" }}</strong></div>
+					<div class="listing-specs-item">Status: <strong>Unable to evaluate</strong></div>
+				</div>
+				<div class="listing-notes"><strong>Reason:</strong> {{ item[1] }}</div>
+			</div>
+		{%- endmacro %}
 		<section>
 			<!-- #region Deal Ratings -->
 			{%
@@ -120,15 +155,29 @@
 			{% for b in bins %}
 				{{ render_bin(b.emoji, b.title, b.cls, b.bin, loop.index0 == state.first_nonempty_index) }}
 			{% endfor %}
+			{{ render_bin("", "Poor", "poor-listing", rating_bins.Poor, false) }}
+			{{ render_bin("", "Bad", "bad-listing", rating_bins.Bad, false) }}
+			{{ render_bin("", "Suspicious", "suspicious-listing", rating_bins.Suspicious, false) }}
 			<div class="filtered-out">
 				<div class="no-break">
-					<h3>Filtered out:</h3>
+					<h3>Unfavorable complete ratings:</h3>
 					<div>
 						🟠 {{ poor_count }} Poor Deals, 🔴 {{ bad_count }} Bad Deals, 🕵️
 						{{ sus_count }} Suspicious Deals
 					</div>
 				</div>
 			</div>
+
+			{% if price_only %}
+				<h2 class="section-header break-before">Awaiting History Report</h2>
+				<p>These listings have compatible KBB pricing, but their price assessment is not a complete Level 2 rating.</p>
+				{% for candidate in price_only %}{{ candidate_row(candidate) }}{% endfor %}
+			{% endif %}
+
+			{% if information_only %}
+				<h2 class="section-header break-before">Unable to Evaluate</h2>
+				{% for item in information_only %}{{ information_row(item) }}{% endfor %}
+			{% endif %}
 
 			<!-- #endregion -->
 		</section>
@@ -138,7 +187,8 @@
 		<div>
 			<h2>Methodology</h2>
 			<ul>
-				<li>Listings must have an available Carfax report to qualify.</li>
+				<li>A complete rating requires compatible KBB pricing and an available vehicle-history report.</li>
+				<li>Listings without a history report receive a price assessment only; risk and the final Level 2 rating remain unavailable.</li>
 				<li>
 					Deal ratings are based on this order: local fair purchase price (FPP),
 					national FPP, and then fair market value (FMV).
@@ -155,9 +205,7 @@
 					odometer deviations, miles driven, and warranty status.
 				</li>
 				<li>Risk can downgrade a deal to a lower value.</li>
-				<li>
-					Bad, Poor, and Suspicious deals are excluded from the main report.
-				</li>
+				<li>Every returned listing is shown, including unfavorable deals and listings that could not be evaluated.</li>
 			</ul>
 		</div>
 		<div>

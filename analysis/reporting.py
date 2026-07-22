@@ -176,35 +176,17 @@ async def render_level1_pdf(
     print(f"PDF created at: {out_file.resolve()}")
 
 
-def build_level2_bins(ratings: list) -> tuple[list, list, list, int, int, int]:
-    great_bin = []
-    good_bin = []
-    fair_bin = []
-    poor_count = 0
-    bad_count = 0
-    suspicious_count = 0
+def build_level2_bins(ratings: list) -> dict[str, list]:
+    bins = {name: [] for name in ("Great", "Good", "Fair", "Poor", "Bad", "Suspicious")}
 
     # 0 - listing, 1 - deal, 2 - risk, 3 - narrative
     for rating in ratings:
-        if rating[1] == "Great":
-            great_bin.append(rating)
-        elif rating[1] == "Good":
-            good_bin.append(rating)
-        elif rating[1] == "Fair":
-            fair_bin.append(rating)
-        elif rating[1] == "Poor":
-            poor_count += 1
-        elif rating[1] == "Bad":
-            bad_count += 1
-        else:
-            suspicious_count += 1
+        bins.get(rating[1], bins["Suspicious"]).append(rating)
 
     # Re-order bins by risk score
-    great_bin = sorted(great_bin, key=lambda r: (r[2], r[0].get("price")))
-    good_bin = sorted(good_bin, key=lambda r: (r[2], r[0].get("price")))
-    fair_bin = sorted(fair_bin, key=lambda r: (r[2], r[0].get("price")))
-
-    return great_bin, good_bin, fair_bin, poor_count, bad_count, suspicious_count
+    for name in bins:
+        bins[name] = sorted(bins[name], key=lambda r: (r[2], r[0].get("price") or 0))
+    return bins
 
 
 def shrink_image(path: str, max_width=500):
@@ -253,10 +235,10 @@ def get_images_for_listing(listing: dict) -> list[str]:
     return [encode_image_base64(str(p)) for p in paths[:3]]
 
 
-def collect_all_images(great_bin: list, good_bin: list, fair_bin: list) -> dict:
+def collect_all_images(rating_bins: dict[str, list]) -> dict:
     all_imgs = {}
 
-    for bin_data in (great_bin, good_bin, fair_bin):
+    for bin_data in rating_bins.values():
         for rating in bin_data:
             listing = rating[0]
             vin = listing.get("vin")
@@ -272,8 +254,9 @@ async def render_level2_pdf(
     make: str,
     model: str,
     total_count: int,
-    valid_count: int,
     ratings: list,
+    price_only: list,
+    information_only: list,
     metadata: dict,
 ):
     env = Environment(loader=FileSystemLoader("templates"))
@@ -282,11 +265,8 @@ async def render_level2_pdf(
     report_title = f"{make} {model} Market Overview — Level 2"
     generated_at = datetime.now().strftime("%B %d, %Y %I:%M %p")
 
-    great_bin, good_bin, fair_bin, poor_count, bad_count, sus_count = build_level2_bins(
-        ratings
-    )
-
-    all_images = collect_all_images(great_bin, good_bin, fair_bin)
+    rating_bins = build_level2_bins(ratings)
+    all_images = collect_all_images(rating_bins)
 
     summary = create_report_filter_summary(metadata)
     html_out = template.render(
@@ -296,13 +276,16 @@ async def render_level2_pdf(
         generated_at=generated_at,
         summary=summary,
         total_count=total_count,
-        valid_count=valid_count,
-        great_bin=great_bin,
-        good_bin=good_bin,
-        fair_bin=fair_bin,
-        poor_count=poor_count,
-        bad_count=bad_count,
-        sus_count=sus_count,
+        full_count=len(ratings),
+        price_only=sorted(price_only, key=lambda item: item[0].get("price") or 0),
+        information_only=information_only,
+        rating_bins=rating_bins,
+        great_bin=rating_bins["Great"],
+        good_bin=rating_bins["Good"],
+        fair_bin=rating_bins["Fair"],
+        poor_count=len(rating_bins["Poor"]),
+        bad_count=len(rating_bins["Bad"]),
+        sus_count=len(rating_bins["Suspicious"]),
         all_images=all_images,
     )
 

@@ -132,6 +132,31 @@ body h1 {
 	background: #2ecc7115;
 }
 
+.poor-listing {
+	--accent-color: #e67e22;
+	border-left: 6px solid var(--accent-color);
+	background: #e67e2215;
+}
+
+.bad-listing,
+.suspicious-listing {
+	--accent-color: #c0392b;
+	border-left: 6px solid var(--accent-color);
+	background: #c0392b12;
+}
+
+.pending-listing {
+	--accent-color: #7f8c8d;
+	border-left: 6px solid var(--accent-color);
+	background: #7f8c8d12;
+}
+
+.unavailable-listing {
+	--accent-color: #777;
+	border-left: 6px solid var(--accent-color);
+	background: #7777770d;
+}
+
 /* Title */
 .listing-title {
 	font-size: 12pt;

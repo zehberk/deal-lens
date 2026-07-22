@@ -220,6 +220,14 @@ adapted listings to the existing `output/raw` envelope, and passes those listing
 the legacy Level 2 analysis and report pipeline. Level 1 remains on its separate
 facet-native path.
 
+Level 2 retains every returned listing in the report. Listings with compatible KBB
+pricing and a saved vehicle-history report receive the complete risk-adjusted
+rating. Listings with KBB pricing but no report receive a clearly separated price
+assessment; risk and the final Level 2 rating remain unavailable. Listings without
+usable pricing or a KBB mapping appear in an information-only section with the
+specific reason. Unfavorable complete ratings are displayed rather than reduced to
+summary counts.
+
 An end-to-end live test on 2026-07-21 collected 10 used 2024 Subaru Foresters,
 retrieved all 10 detail records, discovered three dealer history-report links,
 completed KBB matching, parsed three saved CARFAX reports, and generated the Level 2

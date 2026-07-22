@@ -106,6 +106,11 @@ listing shape, cached locally, saved under `output/raw`, and passed to the exist
 KBB, dealer-document, CARFAX, scoring, and PDF workflow. New, used, and certified
 inventory are included unless the search URL specifies conditions. Use `--force` to
 bypass the Level 2 API cache.
+
+The Level 2 report accounts for every returned listing. A complete rating still
+requires compatible KBB pricing and a saved vehicle-history report. Listings without
+a report are shown separately with a price assessment and an unavailable risk/final
+rating; listings without usable pricing show their evaluation failure reason.
 The saved DealLens metadata also records the logical `/v1/listings` query and every
 overall or per-trim `/v1/facets` query with the UTC time its response was retrieved.
 Cache hits retain the original retrieval times.

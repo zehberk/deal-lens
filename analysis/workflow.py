@@ -121,15 +121,10 @@ async def prepare_level2_analysis(
 
     norm_listings = [normalize_listing(l) for l in listings]
 
-    filtered_listings = []
-    for vl in norm_listings:
-        report = get_report_dir(vl)
-        if report and report.exists():
-            filtered_listings.append(vl)
-
-    ctx = await prepare_level1_analysis(
-        metadata, norm_listings, filtered_listings, True
-    )
+    # Keep every listing in the Level 2 workflow. Report availability determines
+    # whether a listing receives a full risk-adjusted rating later; it should not
+    # determine whether the listing is represented in the report at all.
+    ctx = await prepare_level1_analysis(metadata, norm_listings, is_normalized=True)
 
     check_missing_docs(listings)
 
