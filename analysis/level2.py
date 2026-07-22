@@ -5,11 +5,10 @@ from pathlib import Path
 from analysis.analysis_utils import get_report_dir
 from analysis.reporting import render_level2_pdf
 from analysis.scoring import (
-    adjust_deal_for_risk,
+    adjust_deal_for_evidence,
     calculate_risk_level2,
     classify_deal_rating,
     determine_best_price,
-    supports_deal_upgrade,
 )
 from analysis.workflow import prepare_level2_analysis
 
@@ -145,11 +144,18 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
         risk = round(max(min(raw_risk, 10.0), 0.0))
         lc.risk_score = risk
 
-        deal = adjust_deal_for_risk(
+        deal = adjust_deal_for_evidence(
             deal,
-            risk,
+            raw_risk,
+            int(listing["price"]),
+            int(assessment[2]),
+            (
+                int(pricing_visual["great_high"]),
+                int(pricing_visual["good_high"]),
+                int(pricing_visual["fair_high"]),
+                int(pricing_visual["poor_high"]),
+            ),
             narrative,
-            favorable_evidence=supports_deal_upgrade(raw_risk),
         )
         lc.deal_rating = deal
         lc.narrative = narrative

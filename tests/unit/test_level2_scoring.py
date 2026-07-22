@@ -1,41 +1,72 @@
-from analysis.scoring import adjust_deal_for_risk, supports_deal_upgrade
+from analysis.scoring import (
+	adjust_deal_for_evidence,
+	adjust_deal_for_risk,
+	get_structure_score,
+)
+from utils.models import StructuralStatus
 
 
-def test_zero_risk_upgrades_price_rating_one_bin():
+SPORT_CUTOFFS = (26153, 26887, 27621, 28355)
+
+
+def test_favorable_evidence_crosses_nearby_good_to_great_boundary():
 	narrative = []
 
-	assert adjust_deal_for_risk(
-		"Good", 0, narrative, favorable_evidence=True
-	) == "Great"
-	assert "upgraded to Great" in narrative[-1]
-	assert adjust_deal_for_risk("Poor", 0, favorable_evidence=True) == "Fair"
+	result = adjust_deal_for_evidence(
+		"Good", -2.5, 26194, 433, (26187, 27053, 27919, 28785), narrative
+	)
+
+	assert result == "Great"
+	assert "from Good to Great" in narrative[-1]
 
 
-def test_zero_risk_cannot_upgrade_beyond_great():
-	assert adjust_deal_for_risk("Great", 0, favorable_evidence=True) == "Great"
+def test_adverse_evidence_crosses_nearby_good_to_fair_boundary():
+	result = adjust_deal_for_evidence(
+		"Good", 1.019789174705252, 26816, 367, SPORT_CUTOFFS
+	)
+
+	assert result == "Fair"
 
 
-def test_neutral_zero_risk_does_not_upgrade_without_favorable_evidence():
-	assert adjust_deal_for_risk("Good", 0) == "Good"
+def test_marginal_warranty_does_not_move_centered_fair_price():
+	result = adjust_deal_for_evidence(
+		"Fair", -1.0, 26142, 1100, (23130, 25330, 27530, 29730)
+	)
+
+	assert result == "Fair"
 
 
-def test_low_nonzero_risk_remains_neutral():
-	assert adjust_deal_for_risk("Good", 1) == "Good"
-	assert adjust_deal_for_risk("Good", 2) == "Good"
+def test_strong_evidence_barely_crosses_poor_to_fair_boundary():
+	result = adjust_deal_for_evidence(
+		"Poor", -2.5, 28170, 367, SPORT_CUTOFFS
+	)
+
+	assert result == "Fair"
 
 
-def test_existing_risk_downgrades_are_preserved():
+def test_favorable_evidence_does_not_rescue_price_far_into_bad_bin():
+	result = adjust_deal_for_evidence(
+		"Bad", -2.0, 30241, 367, SPORT_CUTOFFS
+	)
+
+	assert result == "Bad"
+
+
+def test_existing_legacy_risk_downgrades_are_preserved():
 	assert adjust_deal_for_risk("Good", 3) == "Fair"
 	assert adjust_deal_for_risk("Good", 5) == "Poor"
 	assert adjust_deal_for_risk("Good", 7) == "Bad"
 
 
-def test_suspicious_price_handling_is_not_upgraded():
-	assert adjust_deal_for_risk("Suspicious", 0) == "Suspicious"
+def test_suspicious_price_handling_remains_ambiguous():
+	assert adjust_deal_for_evidence(
+		"Suspicious", -2.5, 20000, 500, SPORT_CUTOFFS
+	) == "Suspicious"
 
 
-def test_deal_upgrade_requires_substantial_favorable_evidence():
-	assert supports_deal_upgrade(-2.5) is True
-	assert supports_deal_upgrade(-2.0) is True
-	assert supports_deal_upgrade(-1.0) is False
-	assert supports_deal_upgrade(0.0) is False
+def test_possible_structure_wording_does_not_claim_confirmed_damage():
+	narrative = []
+
+	get_structure_score(StructuralStatus.POSSIBLE, 1.0, narrative)
+
+	assert "does not confirm structural damage" in narrative[-1]

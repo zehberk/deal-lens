@@ -24,7 +24,8 @@ h2 { margin: 13px 0 6px; color: #163a5f; font-size: 11pt; break-after: avoid; }
 .good-listing { --accent-color: #4d8fb8; border-color: var(--accent-color); background: #eef6fa; }
 .fair-listing { --accent-color: #c5a12f; border-color: var(--accent-color); background: #fbf8e9; }
 .poor-listing { --accent-color: #d47736; border-color: var(--accent-color); background: #fcf2eb; }
-.bad-listing, .suspicious-listing { --accent-color: #c2413b; border-color: var(--accent-color); background: #fbeeee; }
+.bad-listing { --accent-color: #c2413b; border-color: var(--accent-color); background: #fbeeee; }
+.suspicious-listing { --accent-color: #7a8793; border-color: var(--accent-color); background: #f1f3f5; }
 
 .image-viewer { display: flex; align-items: center; gap: 6px; width: 100%; height: 105px; margin-bottom: 4px; overflow: hidden; }
 .image-viewer img { width: calc((100% - 12px) / 3); height: 105px; object-fit: contain; border-radius: 3px; background: #eef2f5; }

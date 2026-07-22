@@ -34,6 +34,7 @@ STRUCTURAL_SCORES: dict[StructuralStatus, float] = {
     StructuralStatus.POSSIBLE: 1.0,
     StructuralStatus.CONFIRMED: 2.5,
 }
+RISK_PRICE_ADJUSTMENT_RATIO = 0.6
 
 
 def rate_uncertainty(listing) -> str:
@@ -185,7 +186,6 @@ def adjust_deal_for_risk(
     base_bin: str,
     risk: float,
     narrative: Optional[list[str]] = None,
-    favorable_evidence: bool = False,
 ) -> str:
     """
     Adjusts deal grading for level 2 based on the risk.
@@ -202,9 +202,7 @@ def adjust_deal_for_risk(
         return "Suspicious"
 
     idx = DEAL_ORDER.index(base_bin)
-    if risk == 0 and favorable_evidence:
-        shift = -1 if idx > 0 else 0
-    elif risk <= 2:
+    if risk <= 2:
         shift = 0
     elif risk <= 4:
         shift = 1
@@ -238,6 +236,49 @@ def adjust_deal_for_risk(
     return new_deal
 
 
+def adjust_deal_for_evidence(
+    base_bin: str,
+    raw_risk: float,
+    price: int,
+    increment: int,
+    cutoffs: tuple[int, int, int, int],
+    narrative: Optional[list[str]] = None,
+) -> str:
+    """Move the price position continuously, then classify only crossed cutoffs."""
+    displayed_risk = round(max(min(raw_risk, 10.0), 0.0))
+    if base_bin == "Suspicious":
+        return adjust_deal_for_risk(base_bin, displayed_risk, narrative)
+
+    evidence_adjustment = round(raw_risk * increment * RISK_PRICE_ADJUSTMENT_RATIO)
+    adjusted_position = price + evidence_adjustment
+    great_high, good_high, fair_high, poor_high = cutoffs
+
+    if adjusted_position <= great_high:
+        adjusted_bin = "Great"
+    elif adjusted_position <= good_high:
+        adjusted_bin = "Good"
+    elif adjusted_position <= fair_high:
+        adjusted_bin = "Fair"
+    elif adjusted_position <= poor_high:
+        adjusted_bin = "Poor"
+    else:
+        adjusted_bin = "Bad"
+
+    if narrative is not None:
+        amount = abs(evidence_adjustment)
+        if adjusted_bin == base_bin or evidence_adjustment == 0:
+            narrative.append(
+                f"Deal rating remains {base_bin}; available vehicle-history evidence changes its price position by only ${amount:,}."
+            )
+        else:
+            direction = "improves" if evidence_adjustment < 0 else "worsens"
+            narrative.append(
+                f"Available vehicle-history evidence {direction} the price position by ${amount:,}, changing the deal rating from {base_bin} to {adjusted_bin}."
+            )
+
+    return adjusted_bin
+
+
 def calculate_risk_level2(
     carfax: CarfaxData, listing: dict, narrative: Optional[list[str]] = None
 ) -> float:
@@ -252,7 +293,7 @@ def calculate_risk_level2(
 
     Returns:
         float: The raw, unclamped risk score. Negative values represent favorable
-        evidence that can support a one-bin deal upgrade.
+        evidence and positive values represent added risk.
     """
     score: float = score_title_status(carfax, narrative)
     score += score_mileage_use(carfax, listing, narrative)
@@ -266,11 +307,6 @@ def rate_risk_level2(
     """Return the displayed 0-10 risk score after preserving raw evidence internally."""
     score = calculate_risk_level2(carfax, listing, narrative)
     return round(max(min(score, 10.0), 0.0))
-
-
-def supports_deal_upgrade(raw_risk: float) -> bool:
-    """Require substantial favorable evidence before improving a price-based bin."""
-    return raw_risk <= -2.0
 
 
 def score_title_status(
@@ -376,7 +412,7 @@ def get_structure_score(
             )
         if status == StructuralStatus.POSSIBLE:
             narrative.append(
-                "At least one damage report alluded to possible structural problems."
+                "CARFAX recommends an inspection after reported damage; this does not confirm structural damage."
             )
 
     # Scale down to give more breathing room with the title
