@@ -317,12 +317,12 @@ def calculate_deal_score(
 
 
 def favorable_evidence_bonus(favorable_evidence: float, risk: float) -> float:
-    """Return a modest bonus that fades as actual vehicle risk approaches 10."""
+    """Return a modest bonus that is fully negated by meaningful risk at 4+."""
     bounded_risk = max(0.0, min(10.0, risk))
     return (
         max(favorable_evidence, 0.0)
         * FAVORABLE_EVIDENCE_POINTS
-        * (1.0 - bounded_risk / 10.0)
+        * max(0.0, 1.0 - bounded_risk / 4.0)
     )
 
 

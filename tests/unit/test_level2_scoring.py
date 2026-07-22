@@ -74,6 +74,11 @@ def test_adverse_mileage_risk_subtracts_from_deal_score():
 	assert calculate_deal_score(60, 4) < calculate_deal_score(60, 0)
 
 
+def test_meaningful_risk_negates_favorable_evidence():
+	assert calculate_deal_score(60, 4, 3) == calculate_deal_score(60, 4, 0)
+	assert calculate_deal_score(60, 3, 3) > calculate_deal_score(60, 3, 0)
+
+
 def test_zero_score_requires_bottom_price_and_maximum_risk():
 	assert calculate_deal_score(0, 0) == 10
 	assert calculate_deal_score(0, 4) > 0
