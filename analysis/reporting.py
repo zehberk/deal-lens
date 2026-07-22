@@ -173,7 +173,7 @@ async def render_level1_pdf(
         await page.pdf(path=str(out_file), format="A4", print_background=True)
         await browser.close()
 
-    print(f"✅ PDF created at: {out_file.resolve()}")
+    print(f"PDF created at: {out_file.resolve()}")
 
 
 def build_level2_bins(ratings: list) -> tuple[list, list, list, int, int, int]:
@@ -330,4 +330,4 @@ async def render_level2_pdf(
         await page.pdf(path=str(out_file), format="A4", print_background=True)
         await browser.close()
 
-    print(f"✅ PDF created at: {out_file.resolve()}")
+    print(f"PDF created at: {out_file.resolve()}")

@@ -760,7 +760,7 @@ async def download_files(
             cached_url = analysis_cache.get(vin, {}).get("carfax_url")
             cached_fee = analysis_cache.get(vin, {}).get("dealer_fee")
             cached_included = analysis_cache.get(vin, {}).get("dealer_fee_included")
-            if cached_url and url == "Unavailable":
+            if cached_url and (not url or url == "Unavailable"):
                 l.setdefault("additional_docs", {})["carfax_url"] = cached_url
             if cached_fee:
                 l.setdefault("seller", {})["dealer_fee"] = cached_fee

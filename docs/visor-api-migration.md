@@ -215,8 +215,16 @@ duplicate IDs are retained as structured exclusions rather than disappearing.
 `visor_api.level2_cache.cached_level2_collection` stores the complete collection,
 including raw search/detail records and exclusions, in an atomic local daily cache.
 It supports forced refresh and invalidates corrupt, stale, or incompatible cache
-envelopes. This service is the Level 2 acquisition boundary only; routing the
-`--level2` CLI workflow through it remains a later integration task in issue #238.
+envelopes. The `--level2` CLI workflow now routes through this service, writes the
+adapted listings to the existing `output/raw` envelope, and passes those listings to
+the legacy Level 2 analysis and report pipeline. Level 1 remains on its separate
+facet-native path.
+
+An end-to-end live test on 2026-07-21 collected 10 used 2024 Subaru Foresters,
+retrieved all 10 detail records, discovered three dealer history-report links,
+completed KBB matching, parsed three saved CARFAX reports, and generated the Level 2
+PDF. The test also established that API-null document URLs must use the same URL
+validity check as legacy `"Unavailable"` sentinels.
 
 ## Market-overview source determination
 
