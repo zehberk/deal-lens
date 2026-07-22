@@ -40,7 +40,9 @@
 			{% set vin = listing.vin %}
 			{% set imgs = all_images.get(vin, []) %}
 
+			<div class="listing-layout{% if imgs %} has-images{% endif %}">
 			{% if imgs %}<div class="image-viewer">{% for img in imgs %}<img src="{{ img }}" alt="Vehicle image">{% endfor %}</div>{% endif %}
+			<div class="listing-content">
 			<div class="listing-title">
 				{{ listing.title }}
 				<span class="deal-rating">{{ deal }}</span>
@@ -73,10 +75,12 @@
 				</div>
 			</div>
 			<div class="listing-notes"><strong>Notes:</strong><ul>{% for line in narrative %}<li>{{ line }}</li>{% endfor %}</ul></div>
+			</div>
+			</div>
 		{%- endmacro %}
 
 		<main class="deal-bin">
-			{% for rating in all_ratings %}<article class="listing {{ rating[1]|lower }}-listing"><div class="deal-strength-track">{% if rating[4].deal_strength is not none %}<span class="deal-strength-marker" data-bottom-pct="{{ rating[4].deal_strength }}"><b>{{ rating[4].deal_strength|round|int }}%</b></span>{% endif %}</div>{{ vehicle_row(rating) }}</article>{% endfor %}
+			{% for rating in all_ratings %}<article class="listing {{ rating[1]|lower }}-listing"><div class="deal-strength-track">{% if rating[4].deal_strength is not none %}<span class="deal-strength-marker{% if rating[4].deal_strength >= 90 %} marker-high{% elif rating[4].deal_strength <= 10 %} marker-low{% endif %}" data-bottom-pct="{{ rating[4].deal_strength }}"><b>{{ rating[4].deal_strength|round|int }}%</b></span>{% endif %}</div>{{ vehicle_row(rating) }}</article>{% endfor %}
 		</main>
 
 		{% if information_summary %}
