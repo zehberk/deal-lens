@@ -176,4 +176,16 @@ def test_level2_template_keeps_jinja_out_of_inline_css():
 	assert "style=" not in template
 	assert "data-left-pct=" in template
 	assert "data-width-pct=" in template
-	assert "data-height-pct=" in template
+	assert "data-bottom-pct=" in template
+
+
+def test_level2_bins_sort_by_within_bin_strength():
+	ratings = [
+		({"price": 20000}, "Fair", 0, [], {"deal_strength": 20}),
+		({"price": 21000}, "Fair", 1, [], {"deal_strength": 80}),
+		({"price": 19000}, "Fair", 0, [], {"deal_strength": 50}),
+	]
+
+	bins = build_level2_bins(ratings)
+
+	assert [rating[4]["deal_strength"] for rating in bins["Fair"]] == [80, 50, 20]

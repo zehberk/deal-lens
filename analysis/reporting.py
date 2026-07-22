@@ -189,9 +189,16 @@ def build_level2_bins(ratings: list) -> dict[str, list]:
     for rating in ratings:
         bins.get(rating[1], bins["Suspicious"]).append(rating)
 
-    # Re-order bins by risk score
+    # Show the strongest listing first within each rating.
     for name in bins:
-        bins[name] = sorted(bins[name], key=lambda r: (r[2], r[0].get("price") or 0))
+        bins[name] = sorted(
+            bins[name],
+            key=lambda r: (
+                -(r[4].get("deal_strength") or 0) if len(r) > 4 else 0,
+                r[2],
+                r[0].get("price") or 0,
+            ),
+        )
     return bins
 
 
@@ -348,7 +355,7 @@ async def render_level2_pdf(
         await page.set_content(html_out, wait_until="load")
         await page.add_style_tag(path=str(css_path))
         await page.eval_on_selector_all(
-            "[data-left-pct], [data-width-pct], [data-height-pct]",
+            "[data-left-pct], [data-width-pct], [data-bottom-pct]",
             """elements => elements.forEach(element => {
                 if (element.dataset.leftPct !== undefined) {
                     element.style.left = `${element.dataset.leftPct}%`;
@@ -356,8 +363,8 @@ async def render_level2_pdf(
                 if (element.dataset.widthPct !== undefined) {
                     element.style.width = `${element.dataset.widthPct}%`;
                 }
-                if (element.dataset.heightPct !== undefined) {
-                    element.style.height = `${element.dataset.heightPct}%`;
+                if (element.dataset.bottomPct !== undefined) {
+                    element.style.bottom = `${element.dataset.bottomPct}%`;
                 }
             })""",
         )

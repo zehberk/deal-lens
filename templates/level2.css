@@ -20,9 +20,10 @@ h2 { margin: 13px 0 6px; color: #163a5f; font-size: 11pt; break-after: avoid; }
 .report-counts { margin: 7px 0 10px; }
 
 .deal-bin { margin: 0; }
-.listing { position: relative; margin: 0 0 12px; padding: 7px 9px 8px 12px; border-left: 7px solid #dbe3ea; border-radius: 3px; break-inside: avoid; page-break-inside: avoid; }
-.deal-strength-track { position: absolute; top: 0; bottom: 0; left: -7px; width: 7px; overflow: hidden; background: #dbe3ea; border-radius: 3px 0 0 3px; }
-.deal-strength-track span { position: absolute; right: 0; bottom: 0; left: 0; background: var(--accent-color); }
+.listing { position: relative; margin: 0 0 12px; padding: 7px 9px 8px 12px; border-left: 7px solid var(--accent-color); border-radius: 3px; break-inside: avoid; page-break-inside: avoid; }
+.deal-strength-track { position: absolute; top: 0; bottom: 0; left: -7px; width: 7px; overflow: visible; background: var(--accent-color); border-radius: 3px 0 0 3px; }
+.deal-strength-marker { position: absolute; right: -5px; width: 12px; height: 3px; border-top: 2px solid #fff; filter: drop-shadow(0 0 1px #18212b); transform: translateY(50%); }
+.deal-strength-marker b { position: absolute; top: -7px; left: 13px; min-width: 27px; padding: 1px 3px; color: #fff; background: var(--accent-color); border: 1px solid #fff; border-radius: 5px; font-size: 5.5pt; line-height: 9px; text-align: center; white-space: nowrap; }
 .great-listing { --accent-color: #2f855a; background: #edf7f1; }
 .good-listing { --accent-color: #4d8fb8; background: #eef6fa; }
 .fair-listing { --accent-color: #c5a12f; background: #fbf8e9; }
