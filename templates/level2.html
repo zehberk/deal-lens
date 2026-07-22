@@ -19,7 +19,7 @@
 		<section class="intro">
 			<p class="generated">Generated: {{ generated_at }}</p>
 			<p>This report compares each listing with compatible KBB pricing. When a vehicle-history report is available, it also evaluates title, accident, mileage, service, and warranty evidence to produce a complete rating.</p>
-			<div class="rating-guide"><strong>Reading each rating:</strong> The white triangle shows the evidence-adjusted price position across the colored deal scale; the prices below it are rating cutoffs. Deal Score uses that entire scale, from 100% at the strongest end to 0% at the weakest. It is not a confidence score.</div>
+			<div class="rating-guide"><strong>Reading each rating:</strong> The white triangle shows the listing price across the colored price scale; the prices below it are rating cutoffs. Deal Score starts with that full 0–100 price scale, subtracts an accelerating penalty for actual risk, and adds modest low-mileage and warranty bonuses. It is not a confidence score.</div>
 			<p class="footnote">A complete Level 2 rating requires both compatible KBB pricing and a vehicle-history report. Listings without that evidence receive a price assessment or are counted under an evaluation failure reason.</p>
 		</section>
 
@@ -101,6 +101,7 @@
 			<ul>
 				<li>Price is compared with local KBB Fair Purchase Price, then national FPP or Fair Market Value when needed.</li>
 				<li>A complete rating requires a vehicle-history report. Title, accident, odometer, mileage, service, and warranty evidence can improve or worsen the price-based rating.</li>
+				<li>Risk has an accelerating effect: small risks have limited impact, while moderate and high risks reduce Deal Score increasingly sharply.</li>
 				<li>Listings without a history report, price, or compatible KBB data are summarized by reason rather than displayed individually.</li>
 				<li>CARFAX warranty status is an estimate and should be confirmed with the manufacturer or dealer.</li>
 			</ul>

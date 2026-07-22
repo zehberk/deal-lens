@@ -5,12 +5,13 @@ from pathlib import Path
 from analysis.analysis_utils import get_report_dir
 from analysis.reporting import render_level2_pdf
 from analysis.scoring import (
-    adjust_deal_for_evidence,
-    calculate_risk_level2,
+    calculate_deal_score,
+    calculate_level2_evidence,
     classify_deal_rating,
+    deal_rating_from_score,
     deal_score_from_position,
     determine_best_price,
-    evidence_adjusted_price,
+    favorable_evidence_bonus,
 )
 from analysis.workflow import prepare_level2_analysis
 
@@ -144,44 +145,32 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
         carfax: CarfaxData = get_carfax_data(report)
         lc.carfax = carfax
 
-        raw_risk = calculate_risk_level2(carfax, listing, narrative)
-        risk = round(max(min(raw_risk, 10.0), 0.0))
+        raw_risk, favorable_evidence = calculate_level2_evidence(
+            carfax, listing, narrative
+        )
+        risk = round(raw_risk)
         lc.risk_score = risk
-
-        deal = adjust_deal_for_evidence(
-            deal,
-            raw_risk,
-            int(listing["price"]),
-            int(assessment[2]),
-            (
-                int(pricing_visual["great_high"]),
-                int(pricing_visual["good_high"]),
-                int(pricing_visual["fair_high"]),
-                int(pricing_visual["poor_high"]),
-            ),
-            narrative,
-        )
-        cutoffs = (
-            int(pricing_visual["great_high"]),
-            int(pricing_visual["good_high"]),
-            int(pricing_visual["fair_high"]),
-            int(pricing_visual["poor_high"]),
-        )
-        adjusted_position = evidence_adjusted_price(
-            int(listing["price"]), raw_risk, int(assessment[2])
-        )
-        scale_low = int(pricing_visual["scale_low"])
-        scale_high = int(pricing_visual["scale_high"])
-        pricing_visual["marker_pct"] = max(
-            0.0,
-            min(
-                100.0,
-                (adjusted_position - scale_low) / max(scale_high - scale_low, 1) * 100,
-            ),
-        )
-        pricing_visual["deal_score"] = deal_score_from_position(
+        price_score = deal_score_from_position(
             float(pricing_visual["marker_pct"]), deal
         )
+        if price_score is None:
+            pricing_visual["deal_score"] = None
+            narrative.append("Deal remains Suspicious because its price is outside the reliable comparison range.")
+        else:
+            pricing_visual["deal_score"] = int(
+                calculate_deal_score(price_score, raw_risk, favorable_evidence)
+            )
+            price_deal = deal
+            deal = deal_rating_from_score(float(pricing_visual["deal_score"]))
+            narrative.append(
+                f"Deal Score is {pricing_visual['deal_score']:.0f}%: price starts at {price_score:.0f}%, "
+                f"risk is {raw_risk:.1f}/10, and favorable evidence contributes "
+                f"{favorable_evidence_bonus(favorable_evidence, raw_risk):.0f} points."
+            )
+            if deal != price_deal:
+                narrative.append(
+                    f"The combined score changes the price-only rating from {price_deal} to {deal}."
+                )
         lc.deal_rating = deal
         lc.narrative = narrative
 

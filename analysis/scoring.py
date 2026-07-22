@@ -1,4 +1,5 @@
 import re
+import math
 
 from datetime import datetime
 from typing import Optional
@@ -35,6 +36,8 @@ STRUCTURAL_SCORES: dict[StructuralStatus, float] = {
     StructuralStatus.CONFIRMED: 2.5,
 }
 RISK_PRICE_ADJUSTMENT_RATIO = 0.6
+FAVORABLE_EVIDENCE_POINTS = 6.0
+MINIMUM_LOW_RISK_SCORE = 10.0
 
 
 def rate_uncertainty(listing) -> str:
@@ -291,6 +294,51 @@ def deal_score_from_position(marker_pct: float, deal: str) -> float | None:
     return max(0.0, min(100.0, 100.0 - marker_pct))
 
 
+def risk_penalty(risk: float) -> float:
+    """Return an exponential 0-100 penalty for an actual 0-10 risk score."""
+    bounded_risk = max(0.0, min(10.0, risk))
+    return 100.0 * (math.exp(bounded_risk / 4.0) - 1.0) / (
+        math.exp(2.5) - 1.0
+    )
+
+
+def calculate_deal_score(
+    price_score: float,
+    risk: float,
+    favorable_evidence: float = 0.0,
+) -> float:
+    """Combine linear price value, exponential risk, and modest evidence bonuses."""
+    bounded_risk = max(0.0, min(10.0, risk))
+    price_risk_weight = 0.8 + 0.2 * (100.0 - price_score) / 100.0
+    score = price_score - risk_penalty(bounded_risk) * price_risk_weight
+    score += favorable_evidence_bonus(favorable_evidence, bounded_risk)
+    low_risk_floor = MINIMUM_LOW_RISK_SCORE * (1.0 - bounded_risk / 10.0)
+    return max(0.0, min(100.0, max(score, low_risk_floor)))
+
+
+def favorable_evidence_bonus(favorable_evidence: float, risk: float) -> float:
+    """Return a modest bonus that fades as actual vehicle risk approaches 10."""
+    bounded_risk = max(0.0, min(10.0, risk))
+    return (
+        max(favorable_evidence, 0.0)
+        * FAVORABLE_EVIDENCE_POINTS
+        * (1.0 - bounded_risk / 10.0)
+    )
+
+
+def deal_rating_from_score(score: float) -> str:
+    """Derive the displayed rating from the final continuous Deal Score."""
+    if score >= 80:
+        return "Great"
+    if score >= 60:
+        return "Good"
+    if score >= 40:
+        return "Fair"
+    if score >= 20:
+        return "Poor"
+    return "Bad"
+
+
 def deal_strength_within_bin(
     deal: str,
     adjusted_position: int,
@@ -319,7 +367,7 @@ def calculate_risk_level2(
     carfax: CarfaxData, listing: dict, narrative: Optional[list[str]] = None
 ) -> float:
     """
-    Scores multiple areas of the carfax report to return a risk level
+    Score adverse evidence only; favorable evidence is handled separately.
 
     Parameters:
         carfax: CarfaxData
@@ -328,19 +376,30 @@ def calculate_risk_level2(
         Listing data containing at least "year" and "mileage" fields.
 
     Returns:
-        float: The raw, unclamped risk score. Negative values represent favorable
-        evidence and positive values represent added risk.
+        float: The actual risk score from 0 to 10.
     """
-    score: float = score_title_status(carfax, narrative)
-    score += score_mileage_use(carfax, listing, narrative)
-    score += score_warranty_status(carfax, listing, narrative)
-    return score
+    risk, _ = calculate_level2_evidence(carfax, listing, narrative)
+    return risk
+
+
+def calculate_level2_evidence(
+    carfax: CarfaxData,
+    listing: dict,
+    narrative: Optional[list[str]] = None,
+) -> tuple[float, float]:
+    """Return actual risk and favorable evidence as separate non-negative values."""
+    risk = score_title_status(carfax, narrative)
+    mileage = score_mileage_use(carfax, listing, narrative)
+    warranty = score_warranty_status(carfax, listing, narrative)
+    risk += max(mileage, 0.0)
+    favorable = max(-mileage, 0.0) + max(-warranty, 0.0)
+    return min(max(risk, 0.0), 10.0), favorable
 
 
 def rate_risk_level2(
     carfax: CarfaxData, listing: dict, narrative: Optional[list[str]] = None
 ) -> int:
-    """Return the displayed 0-10 risk score after preserving raw evidence internally."""
+    """Return the displayed 0-10 adverse-risk score."""
     score = calculate_risk_level2(carfax, listing, narrative)
     return round(max(min(score, 10.0), 0.0))
 
