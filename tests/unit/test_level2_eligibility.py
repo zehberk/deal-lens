@@ -168,3 +168,11 @@ def test_level2_branding_and_dealer_location_helpers():
 	assert logo_data_uri(Path("img/deallens-logo.svg")).startswith(
 		"data:image/svg+xml;base64,"
 	)
+
+
+def test_level2_template_keeps_jinja_out_of_inline_css():
+	template = Path("templates/level2.html").read_text(encoding="utf-8")
+
+	assert "style=" not in template
+	assert "data-left-pct=" in template
+	assert "data-width-pct=" in template

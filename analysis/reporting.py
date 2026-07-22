@@ -347,6 +347,17 @@ async def render_level2_pdf(
         await page.emulate_media(media="screen")
         await page.set_content(html_out, wait_until="load")
         await page.add_style_tag(path=str(css_path))
+        await page.eval_on_selector_all(
+            "[data-left-pct], [data-width-pct]",
+            """elements => elements.forEach(element => {
+                if (element.dataset.leftPct !== undefined) {
+                    element.style.left = `${element.dataset.leftPct}%`;
+                }
+                if (element.dataset.widthPct !== undefined) {
+                    element.style.width = `${element.dataset.widthPct}%`;
+                }
+            })""",
+        )
         await page.pdf(path=str(out_file), format="A4", print_background=True)
         await browser.close()
 

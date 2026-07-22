@@ -57,18 +57,18 @@
 			</div>
 			<div class="price-position">
 				<div class="price-track">
-					<div class="price-segment great" style="width: {{ pricing.great_end_pct }}%;">Great</div>
-					<div class="price-segment good" style="left: {{ pricing.great_end_pct }}%; width: {{ pricing.good_end_pct - pricing.great_end_pct }}%;">Good</div>
-					<div class="price-segment fair" style="left: {{ pricing.good_end_pct }}%; width: {{ pricing.fair_end_pct - pricing.good_end_pct }}%;">Fair</div>
-					<div class="price-segment poor" style="left: {{ pricing.fair_end_pct }}%; width: {{ pricing.poor_end_pct - pricing.fair_end_pct }}%;">Poor</div>
-					<div class="price-segment bad" style="left: {{ pricing.poor_end_pct }}%; width: {{ 100 - pricing.poor_end_pct }}%;">Bad</div>
-					<div class="listing-marker" style="left: {{ pricing.marker_pct }}%;"><span></span></div>
+					<div class="price-segment great" data-width-pct="{{ pricing.great_end_pct }}">Great</div>
+					<div class="price-segment good" data-left-pct="{{ pricing.great_end_pct }}" data-width-pct="{{ pricing.good_end_pct - pricing.great_end_pct }}">Good</div>
+					<div class="price-segment fair" data-left-pct="{{ pricing.good_end_pct }}" data-width-pct="{{ pricing.fair_end_pct - pricing.good_end_pct }}">Fair</div>
+					<div class="price-segment poor" data-left-pct="{{ pricing.fair_end_pct }}" data-width-pct="{{ pricing.poor_end_pct - pricing.fair_end_pct }}">Poor</div>
+					<div class="price-segment bad" data-left-pct="{{ pricing.poor_end_pct }}" data-width-pct="{{ 100 - pricing.poor_end_pct }}">Bad</div>
+					<div class="listing-marker" data-left-pct="{{ pricing.marker_pct }}"><span></span></div>
 				</div>
 				<div class="price-cutoffs">
-					<span style="left: {{ pricing.great_end_pct }}%;">{{ money(pricing.great_high) }}</span>
-					<span style="left: {{ pricing.good_end_pct }}%;">{{ money(pricing.good_high) }}</span>
-					<span style="left: {{ pricing.fair_end_pct }}%;">{{ money(pricing.fair_high) }}</span>
-					<span style="left: {{ pricing.poor_end_pct }}%;">{{ money(pricing.poor_high) }}</span>
+					<span data-left-pct="{{ pricing.great_end_pct }}">{{ money(pricing.great_high) }}</span>
+					<span data-left-pct="{{ pricing.good_end_pct }}">{{ money(pricing.good_high) }}</span>
+					<span data-left-pct="{{ pricing.fair_end_pct }}">{{ money(pricing.fair_high) }}</span>
+					<span data-left-pct="{{ pricing.poor_end_pct }}">{{ money(pricing.poor_high) }}</span>
 				</div>
 			</div>
 			<div class="listing-notes"><strong>Notes:</strong><ul>{% for line in narrative %}<li>{{ line }}</li>{% endfor %}</ul></div>
