@@ -20,7 +20,9 @@ def _listing_key(listing: dict) -> str:
     return str(listing.get("id") or listing.get("vin") or "")
 
 
-def _price_assessment(lc, narrative: list[str]) -> tuple[str, int, int, float] | None:
+def _price_assessment(
+    lc, narrative: list[str]
+) -> tuple[str, int, int, float, dict[str, int | float]] | None:
     listing = lc.listing
     price_val = listing.get("price")
     if price_val is None:
@@ -34,17 +36,58 @@ def _price_assessment(lc, narrative: list[str]) -> tuple[str, int, int, float] |
     if not (fpp_natl and fpp_local and fmv):
         return None
 
-    narrative.append(f"This vehicle is being listed at ${price}.")
     best_comparison = determine_best_price(price, fpp_local, fpp_natl, fmv, narrative)
     deal, midpoint, increment, percent = classify_deal_rating(
         price, best_comparison, fmv, fpp_local, fmr_high
     )
-    narrative.append(
-        f"Deal bins are set at ${increment * 2} ({percent * 200}%) in size, placing the Fair midpoint at ${midpoint}."
-    )
     if deal == "Great" and midpoint and price < midpoint - increment * 3:
         deal = "Suspicious"
-    return deal, midpoint, increment, percent
+
+    boundaries = [
+        midpoint - increment * 3,
+        midpoint - increment,
+        midpoint + increment,
+        midpoint + increment * 3,
+    ]
+    if best_comparison != fpp_local:
+        percentage_boundaries = [
+            round(midpoint * (1 - percent * 3)),
+            round(midpoint * (1 - percent)),
+            round(midpoint * (1 + percent)),
+            round(midpoint * (1 + percent * 3)),
+        ]
+        boundaries = [
+            max(absolute, percentage)
+            for absolute, percentage in zip(boundaries, percentage_boundaries)
+        ]
+
+    great_high, good_high, fair_high, poor_high = boundaries
+    leading_width = max(good_high - great_high, 1)
+    trailing_width = max(poor_high - fair_high, 1)
+    scale_low = max(great_high - leading_width, 0)
+    scale_high = poor_high + trailing_width
+    scale_width = max(scale_high - scale_low, 1)
+    marker_pct = max(0.0, min(100.0, (price - scale_low) / scale_width * 100))
+
+    boundary_percentages = [
+        (boundary - scale_low) / scale_width * 100 for boundary in boundaries
+    ]
+    great_end_pct, good_end_pct, fair_end_pct, poor_end_pct = boundary_percentages
+
+    pricing_visual: dict[str, int | float] = {
+        "listing_price": price,
+        "fair_low": good_high,
+        "fair_high": fair_high,
+        "great_high": great_high,
+        "good_high": good_high,
+        "poor_high": poor_high,
+        "marker_pct": marker_pct,
+        "great_end_pct": great_end_pct,
+        "good_end_pct": good_end_pct,
+        "fair_end_pct": fair_end_pct,
+        "poor_end_pct": poor_end_pct,
+    }
+    return deal, midpoint, increment, percent, pricing_visual
 
 
 def report_stats(label: str, values: list[float]):
@@ -91,6 +134,7 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
             )
             price_only.append((listing, deal, narrative))
             continue
+        pricing_visual = assessment[4]
 
         # Risk ratings and deal adjustment
         carfax: CarfaxData = get_carfax_data(report)
@@ -103,7 +147,7 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
         lc.deal_rating = deal
         lc.narrative = narrative
 
-        ratings.append((listing, deal, risk, narrative))
+        ratings.append((listing, deal, risk, narrative, pricing_visual))
 
     for listing in ctx.skipped_listings:
         reason = (

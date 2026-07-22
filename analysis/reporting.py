@@ -1,5 +1,6 @@
-import base64, sys, urllib.parse
+import base64, re, sys, urllib.parse
 
+from collections import Counter
 from datetime import datetime
 from jinja2 import Environment, FileSystemLoader
 from pathlib import Path
@@ -48,8 +49,7 @@ def to_level1_json(
 
 def create_report_filter_summary(metadata: dict) -> str:
     """
-    Creates a summary header for the level 1 analysis report that briefly goes over which parameters that were used in the search.
-    This include condition, price filters, mileage filters, and the sort method
+	Creates a report header summarizing condition, price, mileage, and sort filters.
     """
 
     summary = "This report reflects{condition_summary}listings retrieved using the <i>{sort_method}</i> sort option"
@@ -58,7 +58,12 @@ def create_report_filter_summary(metadata: dict) -> str:
     miles_summary = ""
     filters = metadata["filters"]
     sort_method = filters.get("sort")  # this will always exist
-    condition: list[str] = filters.get("car_type")
+    raw_condition = filters.get("car_type")
+    condition = (
+        [raw_condition]
+        if isinstance(raw_condition, str)
+        else list(raw_condition or [])
+    )
     min_price: int = filters.get("price_min")
     max_price: int = filters.get("price_max")
     min_miles: int = filters.get("miles_min")
@@ -66,9 +71,9 @@ def create_report_filter_summary(metadata: dict) -> str:
 
     if condition:
         if len(condition) == 1:
-            condition_summary = f" {condition[0]} "
+            condition_summary = f" {condition[0].title()} "
         elif len(condition) == 2:
-            sort_cond = sorted(condition)
+            sort_cond = sorted(item.title() for item in condition)
             condition_summary = f" {sort_cond[0]} and {sort_cond[1]} "
         else:
             condition_summary = " New, Used, and Certified "
@@ -135,6 +140,7 @@ async def render_level1_pdf(
 
     html_out = template.render(
         report_title=report_title,
+        logo_svg=Path("img/deallens-logo.svg").read_text(encoding="utf-8"),
         generated_at=generated_at,
         summary=summary,
         cache_entries=cache_entries,
@@ -187,6 +193,27 @@ def build_level2_bins(ratings: list) -> dict[str, list]:
     for name in bins:
         bins[name] = sorted(bins[name], key=lambda r: (r[2], r[0].get("price") or 0))
     return bins
+
+
+def summarize_level2_failures(price_only: list, information_only: list) -> list[tuple[str, int]]:
+    counts = Counter(reason for _, reason in information_only)
+    if price_only:
+        counts["Vehicle-history report unavailable."] += len(price_only)
+    return sorted(counts.items())
+
+
+def display_dealer_location(value: str | None) -> str:
+    if not value:
+        return "N/A"
+    return re.sub(r"\s+\d{5}(?:-\d{4})?$", "", value).strip()
+
+
+def logo_data_uri(path: Path) -> str | None:
+    try:
+        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    except OSError:
+        return None
+    return f"data:image/svg+xml;base64,{encoded}"
 
 
 def shrink_image(path: str, max_width=500):
@@ -266,20 +293,30 @@ async def render_level2_pdf(
     generated_at = datetime.now().strftime("%B %d, %Y %I:%M %p")
 
     rating_bins = build_level2_bins(ratings)
+    all_ratings = [
+        rating
+        for name in ("Great", "Good", "Fair", "Poor", "Bad", "Suspicious")
+        for rating in rating_bins[name]
+    ]
     all_images = collect_all_images(rating_bins)
+    information_summary = summarize_level2_failures(price_only, information_only)
 
     summary = create_report_filter_summary(metadata)
     html_out = template.render(
         make=make,
         model=model,
         report_title=report_title,
+        logo=logo_data_uri(Path("img/deallens-logo.svg")),
         generated_at=generated_at,
         summary=summary,
         total_count=total_count,
         full_count=len(ratings),
         price_only=sorted(price_only, key=lambda item: item[0].get("price") or 0),
         information_only=information_only,
+        information_summary=information_summary,
         rating_bins=rating_bins,
+        all_ratings=all_ratings,
+        display_dealer_location=display_dealer_location,
         great_bin=rating_bins["Great"],
         good_bin=rating_bins["Good"],
         fair_bin=rating_bins["Fair"],

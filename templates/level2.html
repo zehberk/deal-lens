@@ -1,269 +1,99 @@
 <!doctype html>
 <html lang="en">
 	<head>
-		<meta charset="utf-8" />
+		<meta charset="utf-8">
 		<title>Level 2 Analysis Report - {{ make }} {{ model }}</title>
 	</head>
 	<body>
-		<h1>{{ report_title }}</h1>
-		<h3 class="footnote">Generated: {{ generated_at }}</h3>
+		<header>
+			<div class="title-row">
+				<div class="report-title">
+					<p class="eyebrow">Level 2</p>
+					<h1>{{ make }} {{ model }} Market Overview</h1>
+				</div>
+				{% if logo %}<img src="{{ logo }}" alt="DealLens">{% endif %}
+			</div>
+			<p class="scope">{{ summary }}</p>
+		</header>
+
 		<section class="intro">
-			<p class="criteria">{{ summary }}</p>
-			<p class="overview">
-				Building on Level 1 findings, this Level 2 report incorporates verified
-				vehicle history data to evaluate warranty coverage, accident severity,
-				title status, and other long-term risk factors influencing fair value.
-			</p>
-			<p class="footnote">
-				A complete Level 2 rating requires both compatible KBB pricing and a
-				vehicle-history report. Listings without that evidence remain visible
-				below as price assessments or information-only listings.
-			</p>
+			<p class="generated">Generated: {{ generated_at }}</p>
+			<p>This report compares each listing with compatible KBB pricing. When a vehicle-history report is available, it also evaluates title, accident, mileage, service, and warranty evidence to produce a complete rating.</p>
+			<p class="footnote">A complete Level 2 rating requires both compatible KBB pricing and a vehicle-history report. Listings without that evidence receive a price assessment or are counted under an evaluation failure reason.</p>
 		</section>
 
-		Of {{ total_count }} returned listings, <strong>{{ full_count }}</strong>
-		received a complete risk-adjusted Level 2 rating,
-		<strong>{{ price_only|length }}</strong> received a price assessment while
-		awaiting a history report, and <strong>{{ information_only|length }}</strong>
-		could not be evaluated. <strong>Every returned listing is shown.</strong>
+		<p class="report-counts">Of {{ total_count }} returned listings, <strong>{{ full_count }}</strong> received a complete risk-adjusted Level 2 rating. The remaining <strong>{{ total_count - full_count }}</strong> could not be fully evaluated and are summarized by reason below.</p>
+
 		{% macro miles(n) -%}{{ "{:,}".format(n) }}{%- endmacro %}
 		{% macro money(n) -%}{{ "${:,.0f}".format(n) }}{%- endmacro %}
-
 		{% macro vehicle_row(rating) -%}
-			<!-- 0: listing, 1: deal, 2: risk, 3: narrative -->
 			{% set listing = rating[0] %}
 			{% set deal = rating[1] %}
 			{% set risk = rating[2] %}
 			{% set narrative = rating[3] %}
+			{% set pricing = rating[4] %}
 			{% set last_line = narrative[-1] %}
 			{% set is_downgraded = "downgraded" in last_line.lower() %}
 			{% set seller_name = listing.seller.name if listing.seller.name else "N/A" %}
-			{% set seller_location = listing.seller.location if listing.seller.location else "N/A" %}
+			{% set seller_location = display_dealer_location(listing.seller.location) %}
 			{% set vin = listing.vin %}
 			{% set imgs = all_images.get(vin, []) %}
 
-			<div class="image-viewer">
-				{% for img in imgs %}
-					<img src="{{ img }}" />
-				{% endfor %}
-			</div>
-
+			{% if imgs %}<div class="image-viewer">{% for img in imgs %}<img src="{{ img }}" alt="Vehicle image">{% endfor %}</div>{% endif %}
 			<div class="listing-title">
 				{{ listing.title }}
-				{% if is_downgraded %}
-					<span class="downgrade-tag">Downgraded</span>
-				{% endif %}
-				<a class="visor-link" href="{{ listing.visor_listing }}"
-					>View on Visor ↗</a
-				>
+				<span class="deal-rating">{{ deal }}</span>
+				{% if is_downgraded %}<span class="downgrade-tag">Downgraded</span>{% endif %}
+				<a class="visor-link" href="{{ listing.visor_listing }}">View on Visor</a>
 			</div>
-
 			<div class="listing-title-bar"></div>
 			<div class="listing-specs compact-grid">
-				<div class="listing-specs-item">VIN: <strong>{{ vin }}</strong></div>
-				<div class="listing-specs-item">
-					Mileage: <strong>{{ miles(listing.mileage) }}</strong>
+				<div>VIN: <strong>{{ vin }}</strong></div>
+				<div>Mileage: <strong>{{ miles(listing.mileage) }}</strong></div>
+				<div>Listing Price: <strong>{{ money(listing.price) }}</strong></div>
+				<div>Risk Score: <strong>{{ risk }}</strong></div>
+				<div>Dealer: <strong>{{ seller_name }} - {{ seller_location }}</strong></div>
+				<div><a class="dealer-link" href="{{ listing.dealer_listing }}">View Dealer Listing</a></div>
+			</div>
+			<div class="price-position">
+				<div class="price-track">
+					<div class="price-segment great" style="width: {{ pricing.great_end_pct }}%;">Great</div>
+					<div class="price-segment good" style="left: {{ pricing.great_end_pct }}%; width: {{ pricing.good_end_pct - pricing.great_end_pct }}%;">Good</div>
+					<div class="price-segment fair" style="left: {{ pricing.good_end_pct }}%; width: {{ pricing.fair_end_pct - pricing.good_end_pct }}%;">Fair</div>
+					<div class="price-segment poor" style="left: {{ pricing.fair_end_pct }}%; width: {{ pricing.poor_end_pct - pricing.fair_end_pct }}%;">Poor</div>
+					<div class="price-segment bad" style="left: {{ pricing.poor_end_pct }}%; width: {{ 100 - pricing.poor_end_pct }}%;">Bad</div>
+					<div class="listing-marker" style="left: {{ pricing.marker_pct }}%;"><span></span></div>
 				</div>
-				<div class="listing-specs-item">
-					Listing Price: <strong>{{ money(listing.price) }}</strong>
-				</div>
-				<div class="listing-specs-item">
-					Risk Score: <strong>{{ risk }}</strong>
-				</div>
-				<div class="listing-specs-item">
-					Dealer: <strong>{{ seller_name }} - {{ seller_location }}</strong>
-				</div>
-				<div class="listing-specs-item">
-					<a class="dealer-link" href="{{ listing.dealer_listing }}"
-						>View Dealer Listing ↗</a
-					>
+				<div class="price-cutoffs">
+					<span style="left: {{ pricing.great_end_pct }}%;">{{ money(pricing.great_high) }}</span>
+					<span style="left: {{ pricing.good_end_pct }}%;">{{ money(pricing.good_high) }}</span>
+					<span style="left: {{ pricing.fair_end_pct }}%;">{{ money(pricing.fair_high) }}</span>
+					<span style="left: {{ pricing.poor_end_pct }}%;">{{ money(pricing.poor_high) }}</span>
 				</div>
 			</div>
-			<div class="listing-notes">
-				<strong>Notes:</strong>
-				<ul>
-					{% for line in narrative %}
-						<li class="note-line">{{ line }}</li>
-					{% endfor %}
-				</ul>
-			</div>
+			<div class="listing-notes"><strong>Notes:</strong><ul>{% for line in narrative %}<li>{{ line }}</li>{% endfor %}</ul></div>
 		{%- endmacro %}
 
-		{% macro render_bin(emoji, title, cls, bin, skip_break) -%}
-			{% if bin|length > 0 %}
-				<h2 class="section-header {{ 'break-before' if not skip_break }}">
-					{{ emoji }} {{ title }} Deals
-				</h2>
-				<div class="deal-bin">
-					{% for rating in bin %}
-						<div class="listing {{ cls }}">{{ vehicle_row(rating) }}</div>
-					{% endfor %}
-				</div>
-			{% endif %}
-		{%- endmacro %}
+		<main class="deal-bin">
+			{% for rating in all_ratings %}<article class="listing {{ rating[1]|lower }}-listing">{{ vehicle_row(rating) }}</article>{% endfor %}
+		</main>
 
-		{% macro candidate_row(candidate) -%}
-			{% set listing = candidate[0] %}
-			{% set assessment = candidate[1] %}
-			{% set narrative = candidate[2] %}
-			<div class="listing pending-listing">
-				<div class="listing-title">{{ listing.title }}{% if listing.visor_listing %}<a class="visor-link" href="{{ listing.visor_listing }}">View on Visor</a>{% endif %}</div>
-				<div class="listing-title-bar"></div>
-				<div class="listing-specs compact-grid">
-					<div class="listing-specs-item">VIN: <strong>{{ listing.vin or "N/A" }}</strong></div>
-					<div class="listing-specs-item">Mileage: <strong>{{ miles(listing.mileage) if listing.mileage is not none else "N/A" }}</strong></div>
-					<div class="listing-specs-item">Listing Price: <strong>{{ money(listing.price) if listing.price is not none else "N/A" }}</strong></div>
-					<div class="listing-specs-item">Price Assessment: <strong>{{ assessment }}</strong></div>
-					<div class="listing-specs-item">Risk: <strong>Not enough evidence</strong></div>
-					<div class="listing-specs-item">Final Level 2 Rating: <strong>Pending history report</strong></div>
-				</div>
-				<div class="listing-notes"><strong>Notes:</strong><ul>{% for line in narrative %}<li class="note-line">{{ line }}</li>{% endfor %}</ul></div>
-			</div>
-		{%- endmacro %}
+		{% if information_summary %}
+			<section class="unable-summary">
+				<h2>Unable to Evaluate</h2>
+				<p>These listings are excluded from individual display:</p>
+				<ul>{% for reason, count in information_summary %}<li>{{ reason }} <strong>({{ count }})</strong></li>{% endfor %}</ul>
+			</section>
+		{% endif %}
 
-		{% macro information_row(item) -%}
-			{% set listing = item[0] %}
-			<div class="listing unavailable-listing">
-				<div class="listing-title">{{ listing.title or "Untitled listing" }}{% if listing.visor_listing %}<a class="visor-link" href="{{ listing.visor_listing }}">View on Visor</a>{% endif %}</div>
-				<div class="listing-title-bar"></div>
-				<div class="listing-specs compact-grid">
-					<div class="listing-specs-item">VIN: <strong>{{ listing.vin or "N/A" }}</strong></div>
-					<div class="listing-specs-item">Listing Price: <strong>{{ money(listing.price) if listing.price is not none else "N/A" }}</strong></div>
-					<div class="listing-specs-item">Status: <strong>Unable to evaluate</strong></div>
-				</div>
-				<div class="listing-notes"><strong>Reason:</strong> {{ item[1] }}</div>
-			</div>
-		{%- endmacro %}
-		<section>
-			<!-- #region Deal Ratings -->
-			{%
-				set bins = [
-					{"emoji":"🟢","title":"Great","cls":"great-listing","bin":great_bin},
-					{"emoji":"🔵","title":"Good","cls":"good-listing","bin":good_bin},
-					{"emoji":"🟡","title":"Fair","cls":"fair-listing","bin":fair_bin},
-				]
-			%}
-			{# Calculate the first non-empty bin so we don't add unnecessary page breaks #}
-			{# Must use as namespace in order for it to save value #}
-			{% set state = namespace(first_nonempty_index=None) %}
-			{% for b in bins %}
-				{% if b.bin|length > 0 and state.first_nonempty_index is none %}
-					{% set state.first_nonempty_index = loop.index0 %}
-				{% endif %}
-			{% endfor %}
-			{# Display bins #}
-			{% for b in bins %}
-				{{ render_bin(b.emoji, b.title, b.cls, b.bin, loop.index0 == state.first_nonempty_index) }}
-			{% endfor %}
-			{{ render_bin("", "Poor", "poor-listing", rating_bins.Poor, false) }}
-			{{ render_bin("", "Bad", "bad-listing", rating_bins.Bad, false) }}
-			{{ render_bin("", "Suspicious", "suspicious-listing", rating_bins.Suspicious, false) }}
-			<div class="filtered-out">
-				<div class="no-break">
-					<h3>Unfavorable complete ratings:</h3>
-					<div>
-						🟠 {{ poor_count }} Poor Deals, 🔴 {{ bad_count }} Bad Deals, 🕵️
-						{{ sus_count }} Suspicious Deals
-					</div>
-				</div>
-			</div>
-
-			{% if price_only %}
-				<h2 class="section-header break-before">Awaiting History Report</h2>
-				<p>These listings have compatible KBB pricing, but their price assessment is not a complete Level 2 rating.</p>
-				{% for candidate in price_only %}{{ candidate_row(candidate) }}{% endfor %}
-			{% endif %}
-
-			{% if information_only %}
-				<h2 class="section-header break-before">Unable to Evaluate</h2>
-				{% for item in information_only %}{{ information_row(item) }}{% endfor %}
-			{% endif %}
-
-			<!-- #endregion -->
-		</section>
+		<footer>
+			<h2>How ratings work</h2>
+			<ul>
+				<li>Price is compared with local KBB Fair Purchase Price, then national FPP or Fair Market Value when needed.</li>
+				<li>A complete rating requires a vehicle-history report. Title, accident, odometer, mileage, service, and warranty evidence can change the risk score and downgrade the deal.</li>
+				<li>Listings without a history report, price, or compatible KBB data are summarized by reason rather than displayed individually.</li>
+				<li>CARFAX warranty status is an estimate and should be confirmed with the manufacturer or dealer.</li>
+			</ul>
+		</footer>
 	</body>
-	<footer>
-		<div style="page-break-before: always;"></div>
-		<div>
-			<h2>Methodology</h2>
-			<ul>
-				<li>A complete rating requires compatible KBB pricing and an available vehicle-history report.</li>
-				<li>Listings without a history report receive a price assessment only; risk and the final Level 2 rating remain unavailable.</li>
-				<li>
-					Deal ratings are based on this order: local fair purchase price (FPP),
-					national FPP, and then fair market value (FMV).
-				</li>
-				<li>
-					Bin sizes change based on the available pricing data. For local FPP,
-					we use the low and high market range to calculate bins. For national
-					FPP and FMV, we default to a $2000 or 6% price spread, whichever is
-					bigger.
-				</li>
-				<li>
-					Risk scoring considers branded titles, accidents/damage and their
-					severity, whether airbags were deployed, structural indicators,
-					odometer deviations, miles driven, and warranty status.
-				</li>
-				<li>Risk can downgrade a deal to a lower value.</li>
-				<li>Every returned listing is shown, including unfavorable deals and listings that could not be evaluated.</li>
-			</ul>
-		</div>
-		<div>
-			<h2>Definitions and Clarifications</h2>
-			<h4>Deal Bin/Pricing Calculations</h4>
-			<p>
-				When we search Kelley Blue Books for pricing data, we obtain 4 price
-				amounts:
-			</p>
-			<ul>
-				<li>
-					MRSP, the factory-set price (which we do not use for calculations at
-					this stage)
-				</li>
-				<li>
-					National Fair Purchase Price (FPP), the average price this particular
-					year and model are sold nationally
-				</li>
-				<li>Local Fair Purchase Price, which is based on your area</li>
-				<li>
-					Fair Market Value (FMV), which is the price this vehicle would be sold
-					privately and not through a dealership
-				</li>
-			</ul>
-			<p>
-				We use the local FPP first, as it gives us a fair market range to work
-				with. Using that range, we can calculate exactly what a Fair, Good, or
-				Great deal will be. In the absence of a local FPP, we use the national
-				FPP, but we must default to a set dollar amount for calculating deal
-				strength. If that fails, we rely on FMV, following the same rules as the
-				national FPP.
-			</p>
-			<p>
-				These numbers will vary across years and trims, which is why they all
-				have different bin and midpoint values.
-			</p>
-
-			<h4>Mileage Deviations</h4>
-			<p>
-				Mileage deviation refers to the amount of miles a vehicle has been
-				driven more or less than the industry average of 15,000. This number is
-				used by the US Government, Kelley Blue Books, and Carfax.
-			</p>
-			<h4>Structural indicators</h4>
-			<p>
-				When an impact occurs, there is always risk of structural issues. The
-				greater the damage, the more chance there is a problem. We grade it on a
-				scale, with minor damages slightly impacting this part of the risk, and
-				major or severe damage impacting it greatly. This cannot be confirmed
-				through a Carfax report, so an inspection is highly recommended.
-			</p>
-			<h4>Warranty Status</h4>
-			<p>
-				Warranty status only indicates the basic out-of-the-factory warranty.
-				When an accident occurs, that warranty is usually voided. The lack of
-				warranty does not impact the risk, but warranty still in place can lower
-				the risk level.
-			</p>
-		</div>
-	</footer>
 </html>
