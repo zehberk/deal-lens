@@ -44,6 +44,14 @@ def _price_assessment(
     deal, midpoint, increment, percent = classify_deal_rating(
         price, best_comparison, fmv, fpp_local, fmr_high
     )
+    price_difference_pct = (price - midpoint) / midpoint * 100
+    if abs(price_difference_pct) < 0.05:
+        narrative.append("Listing price matches the fair-price midpoint.")
+    else:
+        direction = "above" if price_difference_pct > 0 else "below"
+        narrative.append(
+            f"Listing price is {abs(price_difference_pct):.1f}% {direction} the fair-price midpoint."
+        )
     if deal == "Great" and midpoint and price < midpoint - increment * 3:
         deal = "Suspicious"
 

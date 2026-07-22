@@ -161,6 +161,25 @@ def test_price_assessment_provides_visual_range_without_redundant_bullets():
 	assert 0 <= visual["marker_pct"] <= 100
 	assert not any("being listed at" in line for line in narrative)
 	assert not any("Deal bins are set" in line for line in narrative)
+	assert "Listing price is 7.4% below the fair-price midpoint." in narrative
+
+
+def test_price_assessment_explains_percent_from_fair_midpoint():
+	lc = ListingContext(
+		listing_id="one",
+		listing={"price": 27500},
+		pricing=PricingAnchors(
+			fpp_natl=26000,
+			fpp_local=25000,
+			fmv=24000,
+			fmr_high=28000,
+		),
+	)
+	narrative = []
+
+	level2._price_assessment(lc, narrative)
+
+	assert "Listing price is 1.9% above the fair-price midpoint." in narrative
 
 
 def test_level2_branding_and_dealer_location_helpers():
