@@ -280,7 +280,14 @@ async def download_images(req: APIRequestContext, listing: dict, folder: str) ->
         # temporary name before detecting extension
         tmp_path = os.path.join(img_dir, f"{idx}")
 
-        resp = await req.get(url)
+        try:
+            resp = await req.get(url)
+        except Exception as error:
+            print(
+                f"Skipped image {idx} for listing {listing.get('id')}: "
+                f"{type(error).__name__}"
+            )
+            continue
         if not resp.ok:
             continue
 
