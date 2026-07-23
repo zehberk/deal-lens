@@ -2,7 +2,9 @@ import json
 import shutil
 import uuid
 
+from collections.abc import Mapping
 from datetime import datetime, timezone
+from email.message import Message
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -43,7 +45,7 @@ class RecordedResponse:
 	def __init__(self, body):
 		self.status = 200
 		self.data = json.dumps(body).encode()
-		self.headers = {}
+		self.headers: Mapping[str, str] | Message = {}
 
 
 class RecordedListingTransport:
