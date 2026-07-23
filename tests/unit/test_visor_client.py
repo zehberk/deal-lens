@@ -226,6 +226,37 @@ def test_client_rejects_invalid_timeouts(option, value):
 		VisorClient("test-api-key", **{option: value})
 
 
+def test_client_rejects_invalid_rate_limits():
+	with pytest.raises(ValueError, match="requests_per_10_seconds"):
+		VisorClient("test-api-key", requests_per_10_seconds=0)
+	with pytest.raises(ValueError, match="requests_per_minute"):
+		VisorClient("test-api-key", requests_per_minute=0)
+
+
+def test_client_enforces_both_rolling_rate_limits(monkeypatch):
+	now = [0.0]
+	sleeps = []
+
+	def sleep(seconds):
+		sleeps.append(seconds)
+		now[0] += seconds
+
+	monkeypatch.setattr("visor_api.client.time.monotonic", lambda: now[0])
+	monkeypatch.setattr("visor_api.client.time.sleep", sleep)
+	opener = FakeOpener(*(FakeResponse({"data": []}) for _ in range(4)))
+	client = VisorClient(
+		"test-api-key",
+		opener=opener,
+		requests_per_10_seconds=2,
+		requests_per_minute=3,
+	)
+
+	for _ in range(4):
+		client.filter_listings()
+
+	assert sleeps == [10.0, 50.0]
+
+
 def test_legacy_timeout_option_sets_both_request_phases():
 	opener = FakeOpener(FakeResponse({"data": []}))
 	client = VisorClient("test-api-key", timeout=5, opener=opener)

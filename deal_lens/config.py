@@ -1,12 +1,25 @@
 import os
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 
 VISOR_API_KEY_ENV_VAR = "VISOR_API_KEY"
+VISOR_REQUESTS_PER_10_SECONDS_ENV_VAR = "VISOR_REQUESTS_PER_10_SECONDS"
+VISOR_REQUESTS_PER_MINUTE_ENV_VAR = "VISOR_REQUESTS_PER_MINUTE"
 DEFAULT_ENV_FILE = Path("api.env")
 API_KEY_PLACEHOLDER = "YOUR_API_KEY_HERE"
+DEFAULT_VISOR_REQUESTS_PER_10_SECONDS = 10
+DEFAULT_VISOR_REQUESTS_PER_MINUTE = 60
+
+
+@dataclass(frozen=True)
+class VisorRateLimits:
+	"""Configured maximum request counts for Visor's rolling windows."""
+
+	requests_per_10_seconds: int = DEFAULT_VISOR_REQUESTS_PER_10_SECONDS
+	requests_per_minute: int = DEFAULT_VISOR_REQUESTS_PER_MINUTE
 
 
 class ConfigurationError(RuntimeError):
@@ -51,3 +64,46 @@ def get_visor_api_key(
 		)
 
 	return api_key
+
+
+def get_visor_rate_limits(
+	environ: Mapping[str, str] | None = None,
+	env_file: str | Path = DEFAULT_ENV_FILE,
+) -> VisorRateLimits:
+	"""Return positive Visor request limits from the environment or env file."""
+	environ = os.environ if environ is None else environ
+	path = Path(env_file)
+	return VisorRateLimits(
+		requests_per_10_seconds=_read_positive_int(
+			environ,
+			path,
+			VISOR_REQUESTS_PER_10_SECONDS_ENV_VAR,
+			DEFAULT_VISOR_REQUESTS_PER_10_SECONDS,
+		),
+		requests_per_minute=_read_positive_int(
+			environ,
+			path,
+			VISOR_REQUESTS_PER_MINUTE_ENV_VAR,
+			DEFAULT_VISOR_REQUESTS_PER_MINUTE,
+		),
+	)
+
+
+def _read_positive_int(
+	environ: Mapping[str, str],
+	env_file: Path,
+	name: str,
+	default: int,
+) -> int:
+	raw_value = environ.get(name)
+	if raw_value is None or not raw_value.strip():
+		raw_value = _read_env_value(env_file, name)
+	if raw_value is None:
+		return default
+	try:
+		value = int(raw_value)
+	except ValueError as error:
+		raise ConfigurationError(f"{name} must be a positive integer") from error
+	if value <= 0:
+		raise ConfigurationError(f"{name} must be a positive integer")
+	return value

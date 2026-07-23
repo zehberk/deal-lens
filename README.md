@@ -73,6 +73,11 @@ Replace `YOUR_API_KEY_HERE` in `api.env`. `VISOR_API_KEY` in the process
 environment takes precedence over `api.env`. Never commit `api.env`, credentials,
 authorization headers, or authenticated response headers.
 
+Outbound Visor calls are proactively limited to 10 requests per rolling 10 seconds
+and 60 requests per rolling minute by default. Override either limit in the process
+environment or `api.env` with `VISOR_REQUESTS_PER_10_SECONDS` and
+`VISOR_REQUESTS_PER_MINUTE`.
+
 DealLens fails with a clear configuration error when the key is missing or still
 contains the placeholder.
 
@@ -150,7 +155,8 @@ detail request. Pricing and account limits can change, so treat Visor's current
 usage dashboard and response usage headers as authoritative. `--force` can cause
 new billable calls because it bypasses the daily cache.
 
-The client uses a 10-second connection timeout and a 30-second read timeout. It
+The client enforces the configured 10-second and one-minute rolling request limits.
+It uses a 10-second connection timeout and a 30-second read timeout. It
 retries HTTP 429 and 503 responses a bounded number of times, honors `Retry-After`
 when supplied, and never retries indefinitely. The account observed during the
 migration advertised 10 requests per 10 seconds; do not assume that limit applies
