@@ -250,7 +250,7 @@ def main():  # pragma: no cover
 
     behavior.add_argument(
         "--max_listings",
-        default=50,
+        default=100,
         type=max_listings_type,
         help="Maximum number of listings to retrieve, up to 500",
     )
