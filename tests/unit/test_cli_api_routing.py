@@ -11,7 +11,7 @@ from visor_scraper.scraper import (
 )
 
 
-async def test_level1_scrape_routes_to_facet_api(monkeypatch):
+async def test_level1_cli_routes_to_facet_api(monkeypatch):
 	calls = []
 
 	async def fake_collect(args):
@@ -27,7 +27,7 @@ async def test_level1_scrape_routes_to_facet_api(monkeypatch):
 	assert calls == [args]
 
 
-async def test_level3_scrape_routes_to_listing_api(monkeypatch):
+async def test_level3_cli_routes_to_listing_api(monkeypatch):
 	calls = []
 
 	async def fake_collect(args):

@@ -87,7 +87,7 @@ def test_collection_metadata_preserves_api_provenance_and_failures():
 	assert metadata["warnings"][1]["vin"] == "TESTVIN3"
 
 
-async def test_level2_scrape_routes_to_api_collection(monkeypatch):
+async def test_level2_cli_routes_to_api_collection(monkeypatch):
 	calls = []
 
 	async def fake_collect(args):
