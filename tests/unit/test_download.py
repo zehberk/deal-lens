@@ -4,11 +4,12 @@ import uuid
 
 from collections.abc import Iterator
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from PIL import Image
-from playwright._impl._errors import TimeoutError as PlaywrightTimeout
+from playwright.async_api import APIRequestContext, TimeoutError as PlaywrightTimeout
 
 from utils.download import download_images
 
@@ -54,7 +55,9 @@ async def test_image_timeout_does_not_abort_remaining_downloads(output_dir):
 		"images": ["https://example.invalid/slow.jpg", "https://example.invalid/good.jpg"],
 	}
 
-	count = await download_images(request, listing, str(output_dir))
+	count = await download_images(
+		cast(APIRequestContext, request), listing, str(output_dir)
+	)
 
 	assert count == 1
 	assert (output_dir / "images" / "2.jpg").is_file()
