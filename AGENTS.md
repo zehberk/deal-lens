@@ -130,14 +130,13 @@ If the repository defines a different command, use that instead.
 
 ## Git and Scope
 
-- Do not commit, push, create branches, or open pull requests unless explicitly asked.
+- You may create local commits for completed, verified task changes without separate approval. Inspect the status and diff first, and include only changes that belong to the task.
+- Do not push, create branches, or open pull requests unless explicitly asked.
 - Do not rewrite Git history or force-push.
 - Keep changes scoped to the requested task.
 - Do not modify generated output files unless the task specifically concerns them.
-- When asked to make git commit messages, always follow Angular conventions and the 50/72 rule. Do not automatically commit when asked for the message only.
-- After every task that changes code, provide a suggested git commit message for
-  the entire uncommitted worktree. Follow Angular conventions and the 50/72 rule,
-  and do not commit unless explicitly asked.
+- Use Angular conventions and the 50/72 rule for every commit message. Do not commit when the user asks for a commit message only.
+- When task changes remain uncommitted, provide a suggested commit message for the entire uncommitted worktree.
 
 ## Completion Checklist
 
@@ -150,8 +149,7 @@ Before reporting completion:
 - Note any compatibility impact on legacy scraper data.
 - Update documentation when setup, configuration, or behavior changed.
 - Summarize changed files, important decisions, and remaining risks.
-- For code changes, include the suggested commit message covering all uncommitted
-  worktree changes.
+- For code changes, report the local commit when one was created. Otherwise include a suggested commit message covering all uncommitted worktree changes.
 
 ## Important Links
 
