@@ -98,9 +98,8 @@ Useful collection options:
 - `--force`: bypass the applicable daily cache; and
 - `--save_docs`: download available supplemental listing documents.
 
-Run `deal-lens --help` for the installed command help. The legacy
-`visor_scraper` command remains a compatibility alias, but new documentation and
-automation should use `deal-lens` or `python -m deal_lens`.
+Run `deal-lens --help` for the installed command help. You can also invoke the
+CLI with `python -m deal_lens`.
 
 The standalone `level1`, `level2`, and `level3` commands analyze the latest
 compatible saved data in `output/raw`; normal acquisition should use `deal-lens`.
