@@ -28,7 +28,7 @@ from utils.models import CarfaxData
 async def start_level3_analysis(metadata: dict, listings: list[dict], filename: str):
     ctx = await prepare_level3_analysis(metadata, listings, filename)
 
-    if len(ctx.valid_listings) == 0:
+    if len(ctx.listings) == 0:
         print("No listings met the criteria for level 3 analysis.")
         return None
 
@@ -36,9 +36,9 @@ async def start_level3_analysis(metadata: dict, listings: list[dict], filename: 
     ratings: list[tuple[dict, str, int, list[str]]] = []
 
     # Extract Carfax report
-    for vl in sorted(ctx.valid_listings, key=lambda x: x["listing"]["id"]):
-        listing: dict = vl["listing"]
-        cache_key = vl["cache_key"]
+    for item in sorted(ctx.listings, key=lambda x: str(x.listing.get("id", ""))):
+        listing = item.listing
+        cache_key = item.cache_key
 
         full_listing = next(l for l in listings if l.get("id") == listing.get("id"))
         report = get_report_dir(full_listing)

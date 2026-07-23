@@ -118,7 +118,9 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
     ctx = await prepare_level2_analysis(metadata, listings, filename)
 
     # listing, deal, risk, narrative
-    ratings: list[tuple[dict, str, int, list[str]]] = []
+    ratings: list[
+        tuple[dict, str, int, list[str], dict[str, int | float]]
+    ] = []
     # listing, price assessment, narrative
     price_only: list[tuple[dict, str, list[str]]] = []
     # listing, concrete reason

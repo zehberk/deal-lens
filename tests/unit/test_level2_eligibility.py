@@ -33,8 +33,11 @@ async def test_level2_keeps_price_only_and_unmapped_listings(monkeypatch):
 	async def fake_prepare(*_args, **_kwargs):
 		return ctx
 
+	render_args: tuple = ()
+
 	async def fake_render(*args):
-		fake_render.args = args
+		nonlocal render_args
+		render_args = args
 
 	monkeypatch.setattr(level2, "prepare_level2_analysis", fake_prepare)
 	monkeypatch.setattr(
@@ -51,8 +54,8 @@ async def test_level2_keeps_price_only_and_unmapped_listings(monkeypatch):
 		"unused.json",
 	)
 
-	assert fake_render.args[3] == []
-	assert fake_render.args[4] == [
+	assert render_args[3] == []
+	assert render_args[4] == [
 		(
 			price_only_listing,
 			"Good",
@@ -62,7 +65,7 @@ async def test_level2_keeps_price_only_and_unmapped_listings(monkeypatch):
 			],
 		)
 	]
-	assert fake_render.args[5] == [
+	assert render_args[5] == [
 		(unmapped_listing, "The listing trim could not be mapped to compatible KBB pricing.")
 	]
 
@@ -89,8 +92,11 @@ async def test_level2_records_missing_complete_kbb_pricing(monkeypatch):
 	async def fake_prepare(*_args, **_kwargs):
 		return ctx
 
+	render_args: tuple = ()
+
 	async def fake_render(*args):
-		fake_render.args = args
+		nonlocal render_args
+		render_args = args
 
 	monkeypatch.setattr(level2, "prepare_level2_analysis", fake_prepare)
 	monkeypatch.setattr(level2, "render_level2_pdf", fake_render)
@@ -101,9 +107,9 @@ async def test_level2_records_missing_complete_kbb_pricing(monkeypatch):
 		"unused.json",
 	)
 
-	assert fake_render.args[3] == []
-	assert fake_render.args[4] == []
-	assert fake_render.args[5] == [
+	assert render_args[3] == []
+	assert render_args[4] == []
+	assert render_args[5] == [
 		(listing, "Complete KBB pricing is unavailable for this configuration.")
 	]
 
@@ -122,8 +128,11 @@ async def test_level2_records_missing_price_separately_from_kbb_mapping(monkeypa
 	async def fake_prepare(*_args, **_kwargs):
 		return ctx
 
+	render_args: tuple = ()
+
 	async def fake_render(*args):
-		fake_render.args = args
+		nonlocal render_args
+		render_args = args
 
 	monkeypatch.setattr(level2, "prepare_level2_analysis", fake_prepare)
 	monkeypatch.setattr(level2, "render_level2_pdf", fake_render)
@@ -134,7 +143,7 @@ async def test_level2_records_missing_price_separately_from_kbb_mapping(monkeypa
 		"unused.json",
 	)
 
-	assert fake_render.args[5] == [
+	assert render_args[5] == [
 		(missing_price, "Listing price is unavailable."),
 		(unmapped, "The listing trim could not be mapped to compatible KBB pricing."),
 	]
@@ -278,7 +287,9 @@ def test_price_below_displayed_great_range_remains_great_and_caps_marker():
 def test_level2_branding_and_dealer_location_helpers():
 	assert display_dealer_location("Denver, CO 80202") == "Denver, CO"
 	assert display_dealer_location("Denver, CO") == "Denver, CO"
-	assert logo_data_uri(Path("img/deallens-logo.svg")).startswith(
+	logo = logo_data_uri(Path("img/deallens-logo.svg"))
+	assert logo is not None
+	assert logo.startswith(
 		"data:image/svg+xml;base64,"
 	)
 	assert display_listing_condition("Certified") == "CPO"

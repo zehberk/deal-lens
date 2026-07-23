@@ -113,7 +113,9 @@ async def test_missing_national_table_attempts_direct_local_trim(monkeypatch):
 	)
 
 	local_lookup.assert_awaited_once()
-	assert local_lookup.await_args.args[4] == "Sport"
+	await_args = local_lookup.await_args
+	assert await_args is not None
+	assert await_args.args[4] == "Sport"
 	entry = cache_entries["2026 Honda Civic Sport"]
 	assert entry["fpp_local"] == 26_100
 	assert "skip_reason" not in entry

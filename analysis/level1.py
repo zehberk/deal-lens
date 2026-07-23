@@ -33,11 +33,11 @@ async def create_level1_file(listings: list[dict], metadata: dict):
     all_listings: list[CarListing] = []
     seen_ids: set[str] = set()  # guard if input has dupes
 
-    for item in ctx.valid_listings:
-        listing = item["listing"]
-        cache_key = item["cache_key"]
-        year = item["year"]
-        base_trim = item["base_trim"]
+    for item in ctx.listings:
+        listing = item.listing
+        cache_key = item.cache_key
+        year = item.year
+        base_trim = item.base_trim
 
         msrp = int(ctx.cache_entries[cache_key].get("msrp") or 0)
         fpp_natl = int(ctx.cache_entries[cache_key].get("fpp_natl") or 0)

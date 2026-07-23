@@ -613,6 +613,9 @@ class ListingContext:
     vin: str = ""
     cache_key: str = ""
 
+    year: str = ""
+    base_trim: str = ""
+
     listing: dict[str, Any] = field(default_factory=dict)
     full_listing: dict[str, Any] = field(default_factory=dict)
 

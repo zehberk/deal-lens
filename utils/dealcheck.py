@@ -394,13 +394,13 @@ async def get_dealcheck(listings: dict) -> DealCheck:
             await context.close()
             await browser.close()
 
-            return DealCheck(
-                rank_str=rank,
-                rank_filters=filters,
-                rank_rows=rows,
-                market_velocity_analysis=mv_analysis,
-                fee_explanations=fees,
-                inventory_trend=inv_trend,
-                visual_graph_bytes=image_bytes,
-                dealcheck_url=deal_url,
-            )
+        return DealCheck(
+            rank_str=rank,
+            rank_filters=filters,
+            rank_rows=rows,
+            market_velocity_analysis=mv_analysis,
+            fee_explanations=fees,
+            inventory_trend=inv_trend,
+            visual_graph_bytes=image_bytes,
+            dealcheck_url=deal_url,
+        )

@@ -32,7 +32,9 @@ if TYPE_CHECKING:
 class HTTPResponse(Protocol):
 	"""Small response contract used by the client and unit-test fakes."""
 
-	headers: Mapping[str, str] | Message
+	@property
+	def headers(self) -> Mapping[str, str] | Message: ...
+
 	status: int
 	data: bytes
 
