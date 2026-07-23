@@ -960,13 +960,13 @@ def apply_url_to_args(args: Namespace) -> Namespace:
 def main():  # pragma: no cover
 
     parser = argparse.ArgumentParser(
-        description="Scrape vehicle listings from visor.vin.",
+        description="Create DealLens vehicle-shopping reports from Visor API data.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
     url = parser.add_argument_group("Direct URL")
     docs = parser.add_argument_group("Documents")
-    behavior = parser.add_argument_group("Scraper behavior")
+    behavior = parser.add_argument_group("Collection behavior")
     analysis = parser.add_mutually_exclusive_group()
 
     url.add_argument("--url", type=str, help="The direct URL to use for filtering")

@@ -1,12 +1,15 @@
 [project]
-name = "visor-scraper"
+name = "deal-lens"
 version = "0.3.0"
+description = "Data-driven vehicle market, listing, and negotiation reports"
 
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project.scripts]
+deal-lens = "visor_scraper.scraper:main"
+# Compatibility alias for installations created before the DealLens rename.
 visor_scraper = "visor_scraper.scraper:main"
 kbb_collect = "analysis.kbb_collector:main"
 level1 = "analysis.level1:main"
