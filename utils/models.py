@@ -583,6 +583,18 @@ class CarfaxData:
 
 
 @dataclass
+class DealCheck:
+    rank_str: str
+    rank_filters: list[str]
+    rank_rows: list[dict]
+    market_velocity_analysis: dict
+    fee_explanations: list[tuple[str, float, bool | None, str]]
+    inventory_trend: dict[str, tuple[int, int]]
+    visual_graph_bytes: bytes
+    dealcheck_url: str
+
+
+@dataclass
 class PricingAnchors:
     msrp: Optional[int] = None
     fpp_natl: Optional[int] = None
