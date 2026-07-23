@@ -10,7 +10,12 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from visor_api import VisorClient, VisorListingQuery, cached_listing_search
+from visor_api import (
+	VisorClient,
+	VisorListingQuery,
+	cached_level1_facets,
+	cached_listing_search,
+)
 from visor_scraper.config import get_visor_api_key
 
 
@@ -45,12 +50,21 @@ def main() -> None:
 		force=args.force,
 		include_projection=False,
 	)
+	level1_result = cached_level1_facets(
+		client,
+		QUERY,
+		cache_dir=CACHE_DIR,
+		force=args.force,
+	)
 	summary = {
 		"cache_used": result.cache_used,
 		"cache_path": str(result.cache_path),
 		"listing_count": len(result.response.data),
 		"total_for_sale": result.payload["metadata"]["site_info"]["total_for_sale"],
 		"metadata": result.metadata,
+		"level1_cache_used": level1_result.cache_used,
+		"level1_cache_path": str(level1_result.cache_path),
+		"level1_response_count": len(level1_result.collection.responses),
 	}
 	print(json.dumps(summary, indent=2, ensure_ascii=False))
 
