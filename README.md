@@ -2,8 +2,7 @@
 
 DealLens creates data-driven vehicle-shopping reports from Visor inventory data,
 KBB valuations, saved vehicle-history reports, and other explicitly identified
-sources. Visor's official Public API is the primary listing-data source. Browser
-scraping remains only as legacy migration code and is not the product's identity.
+sources. Visor's official Public API is the listing-data source.
 
 ## Analysis levels
 
@@ -29,8 +28,7 @@ The main boundaries are:
 - `analysis/`: deterministic normalization, market calculations, scoring, and
   report preparation;
 - `templates/`: Level 1, Level 2, and Level 3 report presentation;
-- `visor_scraper/`: the primary CLI plus legacy browser-era implementation kept
-  during the API migration;
+- `visor_scraper/`: the primary CLI and its compatibility entry point;
 - `tests/unit/`: offline tests using fakes and recorded API fixtures; and
 - `tests/visor_authenticated/`: manual, explicitly opted-in API probes that may
   incur usage charges.
