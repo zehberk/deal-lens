@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Any
 
 import pytest
 
@@ -12,7 +13,7 @@ from visor_api import (
 
 class FakeLevel2Client:
 	def __init__(self, rows, details=None, detail_errors=None):
-		self.rows = rows
+		self.rows: Any = rows
 		self.details = details or {}
 		self.detail_errors = detail_errors or {}
 		self.search_calls = []

@@ -1,5 +1,6 @@
 import json
 
+from collections.abc import Mapping
 from pathlib import Path
 
 from visor_api import (
@@ -19,7 +20,7 @@ class FakeResponse:
 	def __init__(self, body):
 		self.status = 200
 		self.data = json.dumps(body).encode()
-		self.headers = {}
+		self.headers: Mapping[str, str] = {}
 
 
 def fixture(name):

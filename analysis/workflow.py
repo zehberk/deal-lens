@@ -81,6 +81,8 @@ def populate_filtered_listings(
                 listing_id=lid,
                 vin=vin,
                 cache_key=cache_key,
+                year=vd["year"],
+                base_trim=vd["base_trim"],
                 listing=listing,
                 full_listing=full,
                 report_path=report_path,
