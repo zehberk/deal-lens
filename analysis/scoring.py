@@ -585,32 +585,46 @@ def score_warranty_status(
     """
     basic_months: int = 0
     basic_miles: int = 0
-    coverages: list[dict] = listing["coverages"]
+    coverages: list[dict] = listing.get("coverages", [])
+    basic = next((c for c in coverages if c.get("type") == "Basic"), None)
+    warranty_text = str(carfax.additional_history.get("Basic Warranty", "")).strip()
+
+    if not warranty_text and basic is None:
+        if narrative is not None:
+            narrative.append(
+                "Basic warranty information is unavailable; it does not affect scoring."
+            )
+        return 0.0
 
     if carfax.has_accident or carfax.has_damage:
         if narrative is not None:
             narrative.append("The basic warranty on this vehicle has been voided.")
         return 0.0
 
-    if not carfax.is_basic_warranty_active:
+    if warranty_text and not carfax.is_basic_warranty_active:
         if narrative is not None:
             narrative.append("The basic warranty on this vehicle has expired.")
         return 0.0
 
-    basic_months, basic_miles = carfax.remaining_warranty
+    if not warranty_text and basic and basic.get("status", "") == "Fully expired":
+        if narrative is not None:
+            narrative.append("The basic warranty on this vehicle has expired.")
+        return 0.0
+
+    if warranty_text:
+        basic_months, basic_miles = carfax.remaining_warranty
 
     if basic_months == 0 or basic_miles == 0:
-        basic = next((c for c in coverages if c.get("type") == "Basic"), None)
         if basic and basic.get("status", "") != "Fully expired":
             time_left = basic.get("time_left", "")
             year_pattern = re.compile(r"(\d+)\s+yr")
             match = year_pattern.search(time_left)
-            years = to_int(match[0] if match else 0)
+            years = to_int(match[0] if match else 0) or 0
 
             month_pattern = re.compile(r"(\d+)\s+mo")
             match = month_pattern.search(time_left)
-            months = to_int(match[0] if match else 0)
-            basic_months = (years * 12) + months if years and months else 0
+            months = to_int(match[0] if match else 0) or 0
+            basic_months = (years * 12) + months
 
             miles_nums = to_int(basic.get("miles_left", ""))
             basic_miles = miles_nums * 1000 if miles_nums else 0

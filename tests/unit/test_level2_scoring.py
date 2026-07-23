@@ -119,3 +119,39 @@ def test_warranty_bonus_uses_limiting_mileage_at_typical_use():
 
 	assert result == pytest.approx(-0.0916, abs=0.001)
 	assert "about 0.5 months" in narrative[-1]
+
+
+def test_missing_warranty_information_is_neutral():
+	carfax = CarfaxData(
+		summary={},
+		accident_damage={},
+		reliability_section={},
+		additional_history={},
+		ownership_history={},
+		detailed_history=[],
+	)
+	narrative = []
+
+	result = score_warranty_status(carfax, {"coverages": []}, narrative)
+
+	assert result == 0
+	assert narrative == [
+		"Basic warranty information is unavailable; it does not affect scoring."
+	]
+
+
+def test_explicitly_expired_warranty_remains_neutral_but_known():
+	carfax = CarfaxData(
+		summary={},
+		accident_damage={},
+		reliability_section={},
+		additional_history={"Basic Warranty": "Original warranty has expired."},
+		ownership_history={},
+		detailed_history=[],
+	)
+	narrative = []
+
+	result = score_warranty_status(carfax, {"coverages": []}, narrative)
+
+	assert result == 0
+	assert narrative == ["The basic warranty on this vehicle has expired."]
