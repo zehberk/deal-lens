@@ -1,9 +1,6 @@
 # utils.py
-import logging
-
 from argparse import Namespace
 from datetime import date
-from playwright.async_api import ElementHandle, Page
 from urllib.parse import parse_qsl, urlparse
 
 from utils.cache import load_cache, save_cache
@@ -68,41 +65,6 @@ def put_cached_filename(args, filename: str) -> None:
     save_cache(cache, LISTINGS_CACHE)
 
 
-async def safe_text(
-    element: Page | ElementHandle,
-    selector: str,
-    label: str,
-    metadata: dict,
-    default: str = "",
-) -> str:
-    try:
-        el = await element.query_selector(selector)
-        return await el.inner_text() if el else default
-    except Exception as e:
-        msg = f"Failed to read {label}: {e}"
-        logging.warning(msg)
-        metadata["warnings"].append(msg)
-        return default
-
-
-async def safe_inner_text(
-    element: ElementHandle | None,
-    label: str,
-    index: int,
-    metadata: dict,
-    default: str = "",
-) -> str:
-    if element is None:
-        return default
-    try:
-        return (await element.inner_text()).strip()
-    except Exception as e:
-        msg = f"Listing #{index}: Failed to read {label}: {e}"
-        logging.warning(msg)
-        metadata["warnings"].append(msg)
-        return default
-
-
 def filters_from_url(url: str) -> dict:
     params = parse_qsl(urlparse(url).query)
     out = {}
@@ -142,18 +104,3 @@ def build_metadata(args: Namespace) -> dict:
         },
         "warnings": [],
     }
-
-
-async def get_url(page: Page, selector: str, index: int, metadata: dict) -> str:
-    try:
-        link = await page.query_selector(selector)
-        return (
-            await link.get_attribute("href") or "Unavailable" if link else "Unavailable"
-        )
-    except Exception as e:
-        # We are logging in warnings, but marking as unimportant because this is a feature that requires cookies
-        metadata["warnings"].append(
-            f"[Info] Additional document timed out for listing #{index}."
-        )
-
-    return "Unavailable"
