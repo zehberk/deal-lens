@@ -1,4 +1,4 @@
-import json, logging, re
+import asyncio, json, logging, re
 import urllib.parse
 
 from datetime import datetime
@@ -34,6 +34,11 @@ from utils.common import make_string_url_safe
 logger = logging.getLogger(__name__)
 from utils.constants import *
 from utils.models import TrimValuation
+
+
+KBB_LOCATOR_TIMEOUT_MS = 10_000
+KBB_NAVIGATION_TIMEOUT_MS = 30_000
+KBB_NAVIGATION_ATTEMPT_TIMEOUT_MS = 10_000
 
 
 async def get_model_slug_map(
@@ -95,16 +100,27 @@ async def get_model_slug_from_vins(page: Page, model_key: str, vins: list[str]) 
 
 
 async def goto_with_retry(
-    page, url, attempts: int = 3, timeout: int = 10000, delay_ms: int = 750
+    page,
+    url,
+    attempts: int = 3,
+    attempt_timeout_ms: int = KBB_NAVIGATION_ATTEMPT_TIMEOUT_MS,
+    total_timeout_ms: int = KBB_NAVIGATION_TIMEOUT_MS,
+    delay_ms: int = 750,
 ):
-    for attempt in range(1, attempts + 1):
-        try:
-            await page.goto(url, timeout=timeout, wait_until="commit")
-            return
-        except PlaywrightError as e:
-            if attempt == attempts:
-                raise
-            await page.wait_for_timeout(delay_ms)
+    """Navigate with retries bounded by one total wall-clock timeout."""
+    async with asyncio.timeout(total_timeout_ms / 1000):
+        for attempt in range(1, attempts + 1):
+            try:
+                await page.goto(
+                    url,
+                    timeout=attempt_timeout_ms,
+                    wait_until="commit",
+                )
+                return
+            except PlaywrightError:
+                if attempt == attempts:
+                    raise
+                await page.wait_for_timeout(delay_ms)
 
 
 async def get_or_fetch_national_pricing(
@@ -149,30 +165,27 @@ async def get_or_fetch_national_pricing(
         logger.info("Loaded national KBB page for %s %s %s", year, make, model)
 
         try:
-            body = await page.inner_text("body")
+            body = await page.inner_text("body", timeout=KBB_LOCATOR_TIMEOUT_MS)
             if "We're sorry, our experts haven't reviewed this car yet" in body:
                 logger.warning("KBB has not reviewed %s %s %s", year, make, model)
                 return (
                     pricing_data,
                     f"KBB does not have data for this trim: {year} {make} {model}",
                 )
-            rows_locator = page.locator("table.css-lb65co tbody tr")
-            await rows_locator.first.wait_for(timeout=5000)
+            # KBB's generated CSS class names change frequently. The semantic table
+            # structure is stable and row contents are validated below.
+            rows_locator = page.locator("table tbody tr")
+            await rows_locator.first.wait_for(timeout=KBB_LOCATOR_TIMEOUT_MS)
             rows = await rows_locator.all()
-        except TimeoutError as t1:
-            try:
-                table = page.locator("div.css-127mtog table tbody tr")
-                await table.first.wait_for(timeout=5000)
-                rows = await table.all()
-            except TimeoutError as t2:
-                logger.warning(
-                    "KBB national pricing table was unavailable for %s %s %s",
-                    year, make, model,
-                )
-                return (
-                    pricing_data,
-                    f"KBB does not have data for this trim: {year} {make} {model}",
-                )
+        except TimeoutError:
+            logger.warning(
+                "KBB national pricing table was unavailable for %s %s %s",
+                year, make, model,
+            )
+            return (
+                pricing_data,
+                f"KBB does not have data for this trim: {year} {make} {model}",
+            )
 
         # Collect the pricing data before attempting to get FMV, otherwise page context gets
         # overwritten and Playwright will throw an error
@@ -185,7 +198,7 @@ async def get_or_fetch_national_pricing(
 
             divs = await row.locator("div").all()
             if divs:
-                if len(divs) < 3:
+                if len(divs) < 2:
                     logger.warning(
                         "Skipping incomplete KBB table row for %s %s %s: %d divs",
                         year, make, model, len(divs),
@@ -194,7 +207,10 @@ async def get_or_fetch_national_pricing(
 
                 table_trim = (await divs[0].inner_text()).strip()
                 msrp = (await divs[1].inner_text()).strip()
-                natl_fpp = (await divs[2].inner_text()).strip()
+                natl_fpp = (
+                    (await divs[2].inner_text()).strip()
+                    if len(divs) >= 3 else None
+                )
             else:
                 tds = await row.locator("td").all()
                 if len(tds) < 2:
@@ -273,8 +289,7 @@ async def populate_pricing_for_year(
     prefix = f"{year} {make} {model}"
     natl_data = [
         (
-            table_trim[len(prefix):].strip()
-            if table_trim.casefold().startswith(prefix.casefold()) else table_trim,
+            _normalize_kbb_table_trim(table_trim, year, make, model),
             msrp,
             natl_fpp,
             natl_source,
@@ -286,8 +301,20 @@ async def populate_pricing_for_year(
     ]
 
     best_matches: dict[str, str] = {}
+    checked_requested_trims: set[str] = set()
     all_kbb_trims = [kbb_trim[0] for kbb_trim in natl_data]
-    for trim in trims:
+    # Let exact labels claim their national row before fuzzy matches. Otherwise a
+    # missing trim can incorrectly consume another trim's row (for example XRT
+    # matching SE simply because SE is the only national row returned).
+    ordered_trims = sorted(
+        trims,
+        key=lambda trim: any(
+            trim.casefold() == candidate.casefold()
+            for candidate in all_kbb_trims
+        ),
+        reverse=True,
+    )
+    for trim in ordered_trims:
         best_match = best_kbb_trim_match(trim, all_kbb_trims)
         if best_match:
             best_matches.setdefault(best_match, trim)
@@ -330,6 +357,7 @@ async def populate_pricing_for_year(
                     postal_code,
                 )
             )
+            checked_requested_trims.add(requested_trim)
         else:
             if not natl_fpp or natl_fpp == "TBD":
                 error = f"No national pricing data for {kbb_trim}"
@@ -368,11 +396,70 @@ async def populate_pricing_for_year(
         entry["natl_timestamp"] = natl_ts
         entry["local_timestamp"] = local_ts
 
+    # A partial national table must not suppress a valid local-price lookup.
+    # This also covers multiple requested trims that KBB's matcher maps to the
+    # same national row.
+    for requested_trim in sorted(trims - checked_requested_trims):
+        kbb_trim = f"{prefix} {requested_trim}"
+        fmr_low, fmr_high, fpp_local, fmv, fpp_source = (
+            await get_or_fetch_local_pricing(
+                page,
+                year,
+                make,
+                model_slug,
+                requested_trim,
+                kbb_trim,
+                cache_entries,
+                postal_code,
+            )
+        )
+        entry = cache_entries.setdefault(kbb_trim, {})
+        entry.update({
+            "model": model,
+            "kbb_trim": kbb_trim,
+            "msrp": entry.get("msrp"),
+            "fpp_natl": entry.get("fpp_natl"),
+            "fmr_low": fmr_low,
+            "fmr_high": fmr_high,
+            "fpp_local": fpp_local,
+            "fmv": fmv,
+            "natl_source": entry.get("natl_source") or (
+                KBB_LOOKUP_BASE_URL.format(
+                    make=make_string_url_safe(make),
+                    model=model_slug,
+                    year=year,
+                )
+            ),
+            "local_source": fpp_source,
+            "postal_code": postal_code,
+            "natl_timestamp": entry.get("natl_timestamp"),
+            "local_timestamp": datetime.now().isoformat(),
+        })
+        if any((entry["msrp"], entry["fpp_natl"], fpp_local)):
+            entry.pop("skip_reason", None)
+        else:
+            entry["skip_reason"] = "There is currently no pricing data for this trim."
+
     logger.info(
         "KBB pricing lookup completed for %s %s %s: %d matched trims",
         year, make, model, len(best_matches),
     )
     return error
+
+
+def _normalize_kbb_table_trim(
+    table_trim: str,
+    year: str,
+    make: str,
+    model: str,
+) -> str:
+    """Remove KBB's optional vehicle prefix while retaining the trim label."""
+    for prefix in (f"{year} {make} {model}", f"{make} {model}", model):
+        if table_trim.casefold().startswith(prefix.casefold()):
+            remainder = table_trim[len(prefix):].strip()
+            if remainder:
+                return remainder
+    return table_trim
 
 
 def _previous_local_trim(
@@ -445,14 +532,26 @@ async def get_or_fetch_local_pricing(
     fmv: int | None = None
     depreciation_text: str = ""
     try:
-        await page.goto(local_url, wait_until="domcontentloaded")
+        await page.goto(
+            local_url,
+            wait_until="domcontentloaded",
+            timeout=KBB_NAVIGATION_TIMEOUT_MS,
+        )
 
         fmr_low, fmr_high, fpp_local = await get_price_advisor_values(page)
 
         # KBB can render the resale-value content after the initial page load.
         # Wait for that specific element instead of treating an initially empty
         # navigation tab list as a permanently missing value.
-        depreciation_text = await page.inner_text("div.css-fbyg3h", timeout=10000)
+        await page.wait_for_function(
+            r"""() => /current resale value of \$[\d,]+/i.test(
+                document.body?.innerText || ""
+            )""",
+            timeout=KBB_LOCATOR_TIMEOUT_MS,
+        )
+        depreciation_text = await page.inner_text(
+            "body", timeout=KBB_LOCATOR_TIMEOUT_MS
+        )
     except TimeoutError as t:
         logger.warning("KBB local pricing timed out for %s: %s", kbb_trim, t.message)
 
@@ -483,7 +582,19 @@ async def get_price_advisor_values(
     price_values: list[str] = []
 
     try:
-        data_url = await page.locator("object#priceAdvisor").get_attribute("data")
+        price_advisor = page.locator(
+            "object#priceAdvisor, iframe#priceAdvisor, [id='priceAdvisor']"
+        ).first
+        await price_advisor.wait_for(
+            state="attached", timeout=KBB_LOCATOR_TIMEOUT_MS
+        )
+        data_url = await price_advisor.get_attribute(
+            "data", timeout=KBB_LOCATOR_TIMEOUT_MS
+        )
+        if not data_url:
+            data_url = await price_advisor.get_attribute(
+                "src", timeout=KBB_LOCATOR_TIMEOUT_MS
+            )
 
         if data_url:
             # Now navigate directly to that URL to parse it
@@ -522,6 +633,8 @@ async def create_kbb_browser() -> (
         ],
     )
     context: BrowserContext = await browser.new_context()
+    context.set_default_timeout(KBB_LOCATOR_TIMEOUT_MS)
+    context.set_default_navigation_timeout(KBB_NAVIGATION_TIMEOUT_MS)
     await context.route(
         "**/*",
         lambda route: (

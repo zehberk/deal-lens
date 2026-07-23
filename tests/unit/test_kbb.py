@@ -1,10 +1,13 @@
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
+from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError
 
 from analysis.kbb import (
 	_previous_local_trim,
+	get_or_fetch_national_pricing,
 	get_or_fetch_local_pricing,
+	goto_with_retry,
 	populate_pricing_for_year,
 )
 
@@ -28,7 +31,8 @@ async def test_local_pricing_waits_for_delayed_resale_value(monkeypatch):
 		"80202",
 	)
 
-	page.inner_text.assert_awaited_once_with("div.css-fbyg3h", timeout=10000)
+	page.wait_for_function.assert_awaited_once()
+	page.inner_text.assert_awaited_once_with("body", timeout=10_000)
 	assert result[3] == 23_100
 
 
@@ -51,8 +55,134 @@ async def test_missing_resale_value_continues_after_wait(monkeypatch):
 		"80202",
 	)
 
-	page.inner_text.assert_awaited_once_with("div.css-fbyg3h", timeout=10000)
+	page.wait_for_function.assert_awaited_once()
 	assert result[3] is None
+
+
+async def test_national_pricing_accepts_msrp_only_div_rows():
+	page = MagicMock()
+	page.goto = AsyncMock()
+	page.wait_for_timeout = AsyncMock()
+	page.inner_text = AsyncMock(return_value="Hyundai IONIQ 5 Pricing")
+	rows = MagicMock()
+	rows.first.wait_for = AsyncMock()
+	rows.all = AsyncMock()
+	row = MagicMock()
+	link = MagicMock()
+	link.count = AsyncMock(return_value=0)
+	trim = AsyncMock()
+	trim.inner_text.return_value = "Ioniq 5 SE"
+	msrp = AsyncMock()
+	msrp.inner_text.return_value = "$39,100"
+	divs = MagicMock()
+	divs.all = AsyncMock(return_value=[trim, msrp])
+	row.locator.side_effect = lambda selector: link if selector == "a" else divs
+	rows.all.return_value = [row]
+	page.locator.return_value = rows
+
+	pricing, error = await get_or_fetch_national_pricing(
+		page, "Hyundai", "IONIQ 5", "ioniq-5", "2026", {}
+	)
+
+	rows.first.wait_for.assert_awaited_once_with(timeout=10_000)
+	assert error is None
+	assert pricing[0][0:3] == ("Ioniq 5 SE", "$39,100", None)
+
+
+async def test_msrp_only_model_prefixed_row_still_checks_local_fpp(monkeypatch):
+	cache_entries = {}
+	local_lookup = AsyncMock(return_value=(36_000, 40_000, 39_500, None, "local"))
+	monkeypatch.setattr(
+		"analysis.kbb.get_or_fetch_national_pricing",
+		AsyncMock(return_value=([(
+			"Ioniq 5 SE",
+			"$39,100",
+			None,
+			"national",
+			None,
+			"2026-01-01T00:00:00",
+		)], None)),
+	)
+	monkeypatch.setattr("analysis.kbb.get_or_fetch_local_pricing", local_lookup)
+
+	await populate_pricing_for_year(
+		AsyncMock(),
+		"Hyundai",
+		"IONIQ 5",
+		"ioniq-5",
+		"2026",
+		cache_entries,
+		{"SE"},
+		"80202",
+	)
+
+	local_lookup.assert_awaited_once()
+	await_args = local_lookup.await_args
+	assert await_args is not None
+	assert await_args.args[4] == "SE"
+	entry = cache_entries["2026 Hyundai IONIQ 5 SE"]
+	assert entry["msrp"] == 39_100
+	assert entry["fpp_natl"] is None
+	assert entry["fpp_local"] == 39_500
+
+
+async def test_partial_national_table_checks_every_requested_trim_locally(monkeypatch):
+	local_lookup = AsyncMock(return_value=(40_000, 48_000, 45_000, None, "local"))
+	monkeypatch.setattr(
+		"analysis.kbb.get_or_fetch_national_pricing",
+		AsyncMock(return_value=([(
+			"Ioniq 5 SE",
+			"$39,100",
+			None,
+			"national",
+			None,
+			"2026-01-01T00:00:00",
+		)], None)),
+	)
+	monkeypatch.setattr("analysis.kbb.get_or_fetch_local_pricing", local_lookup)
+
+	await populate_pricing_for_year(
+		AsyncMock(),
+		"Hyundai",
+		"IONIQ 5",
+		"ioniq-5",
+		"2026",
+		{},
+		{"SE", "XRT"},
+		"80202",
+	)
+
+	checked_trims = {call.args[4] for call in local_lookup.await_args_list}
+	assert checked_trims == {"SE", "XRT"}
+
+
+async def test_navigation_retries_share_one_total_timeout(monkeypatch):
+	timeouts = []
+
+	class TimeoutContext:
+		async def __aenter__(self):
+			return None
+
+		async def __aexit__(self, *args):
+			return False
+
+	def timeout(seconds):
+		timeouts.append(seconds)
+		return TimeoutContext()
+
+	page = AsyncMock()
+	# Retry handling is specifically for Playwright transport/navigation errors.
+	page.goto.side_effect = [PlaywrightError("first"), None]
+	monkeypatch.setattr("analysis.kbb.asyncio.timeout", timeout)
+
+	await goto_with_retry(page, "https://kbb.test/vehicle")
+
+	assert timeouts == [30]
+	assert page.goto.await_count == 2
+	assert all(
+		call.kwargs["timeout"] == 10_000
+		for call in page.goto.await_args_list
+	)
 
 
 def test_previous_year_variation_supplies_sole_local_trim():
