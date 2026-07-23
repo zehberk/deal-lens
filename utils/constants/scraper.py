@@ -17,11 +17,5 @@ SORT_OPTIONS = {
 }
 SORT_VALUES_TO_LABELS = {v: k for k, v in SORT_OPTIONS.items()}
 
-# HTML element selectors used by legacy listing-card parsing
-LISTING_CARD_SELECTOR = "a[href^='/search/listings/']"
-SCROLL_CONTAINER_SELECTOR = "div.h-dvh.overflow-y-auto"
-
-# Regex
-
 # Cache file paths
 LISTINGS_CACHE = Path("cache") / "listings.cache"

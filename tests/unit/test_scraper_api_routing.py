@@ -2,6 +2,8 @@ from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from visor_scraper.scraper import (
 	collect_and_run_level1_api,
 	collect_and_run_level3_api,
@@ -39,6 +41,13 @@ async def test_level3_scrape_routes_to_listing_api(monkeypatch):
 	await scrape(args)
 
 	assert calls == [args]
+
+
+async def test_scrape_requires_an_analysis_level():
+	args = Namespace(level1=False, level2=False, level3=False)
+
+	with pytest.raises(ValueError, match="analysis level is required"):
+		await scrape(args)
 
 
 async def test_level1_api_workflow_forwards_force_and_renders(monkeypatch):
