@@ -1,5 +1,6 @@
-import base64, sys, urllib.parse
+import base64, re, sys, urllib.parse
 
+from collections import Counter
 from datetime import datetime
 from jinja2 import Environment, FileSystemLoader
 from pathlib import Path
@@ -48,8 +49,7 @@ def to_level1_json(
 
 def create_report_filter_summary(metadata: dict) -> str:
     """
-    Creates a summary header for the level 1 analysis report that briefly goes over which parameters that were used in the search.
-    This include condition, price filters, mileage filters, and the sort method
+	Creates a report header summarizing condition, price, mileage, and sort filters.
     """
 
     summary = "This report reflects{condition_summary}listings retrieved using the <i>{sort_method}</i> sort option"
@@ -58,7 +58,12 @@ def create_report_filter_summary(metadata: dict) -> str:
     miles_summary = ""
     filters = metadata["filters"]
     sort_method = filters.get("sort")  # this will always exist
-    condition: list[str] = filters.get("car_type")
+    raw_condition = filters.get("car_type")
+    condition = (
+        [raw_condition]
+        if isinstance(raw_condition, str)
+        else list(raw_condition or [])
+    )
     min_price: int = filters.get("price_min")
     max_price: int = filters.get("price_max")
     min_miles: int = filters.get("miles_min")
@@ -66,9 +71,9 @@ def create_report_filter_summary(metadata: dict) -> str:
 
     if condition:
         if len(condition) == 1:
-            condition_summary = f" {condition[0]} "
+            condition_summary = f" {condition[0].title()} "
         elif len(condition) == 2:
-            sort_cond = sorted(condition)
+            sort_cond = sorted(item.title() for item in condition)
             condition_summary = f" {sort_cond[0]} and {sort_cond[1]} "
         else:
             condition_summary = " New, Used, and Certified "
@@ -135,6 +140,7 @@ async def render_level1_pdf(
 
     html_out = template.render(
         report_title=report_title,
+        logo_svg=Path("img/deallens-logo.svg").read_text(encoding="utf-8"),
         generated_at=generated_at,
         summary=summary,
         cache_entries=cache_entries,
@@ -173,38 +179,55 @@ async def render_level1_pdf(
         await page.pdf(path=str(out_file), format="A4", print_background=True)
         await browser.close()
 
-    print(f"✅ PDF created at: {out_file.resolve()}")
+    print(f"PDF created at: {out_file.resolve()}")
 
 
-def build_level2_bins(ratings: list) -> tuple[list, list, list, int, int, int]:
-    great_bin = []
-    good_bin = []
-    fair_bin = []
-    poor_count = 0
-    bad_count = 0
-    suspicious_count = 0
+def build_level2_bins(ratings: list) -> dict[str, list]:
+    bins = {name: [] for name in ("Great", "Good", "Fair", "Poor", "Bad")}
 
     # 0 - listing, 1 - deal, 2 - risk, 3 - narrative
     for rating in ratings:
-        if rating[1] == "Great":
-            great_bin.append(rating)
-        elif rating[1] == "Good":
-            good_bin.append(rating)
-        elif rating[1] == "Fair":
-            fair_bin.append(rating)
-        elif rating[1] == "Poor":
-            poor_count += 1
-        elif rating[1] == "Bad":
-            bad_count += 1
-        else:
-            suspicious_count += 1
+        bins.get(rating[1], bins["Bad"]).append(rating)
 
-    # Re-order bins by risk score
-    great_bin = sorted(great_bin, key=lambda r: (r[2], r[0].get("price")))
-    good_bin = sorted(good_bin, key=lambda r: (r[2], r[0].get("price")))
-    fair_bin = sorted(fair_bin, key=lambda r: (r[2], r[0].get("price")))
+    # Show the strongest listing first within each rating.
+    for name in bins:
+        bins[name] = sorted(
+            bins[name],
+            key=lambda r: (
+                -(r[4].get("deal_score") or 0) if len(r) > 4 else 0,
+                r[2],
+                r[0].get("price") or 0,
+            ),
+        )
+    return bins
 
-    return great_bin, good_bin, fair_bin, poor_count, bad_count, suspicious_count
+
+def summarize_level2_failures(price_only: list, information_only: list) -> list[tuple[str, int]]:
+    counts = Counter(reason for _, reason in information_only)
+    if price_only:
+        counts["Vehicle-history report unavailable."] += len(price_only)
+    return sorted(counts.items())
+
+
+def display_dealer_location(value: str | None) -> str:
+    if not value:
+        return "N/A"
+    return re.sub(r"\s+\d{5}(?:-\d{4})?$", "", value).strip()
+
+
+def display_listing_condition(value: str | None) -> str:
+    """Return a compact, user-facing condition label without inferring a value."""
+    if not value:
+        return "Unknown"
+    return "CPO" if value.casefold() in {"certified", "cpo"} else value.title()
+
+
+def logo_data_uri(path: Path) -> str | None:
+    try:
+        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    except OSError:
+        return None
+    return f"data:image/svg+xml;base64,{encoded}"
 
 
 def shrink_image(path: str, max_width=500):
@@ -253,10 +276,10 @@ def get_images_for_listing(listing: dict) -> list[str]:
     return [encode_image_base64(str(p)) for p in paths[:3]]
 
 
-def collect_all_images(great_bin: list, good_bin: list, fair_bin: list) -> dict:
+def collect_all_images(rating_bins: dict[str, list]) -> dict:
     all_imgs = {}
 
-    for bin_data in (great_bin, good_bin, fair_bin):
+    for bin_data in rating_bins.values():
         for rating in bin_data:
             listing = rating[0]
             vin = listing.get("vin")
@@ -272,8 +295,9 @@ async def render_level2_pdf(
     make: str,
     model: str,
     total_count: int,
-    valid_count: int,
     ratings: list,
+    price_only: list,
+    information_only: list,
     metadata: dict,
 ):
     env = Environment(loader=FileSystemLoader("templates"))
@@ -282,27 +306,37 @@ async def render_level2_pdf(
     report_title = f"{make} {model} Market Overview — Level 2"
     generated_at = datetime.now().strftime("%B %d, %Y %I:%M %p")
 
-    great_bin, good_bin, fair_bin, poor_count, bad_count, sus_count = build_level2_bins(
-        ratings
-    )
-
-    all_images = collect_all_images(great_bin, good_bin, fair_bin)
+    rating_bins = build_level2_bins(ratings)
+    all_ratings = [
+        rating
+        for name in ("Great", "Good", "Fair", "Poor", "Bad")
+        for rating in rating_bins[name]
+    ]
+    all_images = collect_all_images(rating_bins)
+    information_summary = summarize_level2_failures(price_only, information_only)
 
     summary = create_report_filter_summary(metadata)
     html_out = template.render(
         make=make,
         model=model,
         report_title=report_title,
+        logo=logo_data_uri(Path("img/deallens-logo.svg")),
         generated_at=generated_at,
         summary=summary,
         total_count=total_count,
-        valid_count=valid_count,
-        great_bin=great_bin,
-        good_bin=good_bin,
-        fair_bin=fair_bin,
-        poor_count=poor_count,
-        bad_count=bad_count,
-        sus_count=sus_count,
+        full_count=len(ratings),
+        price_only=sorted(price_only, key=lambda item: item[0].get("price") or 0),
+        information_only=information_only,
+        information_summary=information_summary,
+        rating_bins=rating_bins,
+        all_ratings=all_ratings,
+        display_dealer_location=display_dealer_location,
+        display_listing_condition=display_listing_condition,
+        great_bin=rating_bins["Great"],
+        good_bin=rating_bins["Good"],
+        fair_bin=rating_bins["Fair"],
+        poor_count=len(rating_bins["Poor"]),
+        bad_count=len(rating_bins["Bad"]),
         all_images=all_images,
     )
 
@@ -327,7 +361,31 @@ async def render_level2_pdf(
         await page.emulate_media(media="screen")
         await page.set_content(html_out, wait_until="load")
         await page.add_style_tag(path=str(css_path))
+        await page.eval_on_selector_all(
+            "[data-left-pct], [data-width-pct], [data-bottom-pct]",
+            """elements => elements.forEach(element => {
+                if (element.dataset.leftPct !== undefined) {
+                    element.style.left = `${element.dataset.leftPct}%`;
+                }
+                if (element.dataset.widthPct !== undefined) {
+                    element.style.width = `${element.dataset.widthPct}%`;
+                }
+                if (element.dataset.bottomPct !== undefined) {
+                    element.style.bottom = `${element.dataset.bottomPct}%`;
+                }
+            })""",
+        )
+        await page.eval_on_selector_all(
+            ".price-track",
+            """tracks => tracks.forEach(track => {
+                const great = track.dataset.greatEndPct;
+                const good = track.dataset.goodEndPct;
+                const fair = track.dataset.fairEndPct;
+                const poor = track.dataset.poorEndPct;
+                track.style.background = `linear-gradient(90deg, #2f855a 0%, #4d8fb8 ${great}%, #d9bd4a ${good}%, #d47736 ${fair}%, #c2413b ${poor}%, #c2413b 100%)`;
+            })""",
+        )
         await page.pdf(path=str(out_file), format="A4", print_background=True)
         await browser.close()
 
-    print(f"✅ PDF created at: {out_file.resolve()}")
+    print(f"PDF created at: {out_file.resolve()}")

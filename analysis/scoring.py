@@ -1,5 +1,7 @@
 import re
+import math
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
@@ -34,6 +36,9 @@ STRUCTURAL_SCORES: dict[StructuralStatus, float] = {
     StructuralStatus.POSSIBLE: 1.0,
     StructuralStatus.CONFIRMED: 2.5,
 }
+RISK_PRICE_ADJUSTMENT_RATIO = 0.6
+FAVORABLE_EVIDENCE_POINTS = 6.0
+MINIMUM_LOW_RISK_SCORE = 10.0
 
 
 def rate_uncertainty(listing) -> str:
@@ -182,22 +187,13 @@ def rate_risk_level1(listing, price, compare_value) -> str:
 
 
 def adjust_deal_for_risk(
-    base_bin: str, risk: float, narrative: Optional[list[str]] = None
+    base_bin: str,
+    risk: float,
+    narrative: Optional[list[str]] = None,
 ) -> str:
     """
     Adjusts deal grading for level 2 based on the risk.
     """
-    if base_bin == "Suspicious":
-        if risk > 5:
-            if narrative is not None:
-                narrative.append(
-                    "Deal rating has been downgraded to Bad due to risk and suspicious pricing."
-                )
-            return "Bad"
-        if narrative is not None:
-            narrative.append("Deal is set as Suspicious due to extreme pricing.")
-        return "Suspicious"
-
     idx = DEAL_ORDER.index(base_bin)
     if risk <= 2:
         shift = 0
@@ -214,10 +210,14 @@ def adjust_deal_for_risk(
             )
         return "Bad"
 
-    new_deal = DEAL_ORDER[min(idx + shift, len(DEAL_ORDER) - 1)]
+    new_deal = DEAL_ORDER[max(0, min(idx + shift, len(DEAL_ORDER) - 1))]
 
     if narrative is not None:
-        if shift == 0:
+        if shift < 0:
+            narrative.append(
+                f"Originally rated {base_bin} based on price alone, but is now upgraded to {new_deal} due to very low calculated risk."
+            )
+        elif shift == 0:
             narrative.append(
                 f"Deal rating is fixed at {base_bin} based on price and {"low" if risk else "no"} risk factors."
             )
@@ -229,11 +229,183 @@ def adjust_deal_for_risk(
     return new_deal
 
 
-def rate_risk_level2(
+def adjust_deal_for_evidence(
+    base_bin: str,
+    raw_risk: float,
+    price: int,
+    increment: int,
+    cutoffs: tuple[int, int, int, int],
+    narrative: Optional[list[str]] = None,
+) -> str:
+    """Move the price position continuously, then classify only crossed cutoffs."""
+    adjusted_position = evidence_adjusted_price(price, raw_risk, increment)
+    evidence_adjustment = adjusted_position - price
+    great_high, good_high, fair_high, poor_high = cutoffs
+
+    if adjusted_position <= great_high:
+        adjusted_bin = "Great"
+    elif adjusted_position <= good_high:
+        adjusted_bin = "Good"
+    elif adjusted_position <= fair_high:
+        adjusted_bin = "Fair"
+    elif adjusted_position <= poor_high:
+        adjusted_bin = "Poor"
+    else:
+        adjusted_bin = "Bad"
+
+    if narrative is not None:
+        amount = abs(evidence_adjustment)
+        if adjusted_bin == base_bin or evidence_adjustment == 0:
+            narrative.append(
+                f"Deal rating remains {base_bin}; available vehicle-history evidence changes its price position by only ${amount:,}."
+            )
+        else:
+            direction = "improves" if evidence_adjustment < 0 else "worsens"
+            narrative.append(
+                f"Available vehicle-history evidence {direction} the price position by ${amount:,}, changing the deal rating from {base_bin} to {adjusted_bin}."
+            )
+
+    return adjusted_bin
+
+
+def evidence_adjusted_price(price: int, raw_risk: float, increment: int) -> int:
+    """Return a comparison position only; this never changes the listing price."""
+    return price + round(raw_risk * increment * RISK_PRICE_ADJUSTMENT_RATIO)
+
+
+def deal_score_from_position(marker_pct: float) -> float:
+    """Convert the full price-scale position to a comparable 0-100 deal score."""
+    return max(0.0, min(100.0, 100.0 - marker_pct))
+
+
+def risk_penalty(risk: float) -> float:
+    """Return an exponential 0-100 penalty for an actual 0-10 risk score."""
+    bounded_risk = max(0.0, min(10.0, risk))
+    return 100.0 * (math.exp(bounded_risk / 4.0) - 1.0) / (
+        math.exp(2.5) - 1.0
+    )
+
+
+@dataclass(frozen=True)
+class DealScoreResult:
+    """Deterministic Level 2 score inputs and outputs, independent of prose."""
+
+    price_score: float
+    risk_score: float
+    risk_penalty: float
+    favorable_bonus: float
+    final_score: int
+    rating: str
+
+
+def calculate_deal_score(
+    price_score: float,
+    risk: float,
+    favorable_evidence: float = 0.0,
+) -> float:
+    """Combine linear price value, exponential risk, and modest evidence bonuses."""
+    bounded_risk = max(0.0, min(10.0, risk))
+    price_risk_weight = 0.8 + 0.2 * (100.0 - price_score) / 100.0
+    score = price_score - risk_penalty(bounded_risk) * price_risk_weight
+    score += favorable_evidence_bonus(favorable_evidence, bounded_risk)
+    low_risk_floor = MINIMUM_LOW_RISK_SCORE * (1.0 - bounded_risk / 10.0)
+    return max(0.0, min(100.0, max(score, low_risk_floor)))
+
+
+def calculate_deal_score_result(
+    price_score: float,
+    risk: float,
+    favorable_evidence: float = 0.0,
+) -> DealScoreResult:
+    """Return the complete pure calculation result used by reports and explanations."""
+    bounded_risk = max(0.0, min(10.0, risk))
+    price_risk_weight = 0.8 + 0.2 * (100.0 - price_score) / 100.0
+    applied_penalty = risk_penalty(bounded_risk) * price_risk_weight
+    bonus = favorable_evidence_bonus(favorable_evidence, bounded_risk)
+    final_score = int(calculate_deal_score(price_score, bounded_risk, favorable_evidence))
+    return DealScoreResult(
+        price_score=price_score,
+        risk_score=bounded_risk,
+        risk_penalty=applied_penalty,
+        favorable_bonus=bonus,
+        final_score=final_score,
+        rating=deal_rating_from_score(final_score),
+    )
+
+
+def favorable_evidence_bonus(favorable_evidence: float, risk: float) -> float:
+    """Return a modest bonus that is fully negated by meaningful risk at 4+."""
+    bounded_risk = max(0.0, min(10.0, risk))
+    return (
+        max(favorable_evidence, 0.0)
+        * FAVORABLE_EVIDENCE_POINTS
+        * max(0.0, 1.0 - bounded_risk / 4.0)
+    )
+
+
+def format_deal_score_narrative(result: DealScoreResult) -> str:
+    """Explain Deal Score inputs without displaying meaningless zero values."""
+    parts = [
+        f"Deal Score is {result.final_score}%: "
+        f"price starts at {result.price_score:.0f}%"
+    ]
+    parts.append(
+        "no risk was identified"
+        if result.risk_score <= 0
+        else f"risk is {result.risk_score:.1f}/10"
+    )
+    if result.favorable_bonus <= 0:
+        parts.append("there is no favorable evidence")
+    elif result.favorable_bonus < 1:
+        parts.append("favorable evidence adds less than 1 point")
+    else:
+        rounded_bonus = round(result.favorable_bonus)
+        parts.append(
+            f"favorable evidence adds {rounded_bonus} point"
+            f"{'s' if rounded_bonus != 1 else ''}"
+        )
+    return ", ".join(parts) + "."
+
+
+def deal_rating_from_score(score: float) -> str:
+    """Derive the displayed rating from the final continuous Deal Score."""
+    if score >= 80:
+        return "Great"
+    if score >= 60:
+        return "Good"
+    if score >= 40:
+        return "Fair"
+    if score >= 20:
+        return "Poor"
+    return "Bad"
+
+
+def deal_strength_within_bin(
+    deal: str,
+    adjusted_position: int,
+    cutoffs: tuple[int, int, int, int],
+) -> float | None:
+    """Return 0-100 position within a deal bin, where 100 is nearer a better bin."""
+    great_high, good_high, fair_high, poor_high = cutoffs
+    leading_width = max(good_high - great_high, 1)
+    trailing_width = max(poor_high - fair_high, 1)
+    bounds = {
+        "Great": (great_high - leading_width, great_high),
+        "Good": (great_high, good_high),
+        "Fair": (good_high, fair_high),
+        "Poor": (fair_high, poor_high),
+        "Bad": (poor_high, poor_high + trailing_width),
+    }
+    low, high = bounds[deal]
+    strength = (high - adjusted_position) / max(high - low, 1) * 100
+    return max(0.0, min(100.0, strength))
+
+
+def calculate_risk_level2(
     carfax: CarfaxData, listing: dict, narrative: Optional[list[str]] = None
-) -> int:
+) -> float:
     """
-    Scores multiple areas of the carfax report to return a risk level
+    Score adverse evidence only; favorable evidence is handled separately.
 
     Parameters:
         carfax: CarfaxData
@@ -242,11 +414,31 @@ def rate_risk_level2(
         Listing data containing at least "year" and "mileage" fields.
 
     Returns:
-        float: A continuous risk modifier between 0.0 and 10.0.
+        float: The actual risk score from 0 to 10.
     """
-    score: float = score_title_status(carfax, narrative)
-    score += score_mileage_use(carfax, listing, narrative)
-    score += score_warranty_status(carfax, listing, narrative)
+    risk, _ = calculate_level2_evidence(carfax, listing, narrative)
+    return risk
+
+
+def calculate_level2_evidence(
+    carfax: CarfaxData,
+    listing: dict,
+    narrative: Optional[list[str]] = None,
+) -> tuple[float, float]:
+    """Return actual risk and favorable evidence as separate non-negative values."""
+    risk = score_title_status(carfax, narrative)
+    mileage = score_mileage_use(carfax, listing, narrative)
+    warranty = score_warranty_status(carfax, listing, narrative)
+    risk += max(mileage, 0.0)
+    favorable = max(-mileage, 0.0) + max(-warranty, 0.0)
+    return min(max(risk, 0.0), 10.0), favorable
+
+
+def rate_risk_level2(
+    carfax: CarfaxData, listing: dict, narrative: Optional[list[str]] = None
+) -> int:
+    """Return the displayed 0-10 adverse-risk score."""
+    score = calculate_risk_level2(carfax, listing, narrative)
     return round(max(min(score, 10.0), 0.0))
 
 
@@ -353,7 +545,7 @@ def get_structure_score(
             )
         if status == StructuralStatus.POSSIBLE:
             narrative.append(
-                "At least one damage report alluded to possible structural problems."
+                "CARFAX recommends an inspection after reported damage; this does not confirm structural damage."
             )
 
     # Scale down to give more breathing room with the title
@@ -404,7 +596,7 @@ def get_branded_score(
             narrative.append("Vehicle was declared a total loss.")
 
     if damage_score <= 0:
-        return 7.0  # suspicious: title issue with no visible damage
+        return 7.0  # anomalous: title issue with no visible damage
 
     scale = ((damage_score / 10) ** 1.3) * 1.05
     return 4.0 + min(scale, 1.0) * 5.0  # branded curve: 4 → 9
@@ -429,50 +621,59 @@ def score_warranty_status(
     """
     basic_months: int = 0
     basic_miles: int = 0
-    coverages: list[dict] = listing["coverages"]
+    coverages: list[dict] = listing.get("coverages", [])
+    basic = next((c for c in coverages if c.get("type") == "Basic"), None)
+    warranty_text = str(carfax.additional_history.get("Basic Warranty", "")).strip()
+
+    if not warranty_text and basic is None:
+        if narrative is not None:
+            narrative.append(
+                "Basic warranty information is unavailable; it does not affect scoring."
+            )
+        return 0.0
 
     if carfax.has_accident or carfax.has_damage:
         if narrative is not None:
             narrative.append("The basic warranty on this vehicle has been voided.")
         return 0.0
 
-    if not carfax.is_basic_warranty_active:
+    if warranty_text and not carfax.is_basic_warranty_active:
         if narrative is not None:
             narrative.append("The basic warranty on this vehicle has expired.")
         return 0.0
 
-    basic_months, basic_miles = carfax.remaining_warranty
+    if not warranty_text and basic and basic.get("status", "") == "Fully expired":
+        if narrative is not None:
+            narrative.append("The basic warranty on this vehicle has expired.")
+        return 0.0
+
+    if warranty_text:
+        basic_months, basic_miles = carfax.remaining_warranty
 
     if basic_months == 0 or basic_miles == 0:
-        basic = next((c for c in coverages if c.get("type") == "Basic"), None)
         if basic and basic.get("status", "") != "Fully expired":
             time_left = basic.get("time_left", "")
             year_pattern = re.compile(r"(\d+)\s+yr")
             match = year_pattern.search(time_left)
-            years = to_int(match[0] if match else 0)
+            years = to_int(match[0] if match else 0) or 0
 
             month_pattern = re.compile(r"(\d+)\s+mo")
             match = month_pattern.search(time_left)
-            months = to_int(match[0] if match else 0)
-            basic_months = (years * 12) + months if years and months else 0
+            months = to_int(match[0] if match else 0) or 0
+            basic_months = (years * 12) + months
 
             miles_nums = to_int(basic.get("miles_left", ""))
             basic_miles = miles_nums * 1000 if miles_nums else 0
 
-    if basic_months > 12 and basic_miles > 12000:
-        rating = -2.0
-    elif basic_months > 12 or basic_miles > 12000:
-        rating = -1.5
-    elif basic_months > 6 or basic_miles > 6000:
-        rating = -1.0
-    elif basic_months > 0 and basic_miles > 0:
-        rating = -0.5
-    else:
-        rating = 0.0
+    miles_per_month = 15000 / 12
+    mileage_months = basic_miles / miles_per_month if basic_miles > 0 else 0.0
+    effective_months = min(float(basic_months), mileage_months)
+    rating = -min(effective_months / 6.0, 2.0) if effective_months > 0 else 0.0
 
     if rating and narrative is not None:
         narrative.append(
-            f"Basic warranty is active with {basic_months} months left and {basic_miles} miles left."
+            f"Basic warranty is active with {basic_months} months left and {basic_miles} miles left; "
+            f"at 15,000 miles per year, the limiting coverage is about {effective_months:.1f} months."
         )
 
     return rating
@@ -531,32 +732,32 @@ def score_mileage_use(
     if deviation <= -0.20:
         if narrative is not None:
             narrative.append(
-                f"Vehicle has been driven significantly less than expected for it's age ({percent_diff:.1f}%)."
+                f"Vehicle has been driven significantly less than expected for its age ({percent_diff:.1f}%)."
             )
         score = -1.0
     elif deviation <= -0.10:
         if narrative is not None:
             narrative.append(
-                f"Vehicle has been driven less than expected for it's age ({percent_diff:.1f}%)."
+                f"Vehicle has been driven less than expected for its age ({percent_diff:.1f}%)."
             )
         score = -1.0 + (deviation + 0.20) * 5  # smooth ramp -1 → -0.5
     elif deviation < 0.10:
         if narrative is not None:
             narrative.append(
-                f"Vehicle has been driven an expected amount for it's age."
+                "Vehicle has been driven an expected amount for its age."
             )
         score = 0.0
     elif deviation < 0.40:
         if narrative is not None:
             narrative.append(
-                f"Vehicle has been driven more than expected for it's age ({percent_diff:.1f}%)."
+                f"Vehicle has been driven more than expected for its age ({percent_diff:.1f}%)."
             )
         # from +10% → +40%, interpolate 0 → 2.0
         score = ((deviation - 0.10) / 0.30) * 2.0
     else:
         if narrative is not None:
             narrative.append(
-                f"Vehicle has been driven much more than expected for it's age ({percent_diff:.1f}%)."
+                f"Vehicle has been driven much more than expected for its age ({percent_diff:.1f}%)."
             )
         score = 2.0
 

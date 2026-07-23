@@ -150,8 +150,8 @@ def check_missing_docs(listings: list[dict]):
         html = dir / "carfax.html"
         pdf = dir / "carfax.pdf"
 
-        carfax_url = l.get("additional_docs", {}).get("carfax_url", "Unavailable")
-        if carfax_url != "Unavailable" and not pdf.exists() and not html.exists():
+        carfax_url = l.get("additional_docs", {}).get("carfax_url")
+        if bool_from_url(carfax_url) and not pdf.exists() and not html.exists():
             missing_reports.append(l)
 
     if missing_reports:

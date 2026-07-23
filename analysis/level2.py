@@ -5,15 +5,98 @@ from pathlib import Path
 from analysis.analysis_utils import get_report_dir
 from analysis.reporting import render_level2_pdf
 from analysis.scoring import (
-    adjust_deal_for_risk,
+    calculate_deal_score_result,
+    calculate_level2_evidence,
     classify_deal_rating,
+    deal_score_from_position,
     determine_best_price,
-    rate_risk_level2,
+    format_deal_score_narrative,
 )
 from analysis.workflow import prepare_level2_analysis
 
 from utils.carfax_parser import get_carfax_data
 from utils.models import CarfaxData
+
+
+def _listing_key(listing: dict) -> str:
+    return str(listing.get("id") or listing.get("vin") or "")
+
+
+def _price_assessment(
+    lc, narrative: list[str]
+) -> tuple[str, int, int, float, dict[str, int | float]] | None:
+    listing = lc.listing
+    price_val = listing.get("price")
+    if price_val is None:
+        return None
+
+    price = int(price_val)
+    fpp_natl = int(lc.pricing.fpp_natl or 0)
+    fpp_local = int(lc.pricing.fpp_local or 0)
+    fmr_high = int(lc.pricing.fmr_high or 0)
+    fmv = int(lc.pricing.fmv or 0)
+    if not (fpp_natl and fpp_local and fmv):
+        return None
+
+    best_comparison = determine_best_price(price, fpp_local, fpp_natl, fmv, narrative)
+    deal, midpoint, increment, percent = classify_deal_rating(
+        price, best_comparison, fmv, fpp_local, fmr_high
+    )
+    price_difference_pct = (price - midpoint) / midpoint * 100
+    if abs(price_difference_pct) < 0.05:
+        narrative.append("Listing price matches the fair-price midpoint.")
+    else:
+        direction = "above" if price_difference_pct > 0 else "below"
+        narrative.append(
+            f"Listing price is {abs(price_difference_pct):.1f}% {direction} the fair-price midpoint."
+        )
+    boundaries = [
+        midpoint - increment * 3,
+        midpoint - increment,
+        midpoint + increment,
+        midpoint + increment * 3,
+    ]
+    if best_comparison != fpp_local:
+        percentage_boundaries = [
+            round(midpoint * (1 - percent * 3)),
+            round(midpoint * (1 - percent)),
+            round(midpoint * (1 + percent)),
+            round(midpoint * (1 + percent * 3)),
+        ]
+        boundaries = [
+            max(absolute, percentage)
+            for absolute, percentage in zip(boundaries, percentage_boundaries)
+        ]
+
+    great_high, good_high, fair_high, poor_high = boundaries
+    leading_width = max(good_high - great_high, 1)
+    trailing_width = max(poor_high - fair_high, 1)
+    scale_low = max(great_high - leading_width, 0)
+    scale_high = poor_high + trailing_width
+    scale_width = max(scale_high - scale_low, 1)
+    marker_pct = max(0.0, min(100.0, (price - scale_low) / scale_width * 100))
+
+    boundary_percentages = [
+        (boundary - scale_low) / scale_width * 100 for boundary in boundaries
+    ]
+    great_end_pct, good_end_pct, fair_end_pct, poor_end_pct = boundary_percentages
+
+    pricing_visual: dict[str, int | float] = {
+        "listing_price": price,
+        "fair_low": good_high,
+        "fair_high": fair_high,
+        "great_high": great_high,
+        "good_high": good_high,
+        "poor_high": poor_high,
+        "marker_pct": marker_pct,
+        "great_end_pct": great_end_pct,
+        "good_end_pct": good_end_pct,
+        "fair_end_pct": fair_end_pct,
+        "poor_end_pct": poor_end_pct,
+        "scale_low": scale_low,
+        "scale_high": scale_high,
+    }
+    return deal, midpoint, increment, percent, pricing_visual
 
 
 def report_stats(label: str, values: list[float]):
@@ -34,68 +117,89 @@ def report_stats(label: str, values: list[float]):
 async def start_level2_analysis(metadata: dict, listings: list[dict], filename: str):
     ctx = await prepare_level2_analysis(metadata, listings, filename)
 
-    if len(ctx.listings) == 0:
-        print("No listings met the criteria for level 2 analysis.")
-        return None
-
     # listing, deal, risk, narrative
     ratings: list[tuple[dict, str, int, list[str]]] = []
+    # listing, price assessment, narrative
+    price_only: list[tuple[dict, str, list[str]]] = []
+    # listing, concrete reason
+    information_only: list[tuple[dict, str]] = []
 
     # Extract Carfax report
     for lc in sorted(ctx.listings, key=lambda x: str(x.listing.get("id", ""))):
         listing = lc.listing
-        price_val = listing.get("price")
-        if price_val is None:
-            continue
-
         report = Path(lc.report_path) if lc.report_path else None
-        if report is None or not report.exists():
-            continue
-
         narrative: list[str] = []
-
-        price = int(price_val)
-        fpp_natl = int(lc.pricing.fpp_natl or 0)
-        fpp_local = int(lc.pricing.fpp_local or 0)
-        fmr_high = int(lc.pricing.fmr_high or 0)
-        fmv = int(lc.pricing.fmv or 0)
-
-        if not (fpp_natl and fpp_local and fmv):
-            narrative.append(
-                "Unable to provide ratings for this vehicle: no pricing data is available for this vehicle."
+        assessment = _price_assessment(lc, narrative)
+        if assessment is None:
+            information_only.append(
+                (listing, "Complete KBB pricing is unavailable for this configuration.")
             )
             continue
 
-        # Initial deal ratings
-        narrative.append(f"This vehicle is being listed at ${price}.")
-        best_comparison = determine_best_price(
-            price, fpp_local, fpp_natl, fmv, narrative
-        )
-
-        deal, midpoint, increment, percent = classify_deal_rating(
-            price, best_comparison, fmv, fpp_local, fmr_high
-        )
-        narrative.append(
-            f"Deal bins are set at ${increment * 2} ({percent * 200}%) in size, placing the Fair midpoint at ${midpoint}."
-        )
-        if deal == "Great" and midpoint and price < midpoint - increment * 3:
-            deal = "Suspicious"
+        deal = assessment[0]
+        if report is None or not report.exists():
+            narrative.append(
+                "A vehicle-history report was not collected, so risk and the final Level 2 rating are unavailable."
+            )
+            price_only.append((listing, deal, narrative))
+            continue
+        pricing_visual = assessment[4]
 
         # Risk ratings and deal adjustment
         carfax: CarfaxData = get_carfax_data(report)
         lc.carfax = carfax
 
-        risk = rate_risk_level2(carfax, listing, narrative)
+        raw_risk, favorable_evidence = calculate_level2_evidence(
+            carfax, listing, narrative
+        )
+        risk = round(raw_risk)
         lc.risk_score = risk
-
-        deal = adjust_deal_for_risk(deal, risk, narrative)
+        price_score = deal_score_from_position(float(pricing_visual["marker_pct"]))
+        score_result = calculate_deal_score_result(
+            price_score, raw_risk, favorable_evidence
+        )
+        pricing_visual["deal_score"] = score_result.final_score
+        price_deal = deal
+        deal = score_result.rating
+        narrative.append(format_deal_score_narrative(score_result))
+        if deal != price_deal:
+            narrative.append(
+                f"The combined score changes the price-only rating from {price_deal} to {deal}."
+            )
         lc.deal_rating = deal
         lc.narrative = narrative
 
-        ratings.append((listing, deal, risk, narrative))
+        ratings.append((listing, deal, risk, narrative, pricing_visual))
+
+    for listing in ctx.skipped_listings:
+        reason = (
+            "Listing price is unavailable."
+            if not listing.get("price")
+            else "The listing trim could not be mapped to compatible KBB pricing."
+        )
+        information_only.append((listing, reason))
+
+    accounted = len(ratings) + len(price_only) + len(information_only)
+    if accounted != len(listings):
+        seen = {
+            _listing_key(item[0])
+            for group in (ratings, price_only, information_only)
+            for item in group
+        }
+        for listing in listings:
+            if _listing_key(listing) not in seen:
+                information_only.append(
+                    (listing, "The listing could not be prepared for Level 2 analysis.")
+                )
 
     await render_level2_pdf(
-        ctx.make, ctx.model, len(listings), len(ctx.listings), ratings, metadata
+        ctx.make,
+        ctx.model,
+        len(listings),
+        ratings,
+        price_only,
+        information_only,
+        metadata,
     )
 
 

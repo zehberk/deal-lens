@@ -114,6 +114,126 @@ The API does provide `days_on_market`, facet-level days-on-market statistics, a
 generic `vhr_url`, structured options, and build verification. These are related but
 are not interchangeable with the missing legacy fields.
 
+## Level 2 acquisition decision
+
+Level 2 should use one enriched listing search followed by standard vehicle-detail
+requests for the returned listings:
+
+1. Call `GET /v1/listings` with `include=options,price_history`, the required
+   listing projection, and a maximum page size of 100.
+2. Call `GET /v1/listings/{listing_id}` without expansions for each returned
+   listing.
+
+Do not set `inventory_type` unless the user selects one or more conditions. The
+default Level 2 search therefore includes new, used, and certified vehicles. Sorting
+can cause the first 100 results to contain only some of those conditions.
+
+This combination maps the usable legacy `scraper.py` listing fields:
+
+- stable ID and VIN;
+- year, make, model, trim, version, condition, price, and mileage;
+- listing age, dealer listing URL, and photos;
+- seller name, location, stock number, and phone when available;
+- normalized vehicle specifications;
+- installed options and price history.
+
+CARFAX, AutoCheck, and window-sticker URL discovery is not part of this Visor API
+acquisition decision. It remains supplemental dealer-site enrichment. The material
+legacy loss is Visor warranty status and coverage limits, which are not available
+from the Public API and are no longer reliably accessible through the paywalled web
+view. Record warranty evidence as unavailable unless a separate approved source
+provides it.
+
+### Cost
+
+The API's usage headers report these request classes and prices:
+
+| Request | Usage class | Cost |
+| --- | --- | ---: |
+| Enriched listing search, up to 100 returned listings | `listing_search_enriched` | $0.04 per request |
+| Standard listing detail | `vehicle_detail` | $0.003 per listing |
+
+A full 100-listing run therefore costs `$0.04 + (100 * $0.003) = $0.34`.
+Options and price history should not also be requested on every detail call because
+the enriched search already supplies them.
+
+### Live field audit
+
+An authenticated audit on 2026-07-21 requested 100 active 2024-2026 Subaru
+Crosstreks with at most 75,000 miles, sorted by price ascending. The search matched
+25,365 records and returned 100: 91 used and 9 certified. New inventory was not
+excluded; no new vehicle ranked among the lowest-priced 100 at collection time.
+
+All 100 search rows contained the core identity, price, mileage, condition, listing,
+dealer, photo, feature, option, and MSRP fields requested by the current projection.
+Decoded options were non-empty for 99, and price history was non-empty for 62.
+Standard detail succeeded for 89 before the account's rate limit exhausted bounded
+retries. For those 89 records, normalized build data was complete; dealer phone was
+available for 85, generic `vhr_url` for 21, and detailed provider pricing for 56.
+These counts describe one live audit and must not become fixture expectations.
+
+The audit also confirmed that standard detail returns `options` and `price_history`
+as unavailable when those expansions are omitted. The enriched search is therefore
+the least expensive place to obtain both for all listings.
+
+### Fields collected but not currently used by Level 2
+
+Preserve these fields in raw source data and provenance, but do not add them to
+Level 2 calculations merely because they are available:
+
+- MSRP and discount from MSRP;
+- normalized features and option-package codes;
+- installed-option values and price history;
+- provider pricing totals and line items;
+- generic VHR URL;
+- dealer phone and coordinates;
+- inventory, sold, and last-checked dates;
+- listing lifecycle and availability statuses;
+- assembly location and window-sticker verification;
+- base and combined MSRP;
+- colors, cylinders, doors, and seating capacity.
+
+### Rate limiting
+
+The current account tier advertises 10 requests per 10 seconds. A live batch with
+five concurrent detail workers still produced `429 rate_limit_exceeded` responses,
+so Level 2 must not assume that nominal throughput is continuously available. The
+shared API client already honors the response's `Retry-After` header and performs
+bounded retries. The Level 2 collection service should additionally serialize or
+centrally rate-limit detail requests so concurrent workers do not wake and retry as
+another burst.
+
+### Implemented collection boundary
+
+`visor_api.level2_service.collect_level2_listings` implements this acquisition
+plan. It delegates offset pagination to `VisorClient.filter_all_listings`, then
+retrieves standard detail sequentially for each unique stable listing ID. Search
+rows remain usable when detail fails; the record stores the sanitized detail error,
+an explicit warning, and unavailable provenance. Malformed rows, missing IDs, and
+duplicate IDs are retained as structured exclusions rather than disappearing.
+
+`visor_api.level2_cache.cached_level2_collection` stores the complete collection,
+including raw search/detail records and exclusions, in an atomic local daily cache.
+It supports forced refresh and invalidates corrupt, stale, or incompatible cache
+envelopes. The `--level2` CLI workflow now routes through this service, writes the
+adapted listings to the existing `output/raw` envelope, and passes those listings to
+the legacy Level 2 analysis and report pipeline. Level 1 remains on its separate
+facet-native path.
+
+Level 2 retains every returned listing in the report. Listings with compatible KBB
+pricing and a saved vehicle-history report receive the complete risk-adjusted
+rating. Listings with KBB pricing but no report receive a clearly separated price
+assessment; risk and the final Level 2 rating remain unavailable. Listings without
+usable pricing or a KBB mapping appear in an information-only section with the
+specific reason. Unfavorable complete ratings are displayed rather than reduced to
+summary counts.
+
+An end-to-end live test on 2026-07-21 collected 10 used 2024 Subaru Foresters,
+retrieved all 10 detail records, discovered three dealer history-report links,
+completed KBB matching, parsed three saved CARFAX reports, and generated the Level 2
+PDF. The test also established that API-null document URLs must use the same URL
+validity check as legacy `"Unavailable"` sentinels.
+
 ## Market-overview source determination
 
 The current active-inventory facet response and a sold-inventory experiment establish

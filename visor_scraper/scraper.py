@@ -22,7 +22,13 @@ from utils.constants import *
 from utils.download import download_files
 from visor_scraper.helpers import *
 from visor_scraper.config import get_visor_api_key
-from visor_api import VisorClient, cached_level1_facets, cached_listing_search
+from visor_api import (
+    VisorClient,
+    cached_level1_facets,
+    cached_level2_collection,
+    cached_listing_search,
+)
+from visor_api.level2_service import Level2Collection
 from visor_api.query import VisorListingQuery
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
@@ -752,6 +758,79 @@ async def collect_and_run_level1_api(args: Namespace) -> None:
     print(f"Saved Level 1 market report to {report_path}")
 
 
+def apply_level2_collection_metadata(
+    metadata: dict, collection: Level2Collection, cache_used: bool
+) -> None:
+    """Add Level 2 API acquisition provenance to legacy scraper metadata."""
+    pagination = collection.raw_search_response.get("pagination", {})
+    metadata["site_info"]["total_for_sale"] = pagination.get("total")
+    metadata["pagination"] = pagination
+    metadata["runtime"]["source"] = "visor_api"
+    metadata["sources"] = {
+        "visor_api": {
+            "listings": {
+                "endpoint": "/v1/listings",
+                "query": collection.request_params,
+                "retrieved_at": collection.retrieved_at,
+                "cache_used": cache_used,
+            },
+            "details": {
+                "endpoint": "/v1/listings/{listing_id}",
+                "requested": len(collection.listings),
+                "retrieved": sum(
+                    item.detail_record is not None for item in collection.listings
+                ),
+            },
+        }
+    }
+    for record in collection.listings:
+        for warning in record.listing.get("warnings", []):
+            metadata["warnings"].append(
+                {
+                    **warning,
+                    "listing_id": record.listing_id,
+                    "vin": record.vin,
+                }
+            )
+    for exclusion in collection.exclusions:
+        metadata["warnings"].append(
+            {
+                "field": "listings",
+                "code": "excluded_api_record",
+                "message": exclusion.reason,
+                "listing_id": exclusion.listing_id,
+                "vin": exclusion.vin,
+                "source_index": exclusion.index,
+                "received_type": exclusion.received_type,
+            }
+        )
+
+
+async def collect_and_run_level2_api(args: Namespace) -> None:
+    """Collect Level 2 API listings and pass them to the legacy analysis workflow."""
+    query = VisorListingQuery.from_url(args.url)
+    client = VisorClient(get_visor_api_key())
+    result = await asyncio.to_thread(
+        cached_level2_collection,
+        client,
+        query,
+        cache_dir=Path("cache") / "level2",
+        max_listings=args.max_listings,
+        force=args.force,
+    )
+    listings = [record.listing for record in result.collection.listings]
+    metadata = build_metadata(args)
+    apply_level2_collection_metadata(metadata, result.collection, result.cache_used)
+
+    timestamp = save_results(listings, metadata, args)
+    filename = (
+        f"output/raw/{args.make}_{args.model}_listings_{timestamp}.json".replace(
+            " ", "_"
+        )
+    )
+    await start_level2_analysis(metadata, listings, filename)
+
+
 async def collect_and_run_level3_api(args: Namespace) -> None:
     """Collect API listings before invoking the current Level 3 placeholder."""
     query = VisorListingQuery.from_url(args.url)
@@ -781,6 +860,9 @@ async def collect_and_run_level3_api(args: Namespace) -> None:
 async def scrape(args: Namespace) -> None:
     if args.level1:
         await collect_and_run_level1_api(args)
+        return
+    if args.level2:
+        await collect_and_run_level2_api(args)
         return
     if args.level3:
         await collect_and_run_level3_api(args)

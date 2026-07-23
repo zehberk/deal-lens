@@ -280,7 +280,14 @@ async def download_images(req: APIRequestContext, listing: dict, folder: str) ->
         # temporary name before detecting extension
         tmp_path = os.path.join(img_dir, f"{idx}")
 
-        resp = await req.get(url)
+        try:
+            resp = await req.get(url)
+        except Exception as error:
+            print(
+                f"Skipped image {idx} for listing {listing.get('id')}: "
+                f"{type(error).__name__}"
+            )
+            continue
         if not resp.ok:
             continue
 
@@ -760,7 +767,7 @@ async def download_files(
             cached_url = analysis_cache.get(vin, {}).get("carfax_url")
             cached_fee = analysis_cache.get(vin, {}).get("dealer_fee")
             cached_included = analysis_cache.get(vin, {}).get("dealer_fee_included")
-            if cached_url and url == "Unavailable":
+            if cached_url and (not url or url == "Unavailable"):
                 l.setdefault("additional_docs", {})["carfax_url"] = cached_url
             if cached_fee:
                 l.setdefault("seller", {})["dealer_fee"] = cached_fee

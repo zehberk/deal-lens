@@ -264,6 +264,9 @@ def filter_valid_listings(
     for l in listings:
         # No analysis for listings with no price
         if not l.get("price"):
+            skipped_listings.append(l)
+            title = l.get("title", "Unknown")
+            skip_summary[title]["Listing price is unavailable."] += 1
             continue
 
         year = str(l["year"])
