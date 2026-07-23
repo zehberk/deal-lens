@@ -70,9 +70,6 @@ async def start_level3_analysis(metadata: dict, listings: list[dict], filename: 
         narrative.append(
             f"Deal bins are set at ${increment * 2} ({percent * 200}%) in size, placing the Fair midpoint at ${midpoint}."
         )
-        if deal == "Great" and midpoint and price < midpoint - increment * 3:
-            deal = "Suspicious"
-
         # Risk ratings and deal adjustment
         carfax: CarfaxData = get_carfax_data(report)
         risk = rate_risk_level2(carfax, listing, narrative)

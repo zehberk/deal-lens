@@ -87,6 +87,82 @@ def test_detail_values_are_preferred_but_nulls_fall_back_to_search():
 	assert listing["year"] == 2025
 
 
+def test_search_only_and_search_plus_detail_records_keep_stable_identity():
+	search = {
+		"id": "listing-1",
+		"vin": "TESTVIN1",
+		"year": 2024,
+		"make": "Subaru",
+		"model": "Forester",
+		"trim": "Premium",
+		"price": 25_000,
+		"miles": 10_000,
+	}
+	detail = {
+		"id": "listing-1",
+		"dealer": {"name": "Detail Dealer", "phone": "555-0100"},
+		"vehicle": {"build": {"version": "Premium AWD"}},
+	}
+
+	search_only = adapt_listing(search)
+	combined = adapt_listing(search, detail)
+
+	assert search_only["id"] == combined["id"] == "listing-1"
+	assert search_only["vin"] == combined["vin"] == "TESTVIN1"
+	assert search_only["price"] == combined["price"] == 25_000
+	assert search_only["mileage"] == combined["mileage"] == 10_000
+	assert search_only["seller"]["phone"] is None
+	assert combined["seller"]["phone"] == "555-0100"
+	assert search_only["specs"]["Trim Version"] is None
+	assert combined["specs"]["Trim Version"] == "Premium AWD"
+
+
+def test_missing_mileage_is_retained_as_unknown_with_warning():
+	listing = adapt_listing({
+		"id": "listing-1",
+		"vin": "TESTVIN1",
+		"year": 2024,
+		"make": "Subaru",
+		"model": "Forester",
+		"trim": "Premium",
+		"price": 25_000,
+	})
+
+	mileage_warning = next(
+		warning for warning in listing["warnings"]
+		if warning["field"] == "mileage"
+	)
+
+	assert listing["mileage"] is None
+	assert mileage_warning["code"] == "missing_data"
+
+
+def test_missing_api_warranty_and_documents_remain_explicitly_unavailable():
+	listing = adapt_listing({"id": "listing-1", "miles": 0})
+	normalized = normalize_listing(listing)
+
+	assert listing["warranty"] is None
+	assert listing["additional_docs"] == {
+		"carfax_url": None,
+		"autocheck_url": None,
+		"window_sticker_url": None,
+	}
+	assert normalized["warranty_info_present"] is None
+	assert normalized["coverages"] == []
+	assert normalized["report_present"] is None
+	assert normalized["window_sticker_present"] is None
+	for field in (
+		"warranty",
+		"additional_docs.carfax_url",
+		"additional_docs.autocheck_url",
+		"additional_docs.window_sticker_url",
+	):
+		assert listing["provenance"][field] == {
+			"kind": "unavailable",
+			"reason": "not_provided_by_api",
+		}
+
+
 def test_unknown_condition_and_unrequested_collections_remain_unavailable():
 	listing = adapt_listing({"id": "one", "inventory_type": "fleet"})
 

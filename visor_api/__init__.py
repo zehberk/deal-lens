@@ -27,6 +27,16 @@ from visor_api.level1_service import (
 	collect_level1_facets,
 )
 from visor_api.level1_cache import CachedLevel1FacetResult, cached_level1_facets
+from visor_api.level2_service import (
+	LEVEL2_SEARCH_EXPANSIONS,
+	LEVEL2_SEARCH_FIELDS,
+	Level2Collection,
+	Level2Exclusion,
+	Level2ListingRecord,
+	collect_level2_listings,
+	level2_search_params,
+)
+from visor_api.level2_cache import CachedLevel2Result, cached_level2_collection
 from visor_api.cache import CachedSearchResult, cached_listing_search
 from visor_api.models import (
 	APIModel,
@@ -77,6 +87,15 @@ __all__ = [
 	"collect_level1_facets",
 	"CachedLevel1FacetResult",
 	"cached_level1_facets",
+	"LEVEL2_SEARCH_EXPANSIONS",
+	"LEVEL2_SEARCH_FIELDS",
+	"Level2Collection",
+	"Level2Exclusion",
+	"Level2ListingRecord",
+	"collect_level2_listings",
+	"level2_search_params",
+	"CachedLevel2Result",
+	"cached_level2_collection",
 	"CachedSearchResult",
 	"cached_listing_search",
 	"APIModel",
