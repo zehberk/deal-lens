@@ -82,12 +82,14 @@ async def test_level1_api_workflow_forwards_force_and_renders(monkeypatch):
 
 	query = FakeQuery()
 	client = object()
+	progress = object()
 	pricing_cache = {"entries": {}}
 	monkeypatch.setattr(
 		"deal_lens.cli.VisorListingQuery.from_url", lambda url: query
 	)
 	monkeypatch.setattr("deal_lens.cli.get_visor_api_key", lambda: "key")
 	monkeypatch.setattr("deal_lens.cli.VisorClient", lambda key, **kwargs: client)
+	monkeypatch.setattr("deal_lens.cli.cli_progress", lambda: progress)
 	monkeypatch.setattr("deal_lens.cli.cached_level1_facets", fake_cached)
 	monkeypatch.setattr("deal_lens.cli.load_cache", lambda path: pricing_cache)
 	monkeypatch.setattr("deal_lens.cli.get_level1_kbb_valuations", fake_kbb)
@@ -99,7 +101,7 @@ async def test_level1_api_workflow_forwards_force_and_renders(monkeypatch):
 	assert calls["cached"] == (
 		client,
 		query,
-		{"cache_dir": Path("cache/level1"), "force": True},
+		{"cache_dir": Path("cache/level1"), "force": True, "progress": progress},
 	)
 	assert calls["kbb"] == (
 		"Honda",
@@ -115,6 +117,7 @@ async def test_level1_api_workflow_forwards_force_and_renders(monkeypatch):
 async def test_level3_api_workflow_forwards_collection_options(monkeypatch):
 	query = object()
 	client = object()
+	progress = object()
 	listings = [{"id": "listing-1", "vin": "TESTVIN"}]
 	metadata = {"sources": {"visor_api": {}}}
 	calls = {}
@@ -141,6 +144,7 @@ async def test_level3_api_workflow_forwards_collection_options(monkeypatch):
 	)
 	monkeypatch.setattr("deal_lens.cli.get_visor_api_key", lambda: "key")
 	monkeypatch.setattr("deal_lens.cli.VisorClient", lambda key, **kwargs: client)
+	monkeypatch.setattr("deal_lens.cli.cli_progress", lambda: progress)
 	monkeypatch.setattr("deal_lens.cli.cached_listing_search", fake_cached)
 	monkeypatch.setattr("deal_lens.cli.save_results", fake_save)
 	monkeypatch.setattr("deal_lens.cli.run_analysis", fake_analysis)
@@ -166,6 +170,7 @@ async def test_level3_api_workflow_forwards_collection_options(monkeypatch):
 			"max_listings": 25,
 			"force": True,
 			"include_projection": True,
+			"progress": progress,
 		},
 	)
 	assert calls["save"] == (listings, metadata, args)

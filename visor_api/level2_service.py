@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
+from utils.progress import NULL_PROGRESS, ProgressReporter
 from visor_api.adapter import adapt_listing
 from visor_api.client import QueryParams, VisorAPIError, VisorTimeoutError
 from visor_api.query import VisorListingQuery
@@ -145,6 +146,7 @@ def collect_level2_listings(
 	*,
 	max_listings: int = 100,
 	clock: Callable[[], datetime] | None = None,
+	progress: ProgressReporter = NULL_PROGRESS,
 ) -> Level2Collection:
 	"""Fetch an enriched search and standard detail sequentially for Level 2."""
 	if query.unsupported:
@@ -153,10 +155,11 @@ def collect_level2_listings(
 		raise ValueError("max_listings must not be negative")
 	now = clock or (lambda: datetime.now(timezone.utc))
 	request_params = level2_search_params(query)
-	response = client.filter_all_listings(
-		request_params,
-		max_listings=max_listings,
-	)
+	with progress.status("Fetching Visor listings"):
+		response = client.filter_all_listings(
+			request_params,
+			max_listings=max_listings,
+		)
 	rows = response.get("data")
 	if not isinstance(rows, list):
 		raise ValueError("Level 2 listing search data must be an array")
@@ -164,7 +167,13 @@ def collect_level2_listings(
 	listings: list[Level2ListingRecord] = []
 	exclusions: list[Level2Exclusion] = []
 	seen_ids: set[str] = set()
-	for index, raw_row in enumerate(rows):
+	indexed_rows = enumerate(rows)
+	for index, raw_row in progress.track(
+		indexed_rows,
+		total=len(rows),
+		description="Fetching listing details",
+		unit="listing",
+	):
 		if not isinstance(raw_row, Mapping):
 			exclusions.append(Level2Exclusion(
 				index=index,

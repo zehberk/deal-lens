@@ -11,8 +11,8 @@ from playwright.async_api import (
     TimeoutError,
 )
 from playwright.async_api import Error as PlaywrightError
-from tqdm import tqdm
 
+from deal_lens.progress import cli_progress
 from utils.cache import (
     cache_covers_all,
     is_entry_fresh,
@@ -546,15 +546,20 @@ async def get_trim_valuations_from_scrape(
 
     relevant_slugs: dict[str, str] = {}
 
-    request, browser, context, page = await create_kbb_browser()
+    progress = cli_progress()
+    with progress.status("Starting KBB browser"):
+        request, browser, context, page = await create_kbb_browser()
 
     try:
         variant_map = await get_variant_map(make, model, listings)
         relevant_slugs = await get_model_slug_map(slugs, make, variant_map)
 
         messages: set[str] = set()
-        for ymm, slug in tqdm(
-            relevant_slugs.items(), desc="Fetching KBB pricing", unit="year/make/model"
+        for ymm, slug in progress.track(
+            relevant_slugs.items(),
+            total=len(relevant_slugs),
+            description="Fetching KBB pricing",
+            unit="year/make/model",
         ):
             if slug:
                 year = ymm[:4]

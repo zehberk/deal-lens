@@ -12,7 +12,7 @@ from playwright.async_api import (
     Playwright,
     TimeoutError as PlaywrightTimeout,
 )
-from tqdm import tqdm
+from deal_lens.progress import cli_progress
 from typing import Iterable
 from urllib.parse import urljoin, urlparse, unquote
 from websocket import create_connection, WebSocket
@@ -249,10 +249,11 @@ async def get_missing_info(listings: list[dict], p: Playwright) -> None:
     )
 
     tasks = [worker(semaphore, browser, l) for l in listings]
-    for f in tqdm(
+    progress = cli_progress()
+    for f in progress.track(
         asyncio.as_completed(tasks),
         total=len(tasks),
-        desc="Searching for dealer data",
+        description="Searching for dealer data",
         unit="link",
     ):
         await f
@@ -602,10 +603,11 @@ def download_report_pdfs(listings: list[dict]) -> None:
     try:
         ws = connect_to_cdp(get_cdp_websocket_url(DEVTOOLS_PORT))
         current = 1
-        for provider, raw_url, out_path in tqdm(
+        progress = cli_progress()
+        for provider, raw_url, out_path in progress.track(
             jobs,
             total=len(jobs),
-            desc="Downloading reports",
+            description="Downloading reports",
             unit="listing",
         ):
             url = to_https(raw_url)
@@ -796,10 +798,11 @@ async def download_files(
             if len(work) == 0:
                 print("All supplementary info current")
             else:
-                for l in tqdm(
+                progress = cli_progress()
+                for l in progress.track(
                     work,
                     total=len(work),
-                    desc="Downloading supplementary info",
+                    description="Downloading supplementary info",
                     unit="listing",
                 ):
                     title = l.get("title")

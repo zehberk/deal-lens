@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
+from utils.progress import NULL_PROGRESS, ProgressReporter
 from visor_api.adapter import adapt_search_response
 from visor_api.query import VisorListingQuery
 from visor_api.models import FacetResponse, ListingSearchResponse
@@ -54,6 +55,7 @@ def cached_listing_search(
 	force: bool = False,
 	include_projection: bool = False,
 	clock: Callable[[], datetime] | None = None,
+	progress: ProgressReporter = NULL_PROGRESS,
 ) -> CachedSearchResult:
 	"""Return a cached search or fetch and atomically replace its cache file.
 
@@ -104,16 +106,18 @@ def cached_listing_search(
 				cache_used=True,
 			)
 
-	response = client.filter_all_listings_model(
-		request_params,
-		max_listings=max_listings,
-	)
+	with progress.status("Fetching Visor listings"):
+		response = client.filter_all_listings_model(
+			request_params,
+			max_listings=max_listings,
+		)
 	listing_retrieved_at = now().isoformat()
 	facet_params = {
 		**market_filters,
 		"facets": "model,trim,days_on_market",
 	}
-	facets_response = client.filter_facets_model(facet_params)
+	with progress.status("Fetching Visor market facets"):
+		facets_response = client.filter_facets_model(facet_params)
 	facet_retrieved_at = now().isoformat()
 	trim_facet_params = {
 		trim: {**market_filters, "trim": (trim,), "facets": "days_on_market"}
@@ -121,7 +125,12 @@ def cached_listing_search(
 	}
 	trim_facets_responses = {}
 	trim_facets_retrieved_at = {}
-	for trim, params in trim_facet_params.items():
+	for trim, params in progress.track(
+		trim_facet_params.items(),
+		total=len(trim_facet_params),
+		description="Fetching trim market data",
+		unit="trim",
+	):
 		trim_facets_responses[trim] = client.filter_facets_model(params)
 		trim_facets_retrieved_at[trim] = now().isoformat()
 	metadata = {

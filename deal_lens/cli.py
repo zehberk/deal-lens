@@ -14,6 +14,7 @@ from utils.constants import *
 from utils.download import download_files
 from deal_lens.cli_support import *
 from deal_lens.config import get_visor_api_key, get_visor_rate_limits
+from deal_lens.progress import cli_progress
 from visor_api import (
     VisorClient,
     cached_level1_facets,
@@ -92,6 +93,7 @@ async def collect_and_run_level1_api(args: Namespace) -> None:
         query,
         cache_dir=Path("cache") / "level1",
         force=args.force,
+        progress=cli_progress(),
     )
     filters = query.market_filters()
     make = next(iter(filters.get("make", ())), "")
@@ -169,6 +171,7 @@ async def collect_and_run_level2_api(args: Namespace) -> None:
         cache_dir=Path("cache") / "level2",
         max_listings=args.max_listings,
         force=args.force,
+        progress=cli_progress(),
     )
     listings = [record.listing for record in result.collection.listings]
     metadata = build_metadata(args)
@@ -195,6 +198,7 @@ async def collect_and_run_level3_api(args: Namespace) -> None:
         max_listings=args.max_listings,
         force=args.force,
         include_projection=True,
+        progress=cli_progress(),
     )
     listings = result.payload["listings"]
     metadata = result.payload["metadata"]

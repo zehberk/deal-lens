@@ -106,6 +106,11 @@ Useful collection options:
 Run `deal-lens --help` for the installed command help. You can also invoke the
 CLI with `python -m deal_lens`.
 
+Interactive commands use Rich progress displays for API collection, KBB lookups,
+dealer-data searches, and supplemental document downloads. Known work shows a
+count and ETA; operations whose size is not yet known use a spinner. Redirected
+and non-interactive output remains free of animated progress displays.
+
 The standalone `level1`, `level2`, and `level3` commands analyze the latest
 compatible saved data in `output/raw`; normal acquisition should use `deal-lens`.
 
