@@ -15,21 +15,19 @@ from visor_scraper.config import get_visor_api_key
 
 
 CACHE_DIR = PROJECT_ROOT / "cache" / "visor-api-test"
-MAX_LISTINGS = 10
+MAX_LISTINGS = 150
 QUERY = VisorListingQuery.from_options({
-	"make": "Honda",
-	"model": "Civic",
-	"trim": ("LX", "Sport"),
-	"year": 2020,
-	"miles_min": 10_000,
-	"miles_max": 80_000,
-	"sort": "lowest price",
+	"make": "Hyundai",
+	"model": "IONIQ 5",
+	"year": (2024, 2025, 2026),
+	"price_max": 55_000,
+	"sort": "newest",
 })
 
 
 def main() -> None:
 	parser = argparse.ArgumentParser(
-		description="Fetch or reuse the hardcoded Honda Civic API test cache."
+		description="Fetch or reuse the hardcoded Hyundai IONIQ 5 API test cache."
 	)
 	parser.add_argument(
 		"--force",
