@@ -16,6 +16,7 @@ import urllib3
 from urllib3.exceptions import ConnectTimeoutError, MaxRetryError, ReadTimeoutError
 from urllib3.util import Timeout
 
+from utils.progress import NULL_PROGRESS, ProgressReporter
 
 DEFAULT_BASE_URL = "https://api.visor.vin"
 DEFAULT_CONNECTION_TIMEOUT_SECONDS = 10.0
@@ -97,6 +98,7 @@ class VisorClient:
 		max_retries: int = 2,
 		requests_per_10_seconds: int = DEFAULT_REQUESTS_PER_10_SECONDS,
 		requests_per_minute: int = DEFAULT_REQUESTS_PER_MINUTE,
+		progress: ProgressReporter = NULL_PROGRESS,
 		opener: OpenRequest | None = None,
 	) -> None:
 		api_key = api_key.strip()
@@ -128,6 +130,7 @@ class VisorClient:
 		self.requests_per_minute = requests_per_minute
 		self._request_times: deque[float] = deque()
 		self._rate_limit_lock = threading.Lock()
+		self._progress = progress
 		self._opener = opener or urllib3.PoolManager().request
 
 	def __repr__(self) -> str:
@@ -386,7 +389,11 @@ class VisorClient:
 				if not delays:
 					self._request_times.append(now)
 					return
-				time.sleep(max(delays))
+				delay = max(delays)
+				with self._progress.status(
+					f"Rate limit reached; resuming in {delay:g} seconds"
+				):
+					time.sleep(delay)
 
 
 def _log_path(path: str) -> str:

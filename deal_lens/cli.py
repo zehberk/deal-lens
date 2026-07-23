@@ -15,6 +15,7 @@ from utils.download import download_files
 from deal_lens.cli_support import *
 from deal_lens.config import get_visor_api_key, get_visor_rate_limits
 from deal_lens.progress import cli_progress
+from utils.progress import ProgressReporter
 from visor_api import (
     VisorClient,
     cached_level1_facets,
@@ -27,12 +28,13 @@ from visor_api.query import VisorListingQuery
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
 
-def _visor_client() -> VisorClient:
+def _visor_client(progress: ProgressReporter) -> VisorClient:
     rate_limits = get_visor_rate_limits()
     return VisorClient(
         get_visor_api_key(),
         requests_per_10_seconds=rate_limits.requests_per_10_seconds,
         requests_per_minute=rate_limits.requests_per_minute,
+        progress=progress,
     )
 
 
@@ -86,14 +88,15 @@ async def run_analysis(
 async def collect_and_run_level1_api(args: Namespace) -> None:
     """Collect facet-native Level 1 data and render its market report."""
     query = VisorListingQuery.from_url(args.url)
-    client = _visor_client()
+    progress = cli_progress()
+    client = _visor_client(progress)
     result = await asyncio.to_thread(
         cached_level1_facets,
         client,
         query,
         cache_dir=Path("cache") / "level1",
         force=args.force,
-        progress=cli_progress(),
+        progress=progress,
     )
     filters = query.market_filters()
     make = next(iter(filters.get("make", ())), "")
@@ -163,7 +166,8 @@ def apply_level2_collection_metadata(
 async def collect_and_run_level2_api(args: Namespace) -> None:
     """Collect Level 2 API listings and pass them to the legacy analysis workflow."""
     query = VisorListingQuery.from_url(args.url)
-    client = _visor_client()
+    progress = cli_progress()
+    client = _visor_client(progress)
     result = await asyncio.to_thread(
         cached_level2_collection,
         client,
@@ -171,7 +175,7 @@ async def collect_and_run_level2_api(args: Namespace) -> None:
         cache_dir=Path("cache") / "level2",
         max_listings=args.max_listings,
         force=args.force,
-        progress=cli_progress(),
+        progress=progress,
     )
     listings = [record.listing for record in result.collection.listings]
     metadata = build_metadata(args)
@@ -189,7 +193,8 @@ async def collect_and_run_level2_api(args: Namespace) -> None:
 async def collect_and_run_level3_api(args: Namespace) -> None:
     """Collect API listings before invoking the current Level 3 placeholder."""
     query = VisorListingQuery.from_url(args.url)
-    client = _visor_client()
+    progress = cli_progress()
+    client = _visor_client(progress)
     result = await asyncio.to_thread(
         cached_listing_search,
         client,
@@ -198,7 +203,7 @@ async def collect_and_run_level3_api(args: Namespace) -> None:
         max_listings=args.max_listings,
         force=args.force,
         include_projection=True,
-        progress=cli_progress(),
+        progress=progress,
     )
     listings = result.payload["listings"]
     metadata = result.payload["metadata"]

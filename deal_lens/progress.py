@@ -1,7 +1,7 @@
 """Rich progress reporting for interactive DealLens commands."""
 
 from collections.abc import Iterable, Iterator
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from typing import TypeVar
 
 from rich.console import Console
@@ -29,6 +29,7 @@ class RichProgressReporter:
 	def __init__(self, console: Console | None = None) -> None:
 		self.console = console or Console(stderr=True)
 		self.enabled = self.console.is_terminal
+		self._active_display: Progress | None = None
 
 	def track(
 		self,
@@ -61,15 +62,33 @@ class RichProgressReporter:
 			TextColumn("{task.fields[unit]}"),
 		)
 		with Progress(*columns, console=self.console) as display:
-			task_id = display.add_task(description, total=total, unit=unit)
-			for item in sequence:
-				yield item
-				display.advance(task_id)
+			self._active_display = display
+			try:
+				task_id = display.add_task(description, total=total, unit=unit)
+				for item in sequence:
+					yield item
+					display.advance(task_id)
+			finally:
+				self._active_display = None
 
 	def status(self, description: str) -> AbstractContextManager[object]:
 		if not self.enabled:
 			return nullcontext()
+		if self._active_display is not None:
+			return self._nested_status(description)
 		return self.console.status(description, spinner="dots")
+
+	@contextmanager
+	def _nested_status(self, description: str) -> Iterator[object]:
+		display = self._active_display
+		if display is None:
+			yield None
+			return
+		task_id = display.add_task(description, total=None, unit="")
+		try:
+			yield task_id
+		finally:
+			display.remove_task(task_id)
 
 
 def cli_progress() -> ProgressReporter:

@@ -1,5 +1,6 @@
 import json
 
+from contextlib import nullcontext
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -8,6 +9,7 @@ from urllib3.exceptions import ConnectTimeoutError, ReadTimeoutError
 from urllib3.connectionpool import HTTPConnectionPool
 from urllib3.util import Timeout
 
+from utils.progress import NullProgressReporter
 from visor_api import (
 	VisorAPIError,
 	VisorClient,
@@ -236,6 +238,12 @@ def test_client_rejects_invalid_rate_limits():
 def test_client_enforces_both_rolling_rate_limits(monkeypatch):
 	now = [0.0]
 	sleeps = []
+	statuses = []
+
+	class Progress(NullProgressReporter):
+		def status(self, description):
+			statuses.append(description)
+			return nullcontext()
 
 	def sleep(seconds):
 		sleeps.append(seconds)
@@ -249,12 +257,17 @@ def test_client_enforces_both_rolling_rate_limits(monkeypatch):
 		opener=opener,
 		requests_per_10_seconds=2,
 		requests_per_minute=3,
+		progress=Progress(),
 	)
 
 	for _ in range(4):
 		client.filter_listings()
 
 	assert sleeps == [10.0, 50.0]
+	assert statuses == [
+		"Rate limit reached; resuming in 10 seconds",
+		"Rate limit reached; resuming in 50 seconds",
+	]
 
 
 def test_legacy_timeout_option_sets_both_request_phases():

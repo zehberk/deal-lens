@@ -109,7 +109,9 @@ CLI with `python -m deal_lens`.
 Interactive commands use Rich progress displays for API collection, KBB lookups,
 dealer-data searches, and supplemental document downloads. Known work shows a
 count and ETA; operations whose size is not yet known use a spinner. Redirected
-and non-interactive output remains free of animated progress displays.
+and non-interactive output remains free of animated progress displays. When a
+configured Visor rolling-window limit is reached, the active display identifies
+the rate-limit wait and its duration before requests resume.
 
 The standalone `level1`, `level2`, and `level3` commands analyze the latest
 compatible saved data in `output/raw`; normal acquisition should use `deal-lens`.
