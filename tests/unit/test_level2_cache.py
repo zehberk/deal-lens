@@ -116,3 +116,36 @@ def test_corrupt_level2_cache_is_replaced(cache_dir):
 	assert result.cache_used is False
 	assert client.search_calls == 2
 	assert json.loads(result.cache_path.read_text(encoding="utf-8"))["cache_schema"] == 1
+
+
+def test_level2_cache_key_covers_normalized_query_and_maximum(cache_dir):
+	client = CacheClient()
+	equivalent = VisorListingQuery.from_options({
+		"year": (2026, 2024, 2025),
+		"model": "Crosstrek",
+		"make": "Subaru",
+	})
+	changed_query = VisorListingQuery.from_options({
+		"make": "Subaru",
+		"model": "Crosstrek",
+		"year": (2023, 2024, 2025),
+	})
+
+	baseline = cached_level2_collection(
+		client, query(), cache_dir=cache_dir, max_listings=100
+	)
+	same = cached_level2_collection(
+		client, equivalent, cache_dir=cache_dir, max_listings=100
+	)
+	different_query = cached_level2_collection(
+		client, changed_query, cache_dir=cache_dir, max_listings=100
+	)
+	different_maximum = cached_level2_collection(
+		client, query(), cache_dir=cache_dir, max_listings=99
+	)
+
+	assert same.cache_used is True
+	assert same.cache_path == baseline.cache_path
+	assert different_query.cache_path != baseline.cache_path
+	assert different_maximum.cache_path != baseline.cache_path
+	assert client.search_calls == 3

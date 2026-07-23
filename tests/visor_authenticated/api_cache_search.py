@@ -35,11 +35,18 @@ def main() -> None:
 		description="Fetch or reuse the hardcoded Hyundai IONIQ 5 API test cache."
 	)
 	parser.add_argument(
+		"--live",
+		action="store_true",
+		help="Acknowledge that this command may make paid live API requests.",
+	)
+	parser.add_argument(
 		"--force",
 		action="store_true",
 		help="Bypass and replace an existing cache entry.",
 	)
 	args = parser.parse_args()
+	if not args.live:
+		parser.error("live Visor API access requires the explicit --live flag")
 
 	client = VisorClient(get_visor_api_key(env_file=PROJECT_ROOT / "api.env"))
 	result = cached_listing_search(

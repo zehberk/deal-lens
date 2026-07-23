@@ -83,19 +83,22 @@ that a recall remains open; confirm that separately with NHTSA's VIN lookup.
 
 ## Visor API cache probe
 
-This probe performs a maximum 10-listing search for a 2020 Honda Civic in LX or
-Sport trim, with 10,000–80,000 miles, sorted by lowest price first. It writes an
-ignored JSON cache containing request metadata and the untouched API response.
-It uses Visor's standard response fields and does not request optional field
-projections, options, or price-history expansions:
+This probe performs a maximum 150-listing search for 2024–2026 Hyundai IONIQ 5
+inventory priced at or below $55,000 and sorted newest first. It also captures the
+complete Level 1 facet plan in ignored JSON caches. The `--live` acknowledgement is
+required because uncached requests cost money:
 
 ```powershell
-.venv\Scripts\python.exe tests\visor_authenticated\api_cache_search.py
+.venv\Scripts\python.exe tests\visor_authenticated\api_cache_search.py --live
 ```
 
 Run the same command again to verify `"cache_used": true` without another API
 request. To bypass and replace the cached response, run:
 
 ```powershell
-.venv\Scripts\python.exe tests\visor_authenticated\api_cache_search.py --force
+.venv\Scripts\python.exe tests\visor_authenticated\api_cache_search.py --live --force
 ```
+
+Future pytest tests that require the live API must use the `live_visor` marker and
+remain skipped unless pytest is invoked with `--run-live-visor`. Normal tests block
+live HTTP requests even when that flag is present.
