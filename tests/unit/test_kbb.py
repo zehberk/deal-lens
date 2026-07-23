@@ -35,8 +35,9 @@ async def test_local_pricing_waits_for_delayed_resale_value(monkeypatch):
 	page.wait_for_function.assert_awaited_once()
 	page.inner_text.assert_awaited_once_with("body", timeout=10_000)
 	assert page.goto.await_args.args[0] == (
-		"https://kbb.com/honda/civic/2024/ex-sedan-4d/?zip=80202"
+		"https://kbb.com/honda/civic/2024/ex-sedan-4d/"
 	)
+	assert "zip=" not in page.goto.await_args.args[0]
 	assert result[3] == 23_100
 
 

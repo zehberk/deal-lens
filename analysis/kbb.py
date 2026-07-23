@@ -531,7 +531,6 @@ async def get_or_fetch_local_pricing(
     local_url = KBB_LOOKUP_TRIM_URL.format(
         make=safe_make, model=model_slug, year=year, trim=safe_trim
     )
-    local_url = f"{local_url}?{urllib.parse.urlencode({'zip': effective_postal_code})}"
     logger.info("Loading local KBB pricing for %s", kbb_trim)
 
     fmr_low: int | None = None

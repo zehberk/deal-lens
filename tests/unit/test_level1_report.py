@@ -136,7 +136,7 @@ def report_data():
 				fmv=fmv,
 				natl_source="https://www.kbb.com/honda/civic/2024/",
 				local_source=(
-					f"https://www.kbb.com/honda/civic/2024/{trim.lower()}/?zip=80202"
+					f"https://www.kbb.com/honda/civic/2024/{trim.lower()}/"
 				),
 			),
 		)
