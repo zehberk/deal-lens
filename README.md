@@ -1,227 +1,210 @@
-# visor.vin Web Scraper
+# DealLens
 
-A lightweight CLI tool that scrapes car listings from [visor.vin](https://visor.vin) using common filters and saves the results as a JSON file.
+DealLens creates data-driven vehicle-shopping reports from Visor inventory data,
+KBB valuations, saved vehicle-history reports, and other explicitly identified
+sources. Visor's official Public API is the primary listing-data source. Browser
+scraping remains only as legacy migration code and is not the product's identity.
 
+## Analysis levels
 
-## Features
+DealLens supports three workflows:
 
-- Filter listings by make, model, year, trim, price, mileage, and more
-- Save search results as a structured JSON file
-- Optional support for reusable presets
-- Minimal and fast — built with Playwright and asyncio
+1. **Market overview:** summarizes a defined make, model, year range, trim set,
+   condition, and market area using Visor facets and KBB comparisons.
+2. **Listing evaluation:** evaluates every eligible listing with deterministic
+   scoring, explicit evidence, uncertainty, and color thresholds.
+3. **Negotiation preparation:** prepares leverage points and questions for one
+   listing without claiming that a seller will accept a particular price.
 
+Level 1 uses aggregate Visor facet responses. Level 2 uses a paginated enriched
+listing search followed by standard listing-detail requests. Level 3 uses the
+listing API cache and the current negotiation-analysis workflow.
 
-## Setup
+## Architecture
 
-1. Clone the repo:
-   ```bash
-   git clone https://github.com/your-username/visor-vin-scraper.git
-   cd visor-vin-scraper
-   ```
+The main boundaries are:
 
-2. Create and activate a virtual environment:
-   ```bash
-   python -m venv .venv
-   .\.venv\Scripts\activate.bat  # For Command Prompt in Windows
-   .\.venv\Scripts\Activate.ps1  # For PowerShell in Windows
-   source .\.venv/bin/activate   # For Git Bash or WSL (Linux/macOS shells)
-   ```
+- `visor_api/`: authentication, requests, pagination, typed API models, caching,
+  query translation, and adapters into stable DealLens records;
+- `analysis/`: deterministic normalization, market calculations, scoring, and
+  report preparation;
+- `templates/`: Level 1, Level 2, and Level 3 report presentation;
+- `visor_scraper/`: the primary CLI plus legacy browser-era implementation kept
+  during the API migration;
+- `tests/unit/`: offline tests using fakes and recorded API fixtures; and
+- `tests/visor_authenticated/`: manual, explicitly opted-in API probes that may
+  incur usage charges.
 
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+Raw API facts remain separate from calculated values and AI-written explanations.
+Important report inputs retain source provenance. Missing API fields remain
+unavailable rather than being guessed.
 
-4. Configure Visor API access:
+## Requirements and setup
 
-   Copy `api.env.example` to `api.env`, then replace the placeholder with your
-   Visor API key. Alternatively, set `VISOR_API_KEY` in the process environment.
-   A process environment value takes precedence over `api.env`.
+DealLens targets Python 3.14.
 
-### Visor inventory API
-
-Use the authenticated API client for general listing searches, market facets, and
-individual listing detail. Filters use the parameter names from the official Visor
-API; sequences are encoded as comma-separated values.
-
-```python
-from visor_api import VisorClient, adapt_search_response
-from visor_scraper.config import get_visor_api_key
-
-
-client = VisorClient(get_visor_api_key())
-filters = {
-	"make": "Toyota",
-	"model": "Camry",
-	"year": [2024, 2025],
-	"inventory_type": "used",
-}
-
-listings = client.filter_listings({**filters, "limit": 50})
-market = client.filter_facets({
-	**filters,
-	"facets": "price,miles,days_on_market",
-})
-listing = client.get_listing(
-	listings["data"][0]["id"],
-	{"include": "price_history,options"},
-)
-
-# Convert API records to the existing DealLens metadata/listings contract.
-payload = adapt_search_response(
-	listings,
-	details={listing["data"]["id"]: listing["data"]},
-	request_filters=filters,
-)
+```powershell
+git clone https://github.com/zehberk/deal-lens.git
+cd deal-lens
+py -3.14 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python -m pip install -e .
+playwright install
 ```
 
-Typed variants are available as `filter_listings_model`,
-`filter_all_listings_model`, `filter_facets_model`, and `get_listing_model`.
-They validate API and cached payloads into the models exported by `visor_api`,
-while the original methods continue returning raw dictionaries for compatibility.
-Unknown response fields are preserved during model serialization so a newer API
-field is not silently discarded.
+Playwright is still required by KBB and approved supplemental dealer-document
+workflows; it is not used to authenticate to Visor or replace the Visor API.
 
-The adapter prefers non-null detail values, retains every untouched API record in
-`source_data`, and records source paths, calculations, and unavailable reasons in
-`provenance`. Missing and incompatible analysis fields are recorded on each
-listing and aggregated in `metadata.warnings`; warnings identify the received type
-without copying the raw incompatible value. Facet responses can be supplied through
-`facets_response`; aggregate market values are kept in metadata and a separate
-`facet_result`, never copied onto individual listings.
+### Visor API key
 
-Cached listing searches request model, trim, and days-on-market facets for the
-overall filtered market. When a search explicitly selects trims, DealLens also
-requests days-on-market facets separately for each selected trim and preserves the
-individual queries and responses alongside the overall market result.
+Create an API key through your Visor account. Then either set it in the process
+environment:
 
-Facet-native Level 1 reports treat user-provided trims as market restrictions.
-Every active and recently sold query applies the selected trims, so the report
-contains only those trim buckets. Omit the trim filter to discover and compare all
-trims returned for the model market.
-
-The `--level1` CLI route uses the facet-native API cache, aggregate market analysis,
-KBB comparison, and Level 1 report renderer without collecting Visor listing cards.
-The `--level3` route uses the cached Visor listing API service with the enriched
-listing projection before reaching the current Level 3 analysis placeholder.
-
-Level 2 uses an enriched `/v1/listings` search followed by standard listing-detail
-requests. The resulting API records are adapted into the legacy analysis-facing
-listing shape, cached locally, saved under `output/raw`, and passed to the existing
-KBB, dealer-document, CARFAX, scoring, and PDF workflow. New, used, and certified
-inventory are included unless the search URL specifies conditions. Use `--force` to
-bypass the Level 2 API cache.
-
-The Level 2 report accounts for every returned listing. A complete rating still
-requires compatible KBB pricing and a saved vehicle-history report. Listings without
-a report are shown separately with a price assessment and an unavailable risk/final
-rating; listings without usable pricing show their evaluation failure reason.
-The saved DealLens metadata also records the logical `/v1/listings` query and every
-overall or per-trim `/v1/facets` query with the UTC time its response was retrieved.
-Cache hits retain the original retrieval times.
-
-### Interpreting Level 2 risk and Deal Score
-
-Risk Score measures identified adverse evidence on a 0–10 scale. It includes title,
-damage, structural, odometer, and above-expected-mileage evidence. It is not a
-probability of failure or a universal statement that a vehicle is acceptable. A
-buyer may reasonably treat evidence such as a salvage or rebuilt title as a hard
-stop regardless of the numeric result.
-
-Deal Score measures value after risk rather than vehicle desirability by itself. It
-starts with the listing's linear position on the full price scale, applies an
-exponential risk penalty, and then applies any eligible low-mileage or remaining-
-warranty bonus. Favorable evidence declines as risk rises and contributes nothing at
-risk 4 or above. Consequently, a deeply discounted vehicle with moderate risk can
-receive a higher Deal Score than an exceptionally clean but badly overpriced
-vehicle. The report preserves both Deal Score and Risk Score so buyers can reject a
-vehicle whose risk exceeds their personal tolerance even when its price-adjusted
-value is competitive.
-
-Risk is deliberately nonlinear: movement near the high end costs increasingly more
-Deal Score than the same movement near zero. Roughly, 0–2 represents limited
-identified risk, 3 is a noticeable concern, 4 is a serious-review threshold, 5–6
-receives a major penalty, and 7–10 represents severe evidence that becomes
-increasingly difficult for price to overcome. These descriptions are interpretation
-guidance, not guarantees about condition or future reliability.
-
-The client sends the configured key only in the `Authorization: Bearer` header,
-uses a 10-second connection timeout and a 30-second response/read timeout, and
-retries rate-limit and temporary platform responses a bounded number of times.
-`VisorAPIError` exposes Visor's error type and code, HTTP status, parsed response
-body, and `Retry-After` header. Connection and response/read failures raise
-`VisorConnectionTimeoutError` and `VisorReadTimeoutError`, respectively. Final API
-errors are logged once with their type, status, code, and operator-facing message;
-credentials and full response payloads are not logged. Retry attempts are logged at
-`WARNING`, final failures and timeouts at `ERROR`, and sanitized request timing and
-rate-limit telemetry at `DEBUG`.
-
-5. Install browser dependencies for Playwright:
-   ```bash
-   playwright install
-   ```
-
-6. Authentication Setup
-   
-   This script can be run without cookies, but you will not be able to see any of the features that a subscription can give you (installed options, additional documents, etc.). As of right now, cookie automation is not available; however, there is a simple workaround.
-
-   To get your cookies imported easily, you can install a browser extension called EditThisCookie, navigate to visor.vin, open the extension and click Export. This will copy all your cookies to the clipboard.
-
-   Once that is done, create a file called cookies.json and place it in the .session folder.
-
-   ***Warning:*** If you run this script without authentication, it will run for considerably longer!
-
-
-## Running the Scraper
-
-You must specify either:
-
-- `--make` and `--model` (required), or
-- `--preset` with both values defined
-
-### Basic Usage
-
-```bash
-python -m scraper --make "Jeep" --model "Wrangler" --trim "Rubicon" --year "2023 2024" --sort "Newest"
+```powershell
+$env:VISOR_API_KEY = "your-api-key"
 ```
 
-### Using a Preset
+or copy the ignored local configuration template:
 
-```bash
-python -m scraper --preset "default"
+```powershell
+Copy-Item api.env.example api.env
 ```
 
-Presets should be defined in `presets/presets.json`. See [presets.docs.md](presets/presets.docs.md) for the format and allowed values.
+Replace `YOUR_API_KEY_HERE` in `api.env`. `VISOR_API_KEY` in the process
+environment takes precedence over `api.env`. Never commit `api.env`, credentials,
+authorization headers, or authenticated response headers.
 
-### Help
+DealLens fails with a clear configuration error when the key is missing or still
+contains the placeholder.
 
-Use `--help` for a more thorough list of arguments
+## Running DealLens
 
-```bash
-python -m scraper --help
+Pass a Visor search URL and choose one analysis level:
+
+```powershell
+deal-lens --url "https://visor.vin/search/listings?make=Hyundai&model=IONIQ%205&year=2024,2025,2026&price_max=55000&sort=newest" --level1
 ```
 
-
-## Output
-
-Results are saved to a `.json` file in the root directory, with the filename based on your query (e.g., `Jeep_Wrangler_listings_{timestamp}.json`).
-
-Progress and summary info are shown in the terminal. See [output.docs.md](output/output.docs.md)
-
-The field comparison, compatibility decision, unavailable-value policy, and
-sanitized contract fixtures for the migration from web scraping to the official
-Visor API are documented in [docs/visor-api-migration.md](docs/visor-api-migration.md).
-
-
-## Testing
-
-To run all tests:
-
-```bash
-pytest
+```powershell
+deal-lens --url "https://visor.vin/search/listings?make=Hyundai&model=IONIQ%205&year=2024,2025,2026&price_max=55000&sort=newest" --level2 --max_listings 150
 ```
 
+```powershell
+deal-lens --url "https://visor.vin/search/listings?make=Hyundai&model=IONIQ%205&year=2026&sort=newest" --level3 --max_listings 1
+```
+
+Useful collection options:
+
+- `--max_listings N`: maximum listings to retrieve, up to 500;
+- `--force`: bypass the applicable daily cache; and
+- `--save_docs`: download available supplemental listing documents.
+
+Run `deal-lens --help` for the installed command help. The legacy
+`visor_scraper` command and `python -m visor_scraper` remain compatibility aliases,
+but new documentation and automation should use `deal-lens`.
+
+The standalone `level1`, `level2`, and `level3` commands analyze the latest
+compatible saved data in `output/raw`; normal acquisition should use `deal-lens`.
+
+## Supported search filters
+
+DealLens translates these search URL parameters into the Visor API contract:
+
+| Purpose | Parameters | Notes |
+| --- | --- | --- |
+| Vehicle identity | `make`, `model`, `trim`, `year` | Comma-separated values are supported. Level 1 requires make, model, and at least one year. |
+| Inventory | `inventory_type` or `car_type` | Supports `new`, `used`, and `certified`; `cpo` maps to `certified`. Omit it to include every inventory type. |
+| Price | `min_price`, `max_price` or `price_min`, `price_max` | Whole-dollar bounds. |
+| Mileage | `min_mileage`, `max_mileage` or `miles_min`, `miles_max` | Odometer bounds. |
+| Geography | `postal_code`, `radius`, `state`, `latitude`, `longitude` | Radius requires a postal code or coordinates. Browser URL geo-origin/radius parameters are also translated. |
+| Historical cohorts | `sold_within_days`, `snapshot_date` | These represent separate sold or historical cohorts and must not be mixed with current inventory. |
+| Presentation | `sort` | Controls listing order but is excluded from market-cohort identity. |
+
+Named locations that cannot be translated into a postal code and unknown browser
+parameters are reported as unsupported rather than silently approximated.
+
+### Sort values
+
+The public API accepts `days_on_market`, `listed_at`, `price`, `miles`, `msrp`, and
+`discount`, with a leading `-` for reverse order. `distance` requires a geographic
+origin. DealLens also translates these friendly names:
+
+| Friendly value | API value |
+| --- | --- |
+| `newest` | `days_on_market` |
+| `oldest` | `-days_on_market` |
+| `cheapest` or `lowest price` | `price` |
+| `expensive` or `highest price` | `-price` |
+| `lowest_miles` or `lowest mileage` | `miles` |
+| `highest_miles` or `highest mileage` | `-miles` |
+
+## API usage, pagination, and rate limits
+
+Visor limits listing pages to 100 records. DealLens requests the largest useful
+page without over-fetching: a 150-listing request uses pages of 100 and 50, while a
+122-listing request uses 100 and 22. Pagination stops at the requested maximum, an
+empty/final page, or invalid/non-advancing pagination metadata.
+
+API calls can cost real money. The Level 2 contract observed during migration was
+an enriched listing search plus one standard detail request per returned listing;
+the recorded example cost was $0.04 per enriched search request and $0.003 per
+detail request. Pricing and account limits can change, so treat Visor's current
+usage dashboard and response usage headers as authoritative. `--force` can cause
+new billable calls because it bypasses the daily cache.
+
+The client uses a 10-second connection timeout and a 30-second read timeout. It
+retries HTTP 429 and 503 responses a bounded number of times, honors `Retry-After`
+when supplied, and never retries indefinitely. The account observed during the
+migration advertised 10 requests per 10 seconds; do not assume that limit applies
+to every account or remains unchanged.
+
+Normal pytest runs block live HTTP requests and replay recorded fixtures. A pytest
+test that genuinely requires paid Visor access must use the `live_visor` marker and
+is skipped unless `--run-live-visor` is supplied. Manual authenticated probes also
+require an explicit `--live` flag.
+
+## API and legacy-output differences
+
+DealLens adapts API responses into the existing analysis-facing envelope so saved
+legacy data remains readable where practical. Important differences include:
+
+- API listing IDs are stable strings; legacy scraper IDs were positional integers.
+- Missing scalar API values use `null`, not `"N/A"`, `"Unavailable"`, or invented
+  substitutes.
+- The API does not directly provide Visor warranty coverage/status, seller map URLs,
+  scraper-enriched dealer fees, or provider-specific CARFAX, AutoCheck, and window-
+  sticker URLs.
+- A generic vehicle-history URL is not automatically labeled as CARFAX or
+  AutoCheck, and build verification is not treated as a window-sticker URL.
+- API timestamps are preserved rather than converted into relative text such as
+  “Listed 3 days ago.”
+- API options and price history preserve their source structure; missing legacy
+  price-history mileage or “lowest” flags are not fabricated.
+- Level 1 market values come from exact facet cohorts rather than mixed listing-card
+  approximations.
+
+The complete mapping, unavailable-value policy, fixture provenance, and migration
+decisions are in [docs/visor-api-migration.md](docs/visor-api-migration.md).
+
+## Testing and diagnostics
+
+Run the offline test suite and Python diagnostics with:
+
+```powershell
+python -m pytest
+.\.venv\Scripts\pyright.exe
+```
+
+Pyright uses `standard` mode from `pyrightconfig.json`. Live Visor calls are not
+part of the normal test suite.
+
+## Output and generated reports
+
+Acquisition output is written beneath `output/raw`, with report artifacts in the
+corresponding output directories. Generated files, credentials, caches, browser
+profiles, and private reports are ignored and must not be committed.
 
 ## License
 
-This project is licensed under the [MIT License](https://opensource.org/licenses/MIT). You are free to use, modify, and distribute it with attribution.
+DealLens is available under the [MIT License](LICENSE).

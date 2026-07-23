@@ -4,6 +4,11 @@ This document records the contract comparison used to replace Visor web scraping
 with the official Public API. It describes the repository at commit `c73d562` and
 the Visor Public API responses captured on 2026-07-18.
 
+For current installation, CLI usage, supported filters and sorts, API-key setup,
+pagination, caching, rate limits, and analysis-level architecture, see the project
+[`README`](../README.md). This document retains the detailed compatibility and
+provenance decisions behind that user-facing guide.
+
 ## Fixture provenance and sanitization
 
 The fixtures in [`docs/fixtures/visor_api`](fixtures/visor_api) were captured from
