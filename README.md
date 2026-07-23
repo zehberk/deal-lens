@@ -99,6 +99,12 @@ Facet-native Level 1 reports treat user-provided trims as market restrictions.
 Every active and recently sold query applies the selected trims, so the report
 contains only those trim buckets. Omit the trim filter to discover and compare all
 trims returned for the model market.
+
+The `--level1` CLI route uses the facet-native API cache, aggregate market analysis,
+KBB comparison, and Level 1 report renderer without collecting Visor listing cards.
+The `--level3` route uses the cached Visor listing API service with the enriched
+listing projection before reaching the current Level 3 analysis placeholder.
+
 The saved DealLens metadata also records the logical `/v1/listings` query and every
 overall or per-trim `/v1/facets` query with the UTC time its response was retrieved.
 Cache hits retain the original retrieval times.
