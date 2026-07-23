@@ -18,6 +18,7 @@ from visor_api.level1_query import (
 	build_level1_facet_query_plan,
 	build_level1_trim_enrichment_query_plan,
 )
+from visor_api.level1_types import MarketCohort
 from visor_api.level1_service import (
 	Level1FacetCollection,
 	Level1FacetResponseError,
@@ -76,6 +77,7 @@ __all__ = [
 	"LEVEL1_FACET_SORT",
 	"LEVEL1_FACET_VALUE_LIMIT",
 	"LEVEL1_RECENT_SOLD_DAYS",
+	"MarketCohort",
 	"Level1FacetQuery",
 	"build_level1_facet_query_plan",
 	"build_level1_trim_enrichment_query_plan",

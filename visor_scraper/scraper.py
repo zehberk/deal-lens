@@ -12,6 +12,9 @@ from playwright.async_api import (
 from tqdm import tqdm
 
 from analysis.level1 import start_level1_analysis
+from analysis.level1_kbb import get_level1_kbb_valuations
+from analysis.level1_market import build_market_snapshot
+from analysis.level1_report import render_level1_market_pdf
 from analysis.level2 import start_level2_analysis
 from utils.cache import load_cache, save_cache
 from utils.common import current_timestamp
@@ -19,7 +22,12 @@ from utils.constants import *
 from utils.download import download_files
 from visor_scraper.helpers import *
 from visor_scraper.config import get_visor_api_key
-from visor_api import VisorClient, cached_level2_collection
+from visor_api import (
+    VisorClient,
+    cached_level1_facets,
+    cached_level2_collection,
+    cached_listing_search,
+)
 from visor_api.level2_service import Level2Collection
 from visor_api.query import VisorListingQuery
 
@@ -722,6 +730,34 @@ async def run_analysis(
             print("Level 3")
 
 
+async def collect_and_run_level1_api(args: Namespace) -> None:
+    """Collect facet-native Level 1 data and render its market report."""
+    query = VisorListingQuery.from_url(args.url)
+    client = VisorClient(get_visor_api_key())
+    result = await asyncio.to_thread(
+        cached_level1_facets,
+        client,
+        query,
+        cache_dir=Path("cache") / "level1",
+        force=args.force,
+    )
+    filters = query.market_filters()
+    make = next(iter(filters.get("make", ())), "")
+    model = next(iter(filters.get("model", ())), "")
+    postal_code = filters.get("postal_code")
+    pricing_cache = load_cache(PRICING_CACHE)
+    kbb = await get_level1_kbb_valuations(
+        make,
+        model,
+        result.collection,
+        pricing_cache,
+        postal_code=str(postal_code) if postal_code else None,
+    )
+    snapshot = build_market_snapshot(query, result.collection, kbb)
+    report_path = await render_level1_market_pdf(snapshot, kbb)
+    print(f"Saved Level 1 market report to {report_path}")
+
+
 def apply_level2_collection_metadata(
     metadata: dict, collection: Level2Collection, cache_used: bool
 ) -> None:
@@ -795,9 +831,41 @@ async def collect_and_run_level2_api(args: Namespace) -> None:
     await start_level2_analysis(metadata, listings, filename)
 
 
+async def collect_and_run_level3_api(args: Namespace) -> None:
+    """Collect API listings before invoking the current Level 3 placeholder."""
+    query = VisorListingQuery.from_url(args.url)
+    client = VisorClient(get_visor_api_key())
+    result = await asyncio.to_thread(
+        cached_listing_search,
+        client,
+        query,
+        cache_dir=Path("cache") / "level3",
+        max_listings=args.max_listings,
+        force=args.force,
+        include_projection=True,
+    )
+    listings = result.payload["listings"]
+    metadata = result.payload["metadata"]
+    timestamp = save_results(listings, metadata, args)
+    filename = (
+        f"output/raw/{args.make}_{args.model}_listings_{timestamp}.json".replace(
+            " ", "_"
+        )
+    )
+    if args.save_docs:
+        await download_files(listings, filename)
+    await run_analysis(listings, metadata, args, timestamp, filename)
+
+
 async def scrape(args: Namespace) -> None:
+    if args.level1:
+        await collect_and_run_level1_api(args)
+        return
     if args.level2:
         await collect_and_run_level2_api(args)
+        return
+    if args.level3:
+        await collect_and_run_level3_api(args)
         return
 
     # Try cache before touching the browser

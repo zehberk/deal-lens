@@ -100,6 +100,11 @@ Every active and recently sold query applies the selected trims, so the report
 contains only those trim buckets. Omit the trim filter to discover and compare all
 trims returned for the model market.
 
+The `--level1` CLI route uses the facet-native API cache, aggregate market analysis,
+KBB comparison, and Level 1 report renderer without collecting Visor listing cards.
+The `--level3` route uses the cached Visor listing API service with the enriched
+listing projection before reaching the current Level 3 analysis placeholder.
+
 Level 2 uses an enriched `/v1/listings` search followed by standard listing-detail
 requests. The resulting API records are adapted into the legacy analysis-facing
 listing shape, cached locally, saved under `output/raw`, and passed to the existing

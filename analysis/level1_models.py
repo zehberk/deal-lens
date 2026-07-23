@@ -12,15 +12,10 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Self
 
+from visor_api.level1_types import MarketCohort
+
 
 Number = int | float
-
-
-class MarketCohort(StrEnum):
-	"""The inventory population measured by a Level 1 facet query."""
-
-	ACTIVE = "active"
-	RECENTLY_SOLD = "recently_sold"
 
 
 class ConfidenceLevel(StrEnum):
