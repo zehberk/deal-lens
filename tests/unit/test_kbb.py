@@ -67,6 +67,9 @@ async def test_national_pricing_accepts_msrp_only_div_rows():
 	rows = MagicMock()
 	rows.first.wait_for = AsyncMock()
 	rows.all = AsyncMock()
+	heading = MagicMock()
+	heading.first = heading
+	heading.locator.return_value = rows
 	row = MagicMock()
 	link = MagicMock()
 	link.count = AsyncMock(return_value=0)
@@ -78,13 +81,15 @@ async def test_national_pricing_accepts_msrp_only_div_rows():
 	divs.all = AsyncMock(return_value=[trim, msrp])
 	row.locator.side_effect = lambda selector: link if selector == "a" else divs
 	rows.all.return_value = [row]
-	page.locator.return_value = rows
+	page.get_by_role.return_value = heading
 
 	pricing, error = await get_or_fetch_national_pricing(
 		page, "Hyundai", "IONIQ 5", "ioniq-5", "2026", {}
 	)
 
 	rows.first.wait_for.assert_awaited_once_with(timeout=10_000)
+	page.get_by_role.assert_called_once()
+	heading.locator.assert_called_once_with("xpath=following::table[1]//tbody/tr")
 	assert error is None
 	assert pricing[0][0:3] == ("Ioniq 5 SE", "$39,100", None)
 

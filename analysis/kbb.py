@@ -172,9 +172,15 @@ async def get_or_fetch_national_pricing(
                     pricing_data,
                     f"KBB does not have data for this trim: {year} {make} {model}",
                 )
-            # KBB's generated CSS class names change frequently. The semantic table
-            # structure is stable and row contents are validated below.
-            rows_locator = page.locator("table tbody tr")
+            # Scope rows to the pricing table. Other tables on the page repeat trim
+            # names with used-market values and must not overwrite MSRP data.
+            pricing_heading = page.get_by_role(
+                "heading",
+                name=re.compile(rf"{re.escape(model)}\s+Pricing", re.IGNORECASE),
+            ).first
+            rows_locator = pricing_heading.locator(
+                "xpath=following::table[1]//tbody/tr"
+            )
             await rows_locator.first.wait_for(timeout=KBB_LOCATOR_TIMEOUT_MS)
             rows = await rows_locator.all()
         except TimeoutError:
