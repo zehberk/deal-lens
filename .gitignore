@@ -64,6 +64,7 @@ api.env
 # Keep focused unit tests tracked while legacy browser probes remain local.
 !tests/unit/
 !tests/unit/test_*.py
+!tests/conftest.py
 !tests/visor_authenticated/
 tests/visor_authenticated/*
 !tests/visor_authenticated/api_cache_search.py

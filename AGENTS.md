@@ -93,10 +93,10 @@ Unless the repository configuration says otherwise:
 
 - Use the existing `pytest` setup.
 - The project uses `pytest-asyncio` with automatic asyncio handling; do not add `@pytest.mark.asyncio` unless repository configuration requires it.
-- Always check the IDE Problems view for diagnostics in changed files before reporting completion. This includes Pylance in `standard` mode and the VS Code HTML/CSS language-service diagnostics used for HTML, CSS, and Jinja templates. Resolve every reported error and report the result.
+- Run `.venv\Scripts\pyright.exe` for command-line Python diagnostics in `standard` mode before reporting completion. Also check the IDE Problems view when it is available, including Pylance and the VS Code HTML/CSS language-service diagnostics used for HTML, CSS, and Jinja templates. Resolve every reported error and report the result.
 - Treat the VS Code built-in HTML and CSS language services as required validation for templates, including CSS diagnostics reported inside HTML `style` attributes. Do not rely only on successful Jinja rendering, browser output, or pytest when the Problems view reports template errors.
 - Avoid placing Jinja expressions directly inside CSS property values because the CSS language service parses them as invalid CSS. Prefer static classes, `data-*` attributes, or values prepared outside the CSS syntax, while preserving correct rendered output.
-- If the IDE Problems view is unavailable to the agent, do not describe it as checked or clean. Run every available template validation, state that IDE diagnostics remain unverified, and ask for the Problems view to be confirmed before considering template work complete.
+- If the IDE Problems view is unavailable to the agent, run Pyright and every available template validation. Report the Pyright result separately, state that VS Code HTML/CSS diagnostics remain unverified when templates changed, and ask for the Problems view to be confirmed before considering template work complete.
 - Add or update tests for changed behavior.
 - Mock external services in unit tests.
 - Use saved fixtures for API and legacy scraper payloads.
@@ -145,7 +145,7 @@ Before reporting completion:
 
 - Confirm the requested behavior is implemented.
 - Run relevant tests and report the exact result.
-- Check the IDE Problems view for every changed file, including Pylance in `standard` type-checking mode and VS Code HTML/CSS language-service diagnostics for templates and stylesheets. Resolve all reported errors and report the result.
+- Run `.venv\Scripts\pyright.exe` and resolve every reported Python error. Check the IDE Problems view when available, including Pylance and VS Code HTML/CSS language-service diagnostics for templates and stylesheets, and report both results.
 - Check that no secrets or user-specific data were added.
 - Note any compatibility impact on legacy scraper data.
 - Update documentation when setup, configuration, or behavior changed.

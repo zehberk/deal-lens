@@ -263,3 +263,39 @@ def test_listing_cache_expires_after_the_local_calendar_day(cache_dir):
 	assert next_day.cache_used is False
 	assert len(client.calls) == 2
 	assert len(client.facet_calls) == 6
+
+
+def test_listing_cache_key_covers_normalized_query_and_maximum(cache_dir):
+	client = FakeClient()
+	equivalent = VisorListingQuery.from_options({
+		"trim": ("Sport", "LX"),
+		"model": "Civic",
+		"make": "Honda",
+		"year": 2020,
+		"max_mileage": 80_000,
+		"min_mileage": 10_000,
+		"sort": "price",
+	})
+	changed_query = VisorListingQuery.from_options({
+		**QUERY.filters,
+		"year": 2021,
+	})
+
+	baseline = cached_listing_search(
+		client, QUERY, cache_dir=cache_dir, max_listings=10
+	)
+	same = cached_listing_search(
+		client, equivalent, cache_dir=cache_dir, max_listings=10
+	)
+	different_query = cached_listing_search(
+		client, changed_query, cache_dir=cache_dir, max_listings=10
+	)
+	different_maximum = cached_listing_search(
+		client, QUERY, cache_dir=cache_dir, max_listings=11
+	)
+
+	assert same.cache_used is True
+	assert same.cache_path == baseline.cache_path
+	assert different_query.cache_path != baseline.cache_path
+	assert different_maximum.cache_path != baseline.cache_path
+	assert len(client.calls) == 3
