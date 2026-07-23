@@ -3,7 +3,7 @@ from pathlib import Path
 
 from analysis.analysis_utils import check_missing_docs
 from visor_api import Level2Collection, Level2Exclusion, Level2ListingRecord
-from visor_scraper.scraper import apply_level2_collection_metadata, scrape
+from deal_lens.cli import apply_level2_collection_metadata, scrape
 
 
 def collection():
@@ -87,14 +87,14 @@ def test_collection_metadata_preserves_api_provenance_and_failures():
 	assert metadata["warnings"][1]["vin"] == "TESTVIN3"
 
 
-async def test_level2_scrape_routes_to_api_collection(monkeypatch):
+async def test_level2_cli_routes_to_api_collection(monkeypatch):
 	calls = []
 
 	async def fake_collect(args):
 		calls.append(args)
 
 	monkeypatch.setattr(
-		"visor_scraper.scraper.collect_and_run_level2_api", fake_collect
+		"deal_lens.cli.collect_and_run_level2_api", fake_collect
 	)
 	args = Namespace(level1=False, level2=True, level3=False)
 

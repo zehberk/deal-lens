@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from visor_scraper.config import ConfigurationError, get_visor_api_key
+from deal_lens.config import ConfigurationError, get_visor_api_key
 
 
 def test_api_key_comes_from_environment():

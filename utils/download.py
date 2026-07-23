@@ -5,12 +5,12 @@ from datetime import timedelta
 from enum import Enum
 from pathlib import Path
 from PIL import Image
-from playwright._impl._errors import TimeoutError as PlaywrightTimeout
 from playwright.async_api import (
     APIRequestContext,
     async_playwright,
     Browser,
     Playwright,
+    TimeoutError as PlaywrightTimeout,
 )
 from tqdm import tqdm
 from typing import Iterable

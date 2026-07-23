@@ -29,7 +29,7 @@ output/*
 !output/*/*prompt.txt
 !output/example_output.json
 
-# Session files
+# Local browser or authentication sessions
 .session/*
 
 # Local cache files
@@ -43,7 +43,6 @@ Thumbs.db
 
 # Test code
 tests/*
-playwright-profile/*
 evalutation_instructions.md
 
 test*.*
@@ -61,7 +60,7 @@ test*.*
 # Local API credentials
 api.env
 
-# Keep focused unit tests tracked while legacy browser probes remain local.
+# Keep focused unit tests and explicit API probes tracked.
 !tests/unit/
 !tests/unit/test_*.py
 !tests/conftest.py

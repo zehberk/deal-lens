@@ -11,7 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from visor_api import VisorClient
-from visor_scraper.config import get_visor_api_key
+from deal_lens.config import get_visor_api_key
 
 
 BASE_FILTERS = {
