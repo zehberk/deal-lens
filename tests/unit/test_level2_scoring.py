@@ -3,6 +3,7 @@ import pytest
 from analysis.scoring import (
 	deal_score_from_position,
 	calculate_deal_score,
+	calculate_deal_score_result,
 	deal_rating_from_score,
 	risk_penalty,
 	get_structure_score,
@@ -90,15 +91,31 @@ def test_rating_is_derived_from_continuous_score():
 	assert deal_rating_from_score(19.9) == "Bad"
 
 
+def test_score_result_decouples_calculation_from_explanation():
+	result = calculate_deal_score_result(62, 1, 0)
+
+	assert result.price_score == 62
+	assert result.risk_score == 1
+	assert result.risk_penalty > 0
+	assert result.favorable_bonus == 0
+	assert result.final_score == 59
+	assert result.rating == "Fair"
+	assert format_deal_score_narrative(result).startswith("Deal Score is 59%")
+
+
 def test_zero_score_components_use_plain_language():
-	narrative = format_deal_score_narrative(50, 50, 0, 0)
+	narrative = format_deal_score_narrative(calculate_deal_score_result(50, 0, 0))
 
 	assert "no risk was identified" in narrative
 	assert "there is no favorable evidence" in narrative
 	assert "0.0/10" not in narrative
 	assert "0 points" not in narrative
-	assert "less than 1 point" in format_deal_score_narrative(50, 50, 0, 0.4)
-	assert "adds 1 point." in format_deal_score_narrative(50, 50, 0, 1.2)
+	assert "less than 1 point" in format_deal_score_narrative(
+		calculate_deal_score_result(50, 0, 0.05)
+	)
+	assert "adds 1 point." in format_deal_score_narrative(
+		calculate_deal_score_result(50, 0, 0.2)
+	)
 
 
 def test_warranty_bonus_uses_limiting_mileage_at_typical_use():

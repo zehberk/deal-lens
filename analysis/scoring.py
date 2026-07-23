@@ -1,6 +1,7 @@
 import re
 import math
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
@@ -285,6 +286,18 @@ def risk_penalty(risk: float) -> float:
     )
 
 
+@dataclass(frozen=True)
+class DealScoreResult:
+    """Deterministic Level 2 score inputs and outputs, independent of prose."""
+
+    price_score: float
+    risk_score: float
+    risk_penalty: float
+    favorable_bonus: float
+    final_score: int
+    rating: str
+
+
 def calculate_deal_score(
     price_score: float,
     risk: float,
@@ -299,6 +312,27 @@ def calculate_deal_score(
     return max(0.0, min(100.0, max(score, low_risk_floor)))
 
 
+def calculate_deal_score_result(
+    price_score: float,
+    risk: float,
+    favorable_evidence: float = 0.0,
+) -> DealScoreResult:
+    """Return the complete pure calculation result used by reports and explanations."""
+    bounded_risk = max(0.0, min(10.0, risk))
+    price_risk_weight = 0.8 + 0.2 * (100.0 - price_score) / 100.0
+    applied_penalty = risk_penalty(bounded_risk) * price_risk_weight
+    bonus = favorable_evidence_bonus(favorable_evidence, bounded_risk)
+    final_score = int(calculate_deal_score(price_score, bounded_risk, favorable_evidence))
+    return DealScoreResult(
+        price_score=price_score,
+        risk_score=bounded_risk,
+        risk_penalty=applied_penalty,
+        favorable_bonus=bonus,
+        final_score=final_score,
+        rating=deal_rating_from_score(final_score),
+    )
+
+
 def favorable_evidence_bonus(favorable_evidence: float, risk: float) -> float:
     """Return a modest bonus that is fully negated by meaningful risk at 4+."""
     bounded_risk = max(0.0, min(10.0, risk))
@@ -309,21 +343,23 @@ def favorable_evidence_bonus(favorable_evidence: float, risk: float) -> float:
     )
 
 
-def format_deal_score_narrative(
-    score: float,
-    price_score: float,
-    risk: float,
-    favorable_bonus: float,
-) -> str:
+def format_deal_score_narrative(result: DealScoreResult) -> str:
     """Explain Deal Score inputs without displaying meaningless zero values."""
-    parts = [f"Deal Score is {score:.0f}%: price starts at {price_score:.0f}%"]
-    parts.append("no risk was identified" if risk <= 0 else f"risk is {risk:.1f}/10")
-    if favorable_bonus <= 0:
+    parts = [
+        f"Deal Score is {result.final_score}%: "
+        f"price starts at {result.price_score:.0f}%"
+    ]
+    parts.append(
+        "no risk was identified"
+        if result.risk_score <= 0
+        else f"risk is {result.risk_score:.1f}/10"
+    )
+    if result.favorable_bonus <= 0:
         parts.append("there is no favorable evidence")
-    elif favorable_bonus < 1:
+    elif result.favorable_bonus < 1:
         parts.append("favorable evidence adds less than 1 point")
     else:
-        rounded_bonus = round(favorable_bonus)
+        rounded_bonus = round(result.favorable_bonus)
         parts.append(
             f"favorable evidence adds {rounded_bonus} point"
             f"{'s' if rounded_bonus != 1 else ''}"

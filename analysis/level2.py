@@ -5,13 +5,11 @@ from pathlib import Path
 from analysis.analysis_utils import get_report_dir
 from analysis.reporting import render_level2_pdf
 from analysis.scoring import (
-    calculate_deal_score,
+    calculate_deal_score_result,
     calculate_level2_evidence,
     classify_deal_rating,
-    deal_rating_from_score,
     deal_score_from_position,
     determine_best_price,
-    favorable_evidence_bonus,
     format_deal_score_narrative,
 )
 from analysis.workflow import prepare_level2_analysis
@@ -157,19 +155,13 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
         risk = round(raw_risk)
         lc.risk_score = risk
         price_score = deal_score_from_position(float(pricing_visual["marker_pct"]))
-        pricing_visual["deal_score"] = int(
-            calculate_deal_score(price_score, raw_risk, favorable_evidence)
+        score_result = calculate_deal_score_result(
+            price_score, raw_risk, favorable_evidence
         )
+        pricing_visual["deal_score"] = score_result.final_score
         price_deal = deal
-        deal = deal_rating_from_score(float(pricing_visual["deal_score"]))
-        narrative.append(
-            format_deal_score_narrative(
-                float(pricing_visual["deal_score"]),
-                price_score,
-                raw_risk,
-                favorable_evidence_bonus(favorable_evidence, raw_risk),
-            )
-        )
+        deal = score_result.rating
+        narrative.append(format_deal_score_narrative(score_result))
         if deal != price_deal:
             narrative.append(
                 f"The combined score changes the price-only rating from {price_deal} to {deal}."
