@@ -67,6 +67,79 @@ async def test_level2_keeps_price_only_and_unmapped_listings(monkeypatch):
 	]
 
 
+async def test_level2_records_missing_complete_kbb_pricing(monkeypatch):
+	listing = {
+		"id": "incomplete-kbb",
+		"vin": "VIN3",
+		"title": "Incomplete KBB vehicle",
+		"price": 25_000,
+	}
+	ctx = AnalysisContext(make="Subaru", model="Forester")
+	ctx.listings = [ListingContext(
+		listing_id="incomplete-kbb",
+		listing=listing,
+		pricing=PricingAnchors(
+			fpp_natl=26_000,
+			fpp_local=None,
+			fmv=24_000,
+			fmr_high=28_000,
+		),
+	)]
+
+	async def fake_prepare(*_args, **_kwargs):
+		return ctx
+
+	async def fake_render(*args):
+		fake_render.args = args
+
+	monkeypatch.setattr(level2, "prepare_level2_analysis", fake_prepare)
+	monkeypatch.setattr(level2, "render_level2_pdf", fake_render)
+
+	await level2.start_level2_analysis(
+		{"vehicle": {"make": "Subaru", "model": "Forester"}},
+		[listing],
+		"unused.json",
+	)
+
+	assert fake_render.args[3] == []
+	assert fake_render.args[4] == []
+	assert fake_render.args[5] == [
+		(listing, "Complete KBB pricing is unavailable for this configuration.")
+	]
+
+
+async def test_level2_records_missing_price_separately_from_kbb_mapping(monkeypatch):
+	missing_price = {"id": "no-price", "vin": "VIN4", "title": "No price"}
+	unmapped = {
+		"id": "unmapped",
+		"vin": "VIN5",
+		"title": "Unmapped trim",
+		"price": 26_000,
+	}
+	ctx = AnalysisContext(make="Subaru", model="Forester")
+	ctx.skipped_listings = [missing_price, unmapped]
+
+	async def fake_prepare(*_args, **_kwargs):
+		return ctx
+
+	async def fake_render(*args):
+		fake_render.args = args
+
+	monkeypatch.setattr(level2, "prepare_level2_analysis", fake_prepare)
+	monkeypatch.setattr(level2, "render_level2_pdf", fake_render)
+
+	await level2.start_level2_analysis(
+		{"vehicle": {"make": "Subaru", "model": "Forester"}},
+		[missing_price, unmapped],
+		"unused.json",
+	)
+
+	assert fake_render.args[5] == [
+		(missing_price, "Listing price is unavailable."),
+		(unmapped, "The listing trim could not be mapped to compatible KBB pricing."),
+	]
+
+
 def test_level2_bins_retain_unfavorable_complete_ratings():
 	ratings = [
 		({"id": "poor", "price": 20000}, "Poor", 2, []),
