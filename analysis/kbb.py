@@ -39,6 +39,8 @@ from utils.models import TrimValuation
 KBB_LOCATOR_TIMEOUT_MS = 10_000
 KBB_NAVIGATION_TIMEOUT_MS = 30_000
 KBB_NAVIGATION_ATTEMPT_TIMEOUT_MS = 10_000
+KBB_DYNAMIC_PRICING_TIMEOUT_MS = 30_000
+KBB_DEFAULT_POSTAL_CODE = "80201"
 
 
 async def get_model_slug_map(
@@ -387,7 +389,7 @@ async def populate_pricing_for_year(
         entry["fmv"] = fmv
         entry["natl_source"] = natl_source
         entry["local_source"] = fpp_source
-        entry["postal_code"] = postal_code
+        entry["postal_code"] = postal_code or KBB_DEFAULT_POSTAL_CODE
 
         if not any((entry["msrp"], natl_val, fpp_local)):
             entry["skip_reason"] = f"There is currently no pricing data for this trim."
@@ -437,7 +439,7 @@ async def populate_pricing_for_year(
                 )
             ),
             "local_source": fpp_source,
-            "postal_code": postal_code,
+            "postal_code": postal_code or KBB_DEFAULT_POSTAL_CODE,
             "natl_timestamp": entry.get("natl_timestamp"),
             "local_timestamp": datetime.now().isoformat(),
         })
@@ -513,7 +515,8 @@ async def get_or_fetch_local_pricing(
     entry = cache_entries.setdefault(kbb_trim, {})
 
     # Check cache first
-    if is_entry_fresh(entry) and entry.get("postal_code") == postal_code:
+    effective_postal_code = postal_code or KBB_DEFAULT_POSTAL_CODE
+    if is_entry_fresh(entry) and entry.get("postal_code") == effective_postal_code:
         logger.info("Using cached local KBB pricing for %s", kbb_trim)
         return (
             entry.get("fmr_low"),
@@ -528,8 +531,7 @@ async def get_or_fetch_local_pricing(
     local_url = KBB_LOOKUP_TRIM_URL.format(
         make=safe_make, model=model_slug, year=year, trim=safe_trim
     )
-    if postal_code:
-        local_url = f"{local_url}?{urllib.parse.urlencode({'zip': postal_code})}"
+    local_url = f"{local_url}?{urllib.parse.urlencode({'zip': effective_postal_code})}"
     logger.info("Loading local KBB pricing for %s", kbb_trim)
 
     fmr_low: int | None = None
@@ -544,11 +546,17 @@ async def get_or_fetch_local_pricing(
             timeout=KBB_NAVIGATION_TIMEOUT_MS,
         )
 
-        fmr_low, fmr_high, fpp_local = await get_price_advisor_values(page)
+    except TimeoutError as t:
+        logger.warning("KBB page navigation timed out for %s: %s", kbb_trim, t.message)
+        return fmr_low, fmr_high, fpp_local, fmv, local_url
 
-        # KBB can render the resale-value content after the initial page load.
-        # Wait for that specific element instead of treating an initially empty
-        # navigation tab list as a permanently missing value.
+    fmr_low, fmr_high, fpp_local = await get_price_advisor_values(
+        page, effective_postal_code
+    )
+
+    # Resale value is independent of the local purchase-price advisor. A missing
+    # resale widget must not make a successful FPP lookup look like a timeout.
+    try:
         await page.wait_for_function(
             r"""() => /current resale value of \$[\d,]+/i.test(
                 document.body?.innerText || ""
@@ -559,7 +567,7 @@ async def get_or_fetch_local_pricing(
             "body", timeout=KBB_LOCATOR_TIMEOUT_MS
         )
     except TimeoutError as t:
-        logger.warning("KBB local pricing timed out for %s: %s", kbb_trim, t.message)
+        logger.info("KBB resale value did not render for %s: %s", kbb_trim, t.message)
 
     match = re.search(r"current resale value of \$([\d,]+)", depreciation_text)
     if match:
@@ -578,6 +586,7 @@ async def get_or_fetch_local_pricing(
 
 async def get_price_advisor_values(
     page: Page,
+    postal_code: str = KBB_DEFAULT_POSTAL_CODE,
 ) -> tuple[int | None, int | None, int | None]:
     """Loads the DOM of the internal object in order to retrieve the fair market range
     and local fair purchase price"""
@@ -592,33 +601,55 @@ async def get_price_advisor_values(
             "object#priceAdvisor, iframe#priceAdvisor, [id='priceAdvisor']"
         ).first
         await price_advisor.wait_for(
-            state="attached", timeout=KBB_LOCATOR_TIMEOUT_MS
+            state="attached", timeout=KBB_DYNAMIC_PRICING_TIMEOUT_MS
         )
         data_url = await price_advisor.get_attribute(
-            "data", timeout=KBB_LOCATOR_TIMEOUT_MS
+            "data", timeout=KBB_DYNAMIC_PRICING_TIMEOUT_MS
         )
         if not data_url:
             data_url = await price_advisor.get_attribute(
-                "src", timeout=KBB_LOCATOR_TIMEOUT_MS
+                "src", timeout=KBB_DYNAMIC_PRICING_TIMEOUT_MS
             )
 
         if data_url:
+            parsed_url = urllib.parse.urlsplit(data_url)
+            query = dict(urllib.parse.parse_qsl(parsed_url.query))
+            query["zipcode"] = postal_code
+            data_url = urllib.parse.urlunsplit(parsed_url._replace(
+                query=urllib.parse.urlencode(query)
+            ))
             # Now navigate directly to that URL to parse it
             svg_page = await page.context.new_page()
-            await svg_page.goto(data_url)
-            texts = await svg_page.locator("g#RangeBox > text").all_text_contents()
-            price_values = [t.strip() for t in texts if "$" in t]
-
-            await svg_page.close()
+            try:
+                await svg_page.goto(data_url, timeout=KBB_DYNAMIC_PRICING_TIMEOUT_MS)
+                texts = await svg_page.locator("text").all_text_contents()
+                price_values = [t.strip() for t in texts if t.strip()]
+            finally:
+                await svg_page.close()
     except TimeoutError as t:
         logger.warning("Timed out waiting for KBB price-advisor values: %s", t.message)
 
-    if price_values:
-        fmr_text, fpp_text = price_values
-        low, high = fmr_text.split("-")
-        fmr_low = to_int(low)
-        fmr_high = to_int(high)
-        fpp_local = to_int(fpp_text)
+    normalized = [re.sub(r"\s+", " ", value).strip() for value in price_values]
+    if any(value.casefold() == "unavailable" for value in normalized):
+        logger.warning("KBB price advisor reports local pricing as unavailable")
+        return None, None, None
+
+    for index, value in enumerate(normalized):
+        if value.casefold() == "fair market range" and index + 1 < len(normalized):
+            match = re.search(r"(\$[\d,]+)\s*-\s*(\$[\d,]+)", normalized[index + 1])
+            if match:
+                fmr_low, fmr_high = to_int(match.group(1)), to_int(match.group(2))
+        elif value.casefold() == "fair purchase price" and index + 1 < len(normalized):
+            fpp_local = to_int(normalized[index + 1])
+
+    # Retain compatibility with the former RangeBox-only SVG fixture.
+    dollar_values = [value for value in normalized if "$" in value]
+    if fmr_low is None and dollar_values:
+        match = re.search(r"(\$[\d,]+)\s*-\s*(\$[\d,]+)", dollar_values[0])
+        if match:
+            fmr_low, fmr_high = to_int(match.group(1)), to_int(match.group(2))
+            if len(dollar_values) > 1:
+                fpp_local = to_int(dollar_values[1])
 
     return fmr_low, fmr_high, fpp_local
 

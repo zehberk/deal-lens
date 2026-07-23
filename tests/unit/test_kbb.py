@@ -7,6 +7,7 @@ from analysis.kbb import (
 	_previous_local_trim,
 	get_or_fetch_national_pricing,
 	get_or_fetch_local_pricing,
+	get_price_advisor_values,
 	goto_with_retry,
 	populate_pricing_for_year,
 )
@@ -33,6 +34,9 @@ async def test_local_pricing_waits_for_delayed_resale_value(monkeypatch):
 
 	page.wait_for_function.assert_awaited_once()
 	page.inner_text.assert_awaited_once_with("body", timeout=10_000)
+	assert page.goto.await_args.args[0] == (
+		"https://kbb.com/honda/civic/2024/ex-sedan-4d/?zip=80202"
+	)
 	assert result[3] == 23_100
 
 
@@ -188,6 +192,63 @@ async def test_navigation_retries_share_one_total_timeout(monkeypatch):
 		call.kwargs["timeout"] == 10_000
 		for call in page.goto.await_args_list
 	)
+
+
+async def test_price_advisor_allows_dynamic_content_thirty_seconds():
+	page = MagicMock()
+	advisor = MagicMock()
+	advisor.first = advisor
+	advisor.wait_for = AsyncMock()
+	advisor.get_attribute = AsyncMock(return_value="https://kbb.test/advisor.svg")
+	page.locator.return_value = advisor
+	svg_page = MagicMock()
+	svg_page.goto = AsyncMock()
+	svg_page.close = AsyncMock()
+	texts = MagicMock()
+	texts.all_text_contents = AsyncMock(return_value=[
+		"Fair Market Range",
+		"$44,100 - $46,800",
+		"Fair Purchase Price",
+		"$45,500",
+		"Invoice",
+		"$47,685",
+	])
+	svg_page.locator.return_value = texts
+	page.context.new_page = AsyncMock(return_value=svg_page)
+
+	result = await get_price_advisor_values(page, "80013")
+
+	advisor.wait_for.assert_awaited_once_with(state="attached", timeout=30_000)
+	advisor.get_attribute.assert_awaited_once_with("data", timeout=30_000)
+	assert svg_page.goto.await_args.args[0] == (
+		"https://kbb.test/advisor.svg?zipcode=80013"
+	)
+	assert result == (44_100, 46_800, 45_500)
+
+
+async def test_price_advisor_reports_unavailable_without_inventing_values(caplog):
+	page = MagicMock()
+	advisor = MagicMock()
+	advisor.first = advisor
+	advisor.wait_for = AsyncMock()
+	advisor.get_attribute = AsyncMock(
+		return_value="https://kbb.test/advisor.svg?zipcode=80201"
+	)
+	page.locator.return_value = advisor
+	svg_page = MagicMock()
+	svg_page.goto = AsyncMock()
+	svg_page.close = AsyncMock()
+	texts = MagicMock()
+	texts.all_text_contents = AsyncMock(return_value=[
+		"unavailable", "Fair Market Range", "MSRP", "$48,150"
+	])
+	svg_page.locator.return_value = texts
+	page.context.new_page = AsyncMock(return_value=svg_page)
+
+	result = await get_price_advisor_values(page, "80202")
+
+	assert result == (None, None, None)
+	assert "reports local pricing as unavailable" in caplog.text
 
 
 def test_previous_year_variation_supplies_sole_local_trim():

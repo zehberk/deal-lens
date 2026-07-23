@@ -54,8 +54,11 @@ playwright install
 Playwright is still required by KBB and approved supplemental dealer-document
 workflows; it is not used to authenticate to Visor or replace the Visor API.
 KBB browser navigation is bounded to 30 seconds across retries, while individual
-DOM locator waits are bounded to 10 seconds. Missing national fair-purchase prices
-remain unavailable; they do not prevent DealLens from checking local trim pricing.
+DOM locator waits are bounded to 10 seconds, with up to 30 seconds for KBB's
+dynamically rendered price advisor. Missing national fair-purchase prices remain
+unavailable; they do not prevent DealLens from checking local trim pricing. The
+search postal code is applied to KBB's price-advisor request and recorded with the
+cached local result; KBB's default 80201 is used when no postal code is supplied.
 
 ### Visor API key
 

@@ -248,8 +248,10 @@ def _year_cache_covers_trims(
 		if matched is None:
 			return False
 		entry = year_entries[display_to_key[matched]]
-		if entry.get("postal_code") != postal_code or not is_entry_fresh(entry) or not (
-			entry.get("local_source") or entry.get("skip_reason")
+		if (
+			entry.get("postal_code") != (postal_code or "80201")
+			or not is_entry_fresh(entry)
+			or not (entry.get("local_source") or entry.get("skip_reason"))
 		):
 			return False
 	return True
