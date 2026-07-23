@@ -4,8 +4,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from urllib.parse import urlencode
 
-from analysis.level1_models import MarketCohort
 from visor_api.client import QueryValue
+from visor_api.level1_types import MarketCohort
 from visor_api.query import VisorListingQuery
 
 

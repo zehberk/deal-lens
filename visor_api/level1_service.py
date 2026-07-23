@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Protocol
 
-from analysis.level1_models import MarketCohort
 from visor_api.client import QueryParams
 from visor_api.level1_query import (
 	LEVEL1_FACET_SORT,
@@ -14,6 +13,7 @@ from visor_api.level1_query import (
 )
 from visor_api.models import FacetResponse, FacetStats, FacetValue
 from visor_api.query import VisorListingQuery
+from visor_api.level1_types import MarketCohort
 
 
 TRIM_BUCKET_NOT_RETURNED = "trim_bucket_not_returned"
