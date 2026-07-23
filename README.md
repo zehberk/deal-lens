@@ -28,7 +28,7 @@ The main boundaries are:
 - `analysis/`: deterministic normalization, market calculations, scoring, and
   report preparation;
 - `templates/`: Level 1, Level 2, and Level 3 report presentation;
-- `visor_scraper/`: the primary CLI and its compatibility entry point;
+- `deal_lens/`: the primary CLI, CLI support, and application configuration;
 - `tests/unit/`: offline tests using fakes and recorded API fixtures; and
 - `tests/visor_authenticated/`: manual, explicitly opted-in API probes that may
   incur usage charges.
@@ -99,8 +99,8 @@ Useful collection options:
 - `--save_docs`: download available supplemental listing documents.
 
 Run `deal-lens --help` for the installed command help. The legacy
-`visor_scraper` command and `python -m visor_scraper` remain compatibility aliases,
-but new documentation and automation should use `deal-lens`.
+`visor_scraper` command remains a compatibility alias, but new documentation and
+automation should use `deal-lens` or `python -m deal_lens`.
 
 The standalone `level1`, `level2`, and `level3` commands analyze the latest
 compatible saved data in `output/raw`; normal acquisition should use `deal-lens`.

@@ -16,7 +16,7 @@ from visor_api import (
 	cached_level1_facets,
 	cached_listing_search,
 )
-from visor_scraper.config import get_visor_api_key
+from deal_lens.config import get_visor_api_key
 
 
 CACHE_DIR = PROJECT_ROOT / "cache" / "visor-api-test"

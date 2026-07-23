@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from visor_scraper.scraper import (
+from deal_lens.cli import (
 	collect_and_run_level1_api,
 	collect_and_run_level3_api,
 	scrape,
@@ -18,7 +18,7 @@ async def test_level1_cli_routes_to_facet_api(monkeypatch):
 		calls.append(args)
 
 	monkeypatch.setattr(
-		"visor_scraper.scraper.collect_and_run_level1_api", fake_collect
+		"deal_lens.cli.collect_and_run_level1_api", fake_collect
 	)
 	args = Namespace(level1=True, level2=False, level3=False)
 
@@ -34,7 +34,7 @@ async def test_level3_cli_routes_to_listing_api(monkeypatch):
 		calls.append(args)
 
 	monkeypatch.setattr(
-		"visor_scraper.scraper.collect_and_run_level3_api", fake_collect
+		"deal_lens.cli.collect_and_run_level3_api", fake_collect
 	)
 	args = Namespace(level1=False, level2=False, level3=True)
 
@@ -84,15 +84,15 @@ async def test_level1_api_workflow_forwards_force_and_renders(monkeypatch):
 	client = object()
 	pricing_cache = {"entries": {}}
 	monkeypatch.setattr(
-		"visor_scraper.scraper.VisorListingQuery.from_url", lambda url: query
+		"deal_lens.cli.VisorListingQuery.from_url", lambda url: query
 	)
-	monkeypatch.setattr("visor_scraper.scraper.get_visor_api_key", lambda: "key")
-	monkeypatch.setattr("visor_scraper.scraper.VisorClient", lambda key: client)
-	monkeypatch.setattr("visor_scraper.scraper.cached_level1_facets", fake_cached)
-	monkeypatch.setattr("visor_scraper.scraper.load_cache", lambda path: pricing_cache)
-	monkeypatch.setattr("visor_scraper.scraper.get_level1_kbb_valuations", fake_kbb)
-	monkeypatch.setattr("visor_scraper.scraper.build_market_snapshot", fake_snapshot)
-	monkeypatch.setattr("visor_scraper.scraper.render_level1_market_pdf", fake_render)
+	monkeypatch.setattr("deal_lens.cli.get_visor_api_key", lambda: "key")
+	monkeypatch.setattr("deal_lens.cli.VisorClient", lambda key: client)
+	monkeypatch.setattr("deal_lens.cli.cached_level1_facets", fake_cached)
+	monkeypatch.setattr("deal_lens.cli.load_cache", lambda path: pricing_cache)
+	monkeypatch.setattr("deal_lens.cli.get_level1_kbb_valuations", fake_kbb)
+	monkeypatch.setattr("deal_lens.cli.build_market_snapshot", fake_snapshot)
+	monkeypatch.setattr("deal_lens.cli.render_level1_market_pdf", fake_render)
 
 	await collect_and_run_level1_api(Namespace(url="search-url", force=True))
 
@@ -137,13 +137,13 @@ async def test_level3_api_workflow_forwards_collection_options(monkeypatch):
 		)
 
 	monkeypatch.setattr(
-		"visor_scraper.scraper.VisorListingQuery.from_url", lambda url: query
+		"deal_lens.cli.VisorListingQuery.from_url", lambda url: query
 	)
-	monkeypatch.setattr("visor_scraper.scraper.get_visor_api_key", lambda: "key")
-	monkeypatch.setattr("visor_scraper.scraper.VisorClient", lambda key: client)
-	monkeypatch.setattr("visor_scraper.scraper.cached_listing_search", fake_cached)
-	monkeypatch.setattr("visor_scraper.scraper.save_results", fake_save)
-	monkeypatch.setattr("visor_scraper.scraper.run_analysis", fake_analysis)
+	monkeypatch.setattr("deal_lens.cli.get_visor_api_key", lambda: "key")
+	monkeypatch.setattr("deal_lens.cli.VisorClient", lambda key: client)
+	monkeypatch.setattr("deal_lens.cli.cached_listing_search", fake_cached)
+	monkeypatch.setattr("deal_lens.cli.save_results", fake_save)
+	monkeypatch.setattr("deal_lens.cli.run_analysis", fake_analysis)
 	args = Namespace(
 		url="search-url",
 		make="Honda",

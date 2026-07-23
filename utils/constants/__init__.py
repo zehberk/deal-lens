@@ -1,3 +1,4 @@
 from .analysis import *
-from .scraper import *
+from .paths import *
+from .search import *
 from .utils import *

@@ -12,8 +12,8 @@ from utils.cache import load_cache, save_cache
 from utils.common import current_timestamp
 from utils.constants import *
 from utils.download import download_files
-from visor_scraper.helpers import *
-from visor_scraper.config import get_visor_api_key
+from deal_lens.cli_support import *
+from deal_lens.config import get_visor_api_key
 from visor_api import (
     VisorClient,
     cached_level1_facets,

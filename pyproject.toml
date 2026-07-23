@@ -8,9 +8,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project.scripts]
-deal-lens = "visor_scraper.scraper:main"
+deal-lens = "deal_lens.cli:main"
 # Compatibility alias for installations created before the DealLens rename.
-visor_scraper = "visor_scraper.scraper:main"
+visor_scraper = "deal_lens.cli:main"
 kbb_collect = "analysis.kbb_collector:main"
 level1 = "analysis.level1:main"
 level2 = "analysis.level2:main"

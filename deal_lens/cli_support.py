@@ -1,4 +1,4 @@
-# utils.py
+"""Metadata and URL helpers used by the DealLens CLI."""
 from argparse import Namespace
 from urllib.parse import parse_qsl, urlparse
 
