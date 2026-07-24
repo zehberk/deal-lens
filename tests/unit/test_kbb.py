@@ -29,7 +29,6 @@ async def test_local_pricing_waits_for_delayed_resale_value(monkeypatch):
 		"EX Sedan 4D",
 		"2024 Honda Civic EX Sedan 4D",
 		{},
-		"80202",
 	)
 
 	page.wait_for_function.assert_awaited_once()
@@ -57,7 +56,6 @@ async def test_missing_resale_value_continues_after_wait(monkeypatch):
 		"EX Sedan 4D",
 		"2024 Honda Civic EX Sedan 4D",
 		{},
-		"80202",
 	)
 
 	page.wait_for_function.assert_awaited_once()
@@ -123,7 +121,6 @@ async def test_msrp_only_model_prefixed_row_still_checks_local_fpp(monkeypatch):
 		"2026",
 		cache_entries,
 		{"SE"},
-		"80202",
 	)
 
 	local_lookup.assert_awaited_once()
@@ -159,7 +156,6 @@ async def test_partial_national_table_checks_every_requested_trim_locally(monkey
 		"2026",
 		{},
 		{"SE", "XRT"},
-		"80202",
 	)
 
 	checked_trims = {call.args[4] for call in local_lookup.await_args_list}
@@ -192,7 +188,6 @@ async def test_national_trim_link_is_preferred_and_saved_without_local_lookup(
 		"2024",
 		cache_entries,
 		set(),
-		"80203",
 	)
 
 	local_lookup.assert_not_awaited()
@@ -229,7 +224,6 @@ async def test_requested_trim_uses_national_table_link_first(monkeypatch):
 		"2024",
 		{},
 		{"Disney100 Platinum Edition Sport Utility 4D"},
-		"80203",
 	)
 
 	await_args = local_lookup.await_args
@@ -291,13 +285,11 @@ async def test_price_advisor_allows_dynamic_content_thirty_seconds():
 	svg_page.locator.return_value = texts
 	page.context.new_page = AsyncMock(return_value=svg_page)
 
-	result = await get_price_advisor_values(page, "80013")
+	result = await get_price_advisor_values(page)
 
 	advisor.wait_for.assert_awaited_once_with(state="attached", timeout=30_000)
 	advisor.get_attribute.assert_awaited_once_with("data", timeout=30_000)
-	assert svg_page.goto.await_args.args[0] == (
-		"https://kbb.test/advisor.svg?zipcode=80013"
-	)
+	assert svg_page.goto.await_args.args[0] == "https://kbb.test/advisor.svg"
 	assert result == (44_100, 46_800, 45_500)
 
 
@@ -307,7 +299,7 @@ async def test_price_advisor_reports_unavailable_without_inventing_values(caplog
 	advisor.first = advisor
 	advisor.wait_for = AsyncMock()
 	advisor.get_attribute = AsyncMock(
-		return_value="https://kbb.test/advisor.svg?zipcode=80201"
+		return_value="https://kbb.test/advisor.svg?opaque=browser-context"
 	)
 	page.locator.return_value = advisor
 	svg_page = MagicMock()
@@ -320,7 +312,7 @@ async def test_price_advisor_reports_unavailable_without_inventing_values(caplog
 	svg_page.locator.return_value = texts
 	page.context.new_page = AsyncMock(return_value=svg_page)
 
-	result = await get_price_advisor_values(page, "80202")
+	result = await get_price_advisor_values(page)
 
 	assert result == (None, None, None)
 	assert "reports local pricing as unavailable" in caplog.text
@@ -380,7 +372,6 @@ async def test_missing_national_table_attempts_direct_local_trim(monkeypatch):
 		"2026",
 		cache_entries,
 		{"Sport"},
-		"80202",
 	)
 
 	local_lookup.assert_awaited_once()

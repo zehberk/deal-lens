@@ -40,7 +40,6 @@ KBB_LOCATOR_TIMEOUT_MS = 10_000
 KBB_NAVIGATION_TIMEOUT_MS = 30_000
 KBB_NAVIGATION_ATTEMPT_TIMEOUT_MS = 10_000
 KBB_DYNAMIC_PRICING_TIMEOUT_MS = 30_000
-KBB_DEFAULT_POSTAL_CODE = "80201"
 
 
 async def get_model_slug_map(
@@ -268,7 +267,6 @@ async def populate_pricing_for_year(
     year: str,
     cache_entries: dict,
     trims: set[str],
-    postal_code: str | None = None,
 ) -> str | None:
     logger.info(
         "Starting KBB pricing lookup for %s %s %s (%d requested trims)",
@@ -365,7 +363,6 @@ async def populate_pricing_for_year(
                     local_trim,
                     kbb_trim,
                     cache_entries,
-                    postal_code,
                     source_url=resolved_trim_source,
                 )
             )
@@ -394,8 +391,6 @@ async def populate_pricing_for_year(
         entry["fmv"] = fmv
         entry["natl_source"] = natl_source
         entry["local_source"] = fpp_source
-        entry["postal_code"] = postal_code or KBB_DEFAULT_POSTAL_CODE
-
         if not any((entry["msrp"], natl_val, fpp_local)):
             entry["skip_reason"] = f"There is currently no pricing data for this trim."
             logger.warning("KBB pricing is incomplete for %s", kbb_trim)
@@ -423,7 +418,6 @@ async def populate_pricing_for_year(
                 requested_trim,
                 kbb_trim,
                 cache_entries,
-                postal_code,
             )
         )
         entry = cache_entries.setdefault(kbb_trim, {})
@@ -444,7 +438,6 @@ async def populate_pricing_for_year(
                 )
             ),
             "local_source": fpp_source,
-            "postal_code": postal_code or KBB_DEFAULT_POSTAL_CODE,
             "natl_timestamp": entry.get("natl_timestamp"),
             "local_timestamp": datetime.now().isoformat(),
         })
@@ -515,15 +508,13 @@ async def get_or_fetch_local_pricing(
     trim: str,
     kbb_trim: str,
     cache_entries: dict[str, dict],
-    postal_code: str | None = None,
     *,
     source_url: str | None = None,
 ):
     entry = cache_entries.setdefault(kbb_trim, {})
 
     # Check cache first
-    effective_postal_code = postal_code or KBB_DEFAULT_POSTAL_CODE
-    if is_entry_fresh(entry) and entry.get("postal_code") == effective_postal_code:
+    if is_entry_fresh(entry):
         logger.info("Using cached local KBB pricing for %s", kbb_trim)
         return (
             entry.get("fmr_low"),
@@ -556,9 +547,7 @@ async def get_or_fetch_local_pricing(
         logger.warning("KBB page navigation timed out for %s: %s", kbb_trim, t.message)
         return fmr_low, fmr_high, fpp_local, fmv, local_url
 
-    fmr_low, fmr_high, fpp_local = await get_price_advisor_values(
-        page, effective_postal_code
-    )
+    fmr_low, fmr_high, fpp_local = await get_price_advisor_values(page)
 
     # Resale value is independent of the local purchase-price advisor. A missing
     # resale widget must not make a successful FPP lookup look like a timeout.
@@ -592,7 +581,6 @@ async def get_or_fetch_local_pricing(
 
 async def get_price_advisor_values(
     page: Page,
-    postal_code: str = KBB_DEFAULT_POSTAL_CODE,
 ) -> tuple[int | None, int | None, int | None]:
     """Loads the DOM of the internal object in order to retrieve the fair market range
     and local fair purchase price"""
@@ -618,12 +606,6 @@ async def get_price_advisor_values(
             )
 
         if data_url:
-            parsed_url = urllib.parse.urlsplit(data_url)
-            query = dict(urllib.parse.parse_qsl(parsed_url.query))
-            query["zipcode"] = postal_code
-            data_url = urllib.parse.urlunsplit(parsed_url._replace(
-                query=urllib.parse.urlencode(query)
-            ))
             # Now navigate directly to that URL to parse it
             svg_page = await page.context.new_page()
             try:

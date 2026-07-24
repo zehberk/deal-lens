@@ -46,7 +46,6 @@ async def get_level1_kbb_valuations(
 	facets: Level1FacetCollection,
 	cache: dict,
 	*,
-	postal_code: str | None = None,
 	cache_path: Path = PRICING_CACHE,
 ) -> Level1KBBResult:
 	"""Return one cached KBB mapping for every unique Visor year/trim."""
@@ -59,6 +58,11 @@ async def get_level1_kbb_valuations(
 	)
 	trim_groups = _group_trims_by_kbb_model(trims_by_year, model_by_year_trim)
 	entries = cache.setdefault("entries", {})
+	removed_legacy_postal_codes = False
+	for entry in entries.values():
+		if "postal_code" in entry:
+			entry.pop("postal_code")
+			removed_legacy_postal_codes = True
 	slugs = cache.setdefault("model_slugs", {})
 	stale_groups = {
 		(year, kbb_model): trims
@@ -69,7 +73,6 @@ async def get_level1_kbb_valuations(
 			kbb_model,
 			year,
 			trims,
-			postal_code,
 			is_model_variation=kbb_model.casefold() != model.casefold(),
 		)
 	}
@@ -91,7 +94,6 @@ async def get_level1_kbb_valuations(
 					str(year),
 					entries,
 					set(trims),
-					postal_code,
 				)
 		finally:
 			await page.close()
@@ -99,6 +101,8 @@ async def get_level1_kbb_valuations(
 			await browser.close()
 			await request.dispose()
 			save_cache(cache, cache_path)
+	elif removed_legacy_postal_codes:
+		save_cache(cache, cache_path)
 	result = map_level1_kbb_valuations(
 		make,
 		model,
@@ -232,7 +236,6 @@ def _year_cache_covers_trims(
 	model: str,
 	year: int,
 	trims: tuple[str, ...],
-	postal_code: str | None,
 	*,
 	is_model_variation: bool = False,
 ) -> bool:
@@ -248,10 +251,8 @@ def _year_cache_covers_trims(
 		if matched is None:
 			return False
 		entry = year_entries[display_to_key[matched]]
-		if (
-			entry.get("postal_code") != (postal_code or "80201")
-			or not is_entry_fresh(entry)
-			or not (entry.get("local_source") or entry.get("skip_reason"))
+		if not is_entry_fresh(entry) or not (
+			entry.get("local_source") or entry.get("skip_reason")
 		):
 			return False
 	return True

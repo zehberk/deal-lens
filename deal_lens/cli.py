@@ -101,14 +101,12 @@ async def collect_and_run_level1_api(args: Namespace) -> None:
     filters = query.market_filters()
     make = next(iter(filters.get("make", ())), "")
     model = next(iter(filters.get("model", ())), "")
-    postal_code = filters.get("postal_code")
     pricing_cache = load_cache(PRICING_CACHE)
     kbb = await get_level1_kbb_valuations(
         make,
         model,
         result.collection,
         pricing_cache,
-        postal_code=str(postal_code) if postal_code else None,
     )
     snapshot = build_market_snapshot(query, result.collection, kbb)
     report_path = await render_level1_market_pdf(snapshot, kbb)

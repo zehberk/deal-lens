@@ -57,8 +57,8 @@ KBB browser navigation is bounded to 30 seconds across retries, while individual
 DOM locator waits are bounded to 10 seconds, with up to 30 seconds for KBB's
 dynamically rendered price advisor. Missing national fair-purchase prices remain
 unavailable; they do not prevent DealLens from checking local trim pricing. The
-search postal code is applied to KBB's price-advisor request and recorded with the
-cached local result; KBB's default 80201 is used when no postal code is supplied.
+KBB page and its embedded price advisor retain the browser context supplied by
+KBB; DealLens does not inject or cache a postal code for KBB pricing.
 
 ### Visor API key
 

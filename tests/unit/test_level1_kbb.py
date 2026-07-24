@@ -1,6 +1,7 @@
 import logging
 
 from datetime import datetime
+from pathlib import Path
 
 from analysis.level1_kbb import (
 	get_level1_kbb_valuations,
@@ -61,7 +62,6 @@ def entry(year, trim):
 		"fmv": 18_000,
 		"natl_source": f"https://kbb.com/honda/civic/{year}/",
 		"local_source": f"https://kbb.com/honda/civic/{year}/{trim.lower()}/",
-		"postal_code": "80202",
 	}
 	return value
 
@@ -171,11 +171,43 @@ async def test_fresh_seven_day_cache_avoids_kbb_browser(monkeypatch, caplog):
 				responses=(),
 			),
 			{"entries": {"2023 Honda Civic Sport": cached_entry}},
-			postal_code="80202",
 		)
 
 	assert result.matches[0].visor_trim == "Sport"
 	assert "1 matches, 0 failures" in caplog.text
+
+
+async def test_legacy_kbb_postal_code_is_removed_from_cache(
+	monkeypatch,
+):
+	cached_entry = entry(2023, "Sport")
+	cached_entry["natl_timestamp"] = datetime.now().isoformat()
+	cached_entry["local_timestamp"] = datetime.now().isoformat()
+	cached_entry["postal_code"] = "80202"
+	cache = {"entries": {"2023 Honda Civic Sport": cached_entry}}
+
+	async def unexpected_browser():
+		raise AssertionError("fresh KBB data should not open a browser")
+
+	monkeypatch.setattr(
+		"analysis.level1_kbb.create_kbb_browser", unexpected_browser
+	)
+	saved = []
+	monkeypatch.setattr(
+		"analysis.level1_kbb.save_cache",
+		lambda value, path: saved.append((value, path)),
+	)
+	cache_path = Path("cache/test-pricing.cache")
+	await get_level1_kbb_valuations(
+		"Honda",
+		"Civic",
+		Level1FacetCollection(years=(collection().years[0],), responses=()),
+		cache,
+		cache_path=cache_path,
+	)
+
+	assert "postal_code" not in cached_entry
+	assert saved == [(cache, cache_path)]
 
 
 def test_kbb_cache_ttl_is_seven_days():
