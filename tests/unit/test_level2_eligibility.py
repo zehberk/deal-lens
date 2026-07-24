@@ -70,7 +70,7 @@ async def test_level2_keeps_price_only_and_unmapped_listings(monkeypatch):
 	]
 
 
-async def test_level2_records_missing_complete_kbb_pricing(monkeypatch):
+async def test_level2_uses_available_national_fpp_without_fmv(monkeypatch):
 	listing = {
 		"id": "incomplete-kbb",
 		"vin": "VIN3",
@@ -108,10 +108,11 @@ async def test_level2_records_missing_complete_kbb_pricing(monkeypatch):
 	)
 
 	assert render_args[3] == []
-	assert render_args[4] == []
-	assert render_args[5] == [
-		(listing, "Complete KBB pricing is unavailable for this configuration.")
-	]
+	assert len(render_args[4]) == 1
+	assessed_listing, _, narrative = render_args[4][0]
+	assert assessed_listing == listing
+	assert narrative[0].startswith("National FPP was used")
+	assert render_args[5] == []
 
 
 async def test_level2_records_missing_price_separately_from_kbb_mapping(monkeypatch):

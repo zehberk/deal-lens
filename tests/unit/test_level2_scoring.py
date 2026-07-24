@@ -5,6 +5,7 @@ from analysis.scoring import (
 	calculate_deal_score,
 	calculate_deal_score_result,
 	deal_rating_from_score,
+	determine_best_price,
 	risk_penalty,
 	get_structure_score,
 	format_deal_score_narrative,
@@ -172,3 +173,18 @@ def test_explicitly_expired_warranty_remains_neutral_but_known():
 
 	assert result == 0
 	assert narrative == ["The basic warranty on this vehicle has expired."]
+
+
+def test_purchase_benchmark_prefers_msrp_over_fmv_fallback():
+	narrative = []
+
+	result = determine_best_price(
+		25_000, 0, 0, 21_000, narrative, msrp=27_000
+	)
+
+	assert result == 27_000
+	assert narrative[0].startswith("MSRP was used")
+
+
+def test_any_available_purchase_benchmark_can_be_used():
+	assert determine_best_price(25_000, 0, 26_000, 0, msrp=0) == 26_000

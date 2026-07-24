@@ -46,9 +46,9 @@ async def create_level1_file(listings: list[dict], metadata: dict):
         fmv = int(ctx.cache_entries[cache_key].get("fmv") or 0)
 
         price = int(listing.get("price") or 0)
-        best_comparison = determine_best_price(price, fpp_local, fpp_natl, fmv, [])
-        if not best_comparison:
-            best_comparison = msrp  # It's okay to use MSRP for level 1
+        best_comparison = determine_best_price(
+            price, fpp_local, fpp_natl, fmv, [], msrp=msrp
+        )
 
         deal, midpoint, _, _ = classify_deal_rating(
             price, best_comparison, fmv, fpp_local, fmr_high
