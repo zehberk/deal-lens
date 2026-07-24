@@ -112,7 +112,7 @@ async def get_level1_kbb_valuations(
 		model_by_year_trim=model_by_year_trim,
 	)
 	logger.info(
-		"KBB result: %s %s — %d matched, %d unavailable",
+		"KBB result: %s %s - %d matched, %d unavailable",
 		make, model, len(result.matches), len(result.failures),
 	)
 	for failure in result.failures:

@@ -246,16 +246,10 @@ async def get_or_fetch_national_pricing(
             if natl_fpp:
                 logger.debug("Parsed national KBB pricing for %s %s", year, table_trim)
 
-    missing_fpp = [row[0] for row in pricing_data if not row[2]]
-    source = "cached" if all_fresh else "loaded"
-    logger.info("    National: %d %s rows", len(pricing_data), source)
-    if missing_fpp:
-        logger.warning(
-            "      FPP unavailable for %d trim%s: %s",
-            len(missing_fpp),
-            "" if len(missing_fpp) == 1 else "s",
-            ", ".join(missing_fpp),
-        )
+    logger.debug(
+        "National KBB pricing returned %d %s rows for %s %s %s",
+        len(pricing_data), "cached" if all_fresh else "loaded", year, make, model,
+    )
     return pricing_data, None
 
 
@@ -268,12 +262,6 @@ async def populate_pricing_for_year(
     cache_entries: dict,
     trims: set[str],
 ) -> str | None:
-    logger.info(
-        "  %s %s %s (%d requested trim%s)",
-        year, make, model, len(trims),
-        "" if len(trims) == 1 else "s",
-    )
-
     # Get MSRP/National FPP first, will return only entries that need an FMV
     natl_data, error = await get_or_fetch_national_pricing(
         page, make, model, model_slug, year, cache_entries
@@ -306,6 +294,23 @@ async def populate_pricing_for_year(
         for table_trim, msrp, natl_fpp, natl_source, trim_source, natl_ts
         in natl_data
     ]
+    total_trims = len(natl_data)
+    msrp_count = sum(
+        1 for _, msrp, _, _, _, _ in natl_data
+        if msrp and msrp != "TBD"
+    )
+    national_fpp_count = sum(
+        1 for _, _, fpp, _, _, _ in natl_data
+        if fpp and fpp != "TBD"
+    )
+    logger.info(
+        "  %s %s %s (%d trim%s found)",
+        year, make, model, total_trims, "" if total_trims == 1 else "s",
+    )
+    logger.info(
+        "    MSRP: %d/%d available | National FPP: %d/%d available",
+        msrp_count, total_trims, national_fpp_count, total_trims,
+    )
 
     best_matches: dict[str, str] = {}
     checked_requested_trims: set[str] = set()
@@ -394,7 +399,6 @@ async def populate_pricing_for_year(
         entry["local_source"] = fpp_source
         if not any((entry["msrp"], natl_val, fpp_local)):
             entry["skip_reason"] = f"There is currently no pricing data for this trim."
-            logger.warning("KBB pricing is incomplete for %s", kbb_trim)
         else:
             entry.pop("skip_reason", None)
             logger.debug(
@@ -404,6 +408,21 @@ async def populate_pricing_for_year(
 
         entry["natl_timestamp"] = natl_ts
         entry["local_timestamp"] = local_ts
+        local_checked = table_trim in best_matches
+        logger.info(
+            "    %s: Local FPP=%s | FMV=%s",
+            table_trim,
+            _display_price(fpp_local, checked=local_checked),
+            _display_price(fmv, checked=local_checked),
+        )
+        if entry["msrp"] is None:
+            logger.warning("      MSRP unavailable")
+        if natl_val is None:
+            logger.warning("      National FPP unavailable")
+        if local_checked and fpp_local is None:
+            logger.warning("      Local FPP unavailable")
+        if entry.get("skip_reason"):
+            logger.warning("      No pricing data available")
 
     # A partial national table must not suppress a valid local-price lookup.
     # This also covers multiple requested trims that KBB's matcher maps to the
@@ -446,12 +465,26 @@ async def populate_pricing_for_year(
             entry.pop("skip_reason", None)
         else:
             entry["skip_reason"] = "There is currently no pricing data for this trim."
+        logger.info(
+            "    %s: Local FPP=%s | FMV=%s",
+            requested_trim,
+            _display_price(fpp_local, checked=True),
+            _display_price(fmv, checked=True),
+        )
+        if entry.get("fpp_natl") is None:
+            logger.warning("      National FPP unavailable")
+        if fpp_local is None:
+            logger.warning("      Local FPP unavailable")
+        if entry.get("skip_reason"):
+            logger.warning("      No pricing data available")
 
-    logger.info(
-        "    Result: %d requested trim%s checked",
-        len(trims), "" if len(trims) == 1 else "s",
-    )
     return error
+
+
+def _display_price(value: int | None, *, checked: bool) -> str:
+    if not checked:
+        return "not checked"
+    return f"${value:,}" if value is not None else "unavailable"
 
 
 def _normalize_kbb_table_trim(
@@ -530,7 +563,7 @@ async def get_or_fetch_local_pricing(
     local_url = source_url or KBB_LOOKUP_TRIM_URL.format(
         make=safe_make, model=model_slug, year=year, trim=safe_trim
     )
-    logger.info("    Local: %s", trim)
+    logger.debug("Loading local KBB pricing for %s", kbb_trim)
 
     fmr_low: int | None = None
     fmr_high: int | None = None
@@ -568,14 +601,11 @@ async def get_or_fetch_local_pricing(
     match = re.search(r"current resale value of \$([\d,]+)", depreciation_text)
     if match:
         fmv = int(match.group(1).replace(",", ""))
-    if fpp_local is None:
-        logger.warning("      Local FPP unavailable: %s", trim)
     if fmv is None:
         logger.debug("KBB resale value is missing for %s", kbb_trim)
-    logger.info(
-        "      FPP=%s | FMV=%s",
-        f"${fpp_local:,}" if fpp_local is not None else "unavailable",
-        f"${fmv:,}" if fmv is not None else "unavailable",
+    logger.debug(
+        "Local KBB lookup completed for %s: FPP=%s, FMV=%s",
+        kbb_trim, fpp_local, fmv,
     )
 
     return fmr_low, fmr_high, fpp_local, fmv, local_url

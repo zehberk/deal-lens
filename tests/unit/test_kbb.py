@@ -96,11 +96,12 @@ async def test_national_pricing_accepts_msrp_only_div_rows(caplog):
 	heading.locator.assert_called_once_with("xpath=following::table[1]//tbody/tr")
 	assert error is None
 	assert pricing[0][0:3] == ("Ioniq 5 SE", "$39,100", None)
-	assert "National: 1 loaded rows" in caplog.text
-	assert "FPP unavailable for 1 trim: Ioniq 5 SE" in caplog.text
 
 
-async def test_msrp_only_model_prefixed_row_still_checks_local_fpp(monkeypatch):
+async def test_msrp_only_model_prefixed_row_still_checks_local_fpp(
+	monkeypatch, caplog
+):
+	caplog.set_level("INFO", logger="analysis.kbb")
 	cache_entries = {}
 	local_lookup = AsyncMock(return_value=(36_000, 40_000, 39_500, None, "local"))
 	monkeypatch.setattr(
@@ -134,6 +135,10 @@ async def test_msrp_only_model_prefixed_row_still_checks_local_fpp(monkeypatch):
 	assert entry["msrp"] == 39_100
 	assert entry["fpp_natl"] is None
 	assert entry["fpp_local"] == 39_500
+	assert "2026 Hyundai IONIQ 5 (1 trim found)" in caplog.text
+	assert "MSRP: 1/1 available | National FPP: 0/1 available" in caplog.text
+	assert "SE: Local FPP=$39,500 | FMV=unavailable" in caplog.text
+	assert "National FPP unavailable" in caplog.text
 
 
 async def test_partial_national_table_checks_every_requested_trim_locally(monkeypatch):
@@ -166,8 +171,9 @@ async def test_partial_national_table_checks_every_requested_trim_locally(monkey
 
 
 async def test_national_trim_link_is_preferred_and_saved_without_local_lookup(
-	monkeypatch,
+	monkeypatch, caplog,
 ):
+	caplog.set_level("INFO", logger="analysis.kbb")
 	cache_entries = {}
 	local_lookup = AsyncMock(return_value=(40_000, 48_000, 45_000, None, None))
 	monkeypatch.setattr(
@@ -202,6 +208,10 @@ async def test_national_trim_link_is_preferred_and_saved_without_local_lookup(
 		"se-standard-range-sport-utility-4d/"
 	)
 	assert entry["local_timestamp"] is None
+	assert (
+		"SE Standard Range Sport Utility 4D: Local FPP=not checked | "
+		"FMV=not checked"
+	) in caplog.text
 
 
 async def test_requested_trim_uses_national_table_link_first(monkeypatch):
