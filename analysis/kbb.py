@@ -331,13 +331,16 @@ async def populate_pricing_for_year(
 
     for table_trim, msrp, natl_fpp, natl_source, trim_source, natl_ts in natl_data:
         kbb_trim = f"{prefix} {table_trim}"
+        resolved_trim_source = (
+            urllib.parse.urljoin(natl_source, trim_source) if trim_source else None
+        )
 
         fmr_low: int | None = None
         fmr_high: int | None = None
         fpp_local: int | None = None
         fmv: int | None = None
-        fpp_source: str | None = None
-        local_ts = datetime.now().isoformat()
+        fpp_source: str | None = resolved_trim_source
+        local_ts: str | None = None
 
         # only here do we call FMV
         if table_trim in best_matches:
@@ -363,8 +366,10 @@ async def populate_pricing_for_year(
                     kbb_trim,
                     cache_entries,
                     postal_code,
+                    source_url=resolved_trim_source,
                 )
             )
+            local_ts = datetime.now().isoformat()
             checked_requested_trims.add(requested_trim)
         else:
             if not natl_fpp or natl_fpp == "TBD":
@@ -511,6 +516,8 @@ async def get_or_fetch_local_pricing(
     kbb_trim: str,
     cache_entries: dict[str, dict],
     postal_code: str | None = None,
+    *,
+    source_url: str | None = None,
 ):
     entry = cache_entries.setdefault(kbb_trim, {})
 
@@ -528,7 +535,7 @@ async def get_or_fetch_local_pricing(
 
     safe_make = make_string_url_safe(make)
     safe_trim = make_string_url_safe(trim)
-    local_url = KBB_LOOKUP_TRIM_URL.format(
+    local_url = source_url or KBB_LOOKUP_TRIM_URL.format(
         make=safe_make, model=model_slug, year=year, trim=safe_trim
     )
     logger.info("Loading local KBB pricing for %s", kbb_trim)

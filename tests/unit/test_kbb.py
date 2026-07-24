@@ -166,6 +166,80 @@ async def test_partial_national_table_checks_every_requested_trim_locally(monkey
 	assert checked_trims == {"SE", "XRT"}
 
 
+async def test_national_trim_link_is_preferred_and_saved_without_local_lookup(
+	monkeypatch,
+):
+	cache_entries = {}
+	local_lookup = AsyncMock(return_value=(40_000, 48_000, 45_000, None, None))
+	monkeypatch.setattr(
+		"analysis.kbb.get_or_fetch_national_pricing",
+		AsyncMock(return_value=([(
+			"SE Standard Range Sport Utility 4D",
+			"$43,175",
+			"$22,400",
+			"https://kbb.com/hyundai/ioniq-5/2024/",
+			"/hyundai/ioniq-5/2024/se-standard-range-sport-utility-4d/",
+			"2026-01-01T00:00:00",
+		)], None)),
+	)
+	monkeypatch.setattr("analysis.kbb.get_or_fetch_local_pricing", local_lookup)
+
+	await populate_pricing_for_year(
+		AsyncMock(),
+		"Hyundai",
+		"IONIQ 5",
+		"ioniq-5",
+		"2024",
+		cache_entries,
+		set(),
+		"80203",
+	)
+
+	local_lookup.assert_not_awaited()
+	entry = cache_entries[
+		"2024 Hyundai IONIQ 5 SE Standard Range Sport Utility 4D"
+	]
+	assert entry["local_source"] == (
+		"https://kbb.com/hyundai/ioniq-5/2024/"
+		"se-standard-range-sport-utility-4d/"
+	)
+	assert entry["local_timestamp"] is None
+
+
+async def test_requested_trim_uses_national_table_link_first(monkeypatch):
+	local_lookup = AsyncMock(return_value=(40_000, 48_000, 45_000, None, None))
+	monkeypatch.setattr(
+		"analysis.kbb.get_or_fetch_national_pricing",
+		AsyncMock(return_value=([(
+			"Disney100 Platinum Edition Sport Utility 4D",
+			"$60,775",
+			"$33,800",
+			"https://kbb.com/hyundai/ioniq-5/2024/",
+			"/hyundai/ioniq-5/2024/disney100-platinum-edition-sport-utility-4d/",
+			"2026-01-01T00:00:00",
+		)], None)),
+	)
+	monkeypatch.setattr("analysis.kbb.get_or_fetch_local_pricing", local_lookup)
+
+	await populate_pricing_for_year(
+		AsyncMock(),
+		"Hyundai",
+		"IONIQ 5",
+		"ioniq-5",
+		"2024",
+		{},
+		{"Disney100 Platinum Edition Sport Utility 4D"},
+		"80203",
+	)
+
+	await_args = local_lookup.await_args
+	assert await_args is not None
+	assert await_args.kwargs["source_url"] == (
+		"https://kbb.com/hyundai/ioniq-5/2024/"
+		"disney100-platinum-edition-sport-utility-4d/"
+	)
+
+
 async def test_navigation_retries_share_one_total_timeout(monkeypatch):
 	timeouts = []
 
