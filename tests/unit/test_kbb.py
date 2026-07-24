@@ -64,7 +64,7 @@ async def test_missing_resale_value_continues_after_wait(monkeypatch):
 
 
 async def test_national_pricing_accepts_msrp_only_div_rows(caplog):
-	caplog.set_level("INFO", logger="analysis.kbb")
+	caplog.set_level("DEBUG", logger="analysis.kbb")
 	page = MagicMock()
 	page.goto = AsyncMock()
 	page.wait_for_timeout = AsyncMock()
@@ -97,6 +97,8 @@ async def test_national_pricing_accepts_msrp_only_div_rows(caplog):
 	heading.locator.assert_called_once_with("xpath=following::table[1]//tbody/tr")
 	assert error is None
 	assert pricing[0][0:3] == ("Ioniq 5 SE", "$39,100", None)
+	assert "KBB national source for Ioniq 5 SE" in caplog.text
+	assert "https://kbb.com/hyundai/ioniq-5/2026/" in caplog.text
 
 
 async def test_msrp_only_model_prefixed_row_still_checks_local_fpp(

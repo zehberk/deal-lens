@@ -29,6 +29,9 @@ output/*
 !output/*/*prompt.txt
 !output/example_output.json
 
+# Per-command diagnostic logs
+logs/
+
 # Local browser or authentication sessions
 .session/*
 

@@ -60,6 +60,11 @@ unavailable; they do not prevent DealLens from checking local trim pricing. The
 KBB page and its embedded price advisor retain the browser context supplied by
 KBB; DealLens does not inject or cache a postal code for KBB pricing.
 
+Each `deal-lens` invocation writes a timestamped DEBUG diagnostic log under
+`logs/`. The log records the command arguments and KBB national, trim, and
+price-advisor source URLs for later verification, while the interactive console
+remains at INFO level.
+
 ### Visor API key
 
 Create an API key through your Visor account. Then either set it in the process

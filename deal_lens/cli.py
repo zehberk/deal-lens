@@ -1,6 +1,7 @@
-import argparse, asyncio, json, logging, os
+import argparse, asyncio, json, logging, os, subprocess, sys
 
 from argparse import Namespace
+from datetime import datetime
 from pathlib import Path
 from rich.logging import RichHandler
 
@@ -26,17 +27,42 @@ from visor_api import (
 from visor_api.level2_service import Level2Collection
 from visor_api.query import VisorListingQuery
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="[%(levelname)s] %(message)s",
-    handlers=[RichHandler(
+
+def configure_logging(
+    argv: list[str] | None = None,
+    *,
+    log_dir: Path = Path("logs"),
+) -> Path:
+    """Configure concise Rich output and a detailed per-command log file."""
+    log_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    log_path = log_dir / f"deal-lens-{timestamp}.log"
+
+    console_handler = RichHandler(
         console=CLI_CONSOLE,
         show_time=False,
         show_level=False,
         show_path=False,
         markup=False,
-    )],
-)
+    )
+    console_handler.setLevel(logging.INFO)
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    ))
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="[%(levelname)s] %(message)s",
+        handlers=[console_handler, file_handler],
+        force=True,
+    )
+
+    actual_argv = sys.argv[1:] if argv is None else argv
+    command = subprocess.list2cmdline(["deal-lens", *actual_argv])
+    logging.getLogger(__name__).info("Diagnostic log: %s", log_path)
+    logging.getLogger(__name__).debug("Command: %s", command)
+    return log_path
 
 
 def _visor_client(progress: ProgressReporter) -> VisorClient:
@@ -302,7 +328,9 @@ def main():  # pragma: no cover
         "--level3", action="store_true", help="Creates a level 3 analysis report"
     )
 
-    args = parser.parse_args()
+    raw_args = sys.argv[1:]
+    args = parser.parse_args(raw_args)
+    configure_logging(raw_args)
     args = apply_url_to_args(args)
     asyncio.run(scrape(args))
 

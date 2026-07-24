@@ -1,14 +1,45 @@
 from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
 from deal_lens.cli import (
 	collect_and_run_level1_api,
 	collect_and_run_level3_api,
+	configure_logging,
 	scrape,
 )
+
+
+def test_logging_records_exact_command_in_timestamped_file(monkeypatch):
+	file_handler = MagicMock()
+	file_handler_type = MagicMock(return_value=file_handler)
+	basic_config = MagicMock()
+	logger = MagicMock()
+	log_dir = MagicMock()
+	log_path = Path("logs/deal-lens-20260723-212459-123456.log")
+	log_dir.__truediv__.return_value = log_path
+	clock = MagicMock()
+	clock.now.return_value.strftime.return_value = "20260723-212459-123456"
+	monkeypatch.setattr("deal_lens.cli.logging.FileHandler", file_handler_type)
+	monkeypatch.setattr("deal_lens.cli.logging.basicConfig", basic_config)
+	monkeypatch.setattr("deal_lens.cli.logging.getLogger", lambda _name=None: logger)
+	monkeypatch.setattr("deal_lens.cli.datetime", clock)
+
+	result = configure_logging(
+		["--url", "https://visor.test/search?make=Hyundai IONIQ", "--level1"],
+		log_dir=log_dir,
+	)
+
+	assert result == log_path
+	log_dir.mkdir.assert_called_once_with(parents=True, exist_ok=True)
+	file_handler_type.assert_called_once_with(log_path, encoding="utf-8")
+	logger.debug.assert_called_once_with(
+		"Command: %s",
+		'deal-lens --url "https://visor.test/search?make=Hyundai IONIQ" --level1',
+	)
 
 
 async def test_level1_cli_routes_to_facet_api(monkeypatch):

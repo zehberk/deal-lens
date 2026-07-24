@@ -160,7 +160,10 @@ async def get_or_fetch_national_pricing(
         )
 
         await goto_with_retry(page, natl_url)
-        logger.debug("Loaded national KBB page for %s %s %s", year, make, model)
+        logger.debug(
+            "Loaded national KBB page for %s %s %s: %s",
+            year, make, model, natl_url,
+        )
 
         try:
             body = await page.inner_text("body", timeout=KBB_LOCATOR_TIMEOUT_MS)
@@ -251,6 +254,13 @@ async def get_or_fetch_national_pricing(
         "National KBB pricing returned %d %s rows for %s %s %s",
         len(pricing_data), "cached" if all_fresh else "loaded", year, make, model,
     )
+    for table_trim, _, _, national_url, trim_url, _ in pricing_data:
+        logger.debug("KBB national source for %s: %s", table_trim, national_url)
+        logger.debug(
+            "KBB trim source for %s: %s",
+            table_trim,
+            urllib.parse.urljoin(national_url, trim_url) if trim_url else "not provided",
+        )
     return pricing_data, None
 
 
@@ -578,7 +588,10 @@ async def get_or_fetch_local_pricing(
 
     # Check cache first
     if is_entry_fresh(entry):
-        logger.debug("Using cached local KBB pricing for %s", kbb_trim)
+        logger.debug(
+            "Using cached local KBB pricing for %s: %s",
+            kbb_trim, entry.get("local_source") or "source unavailable",
+        )
         return (
             entry.get("fmr_low"),
             entry.get("fmr_high"),
@@ -592,7 +605,7 @@ async def get_or_fetch_local_pricing(
     local_url = source_url or KBB_LOOKUP_TRIM_URL.format(
         make=safe_make, model=model_slug, year=year, trim=safe_trim
     )
-    logger.debug("Loading local KBB pricing for %s", kbb_trim)
+    logger.debug("Loading local KBB pricing for %s: %s", kbb_trim, local_url)
 
     fmr_low: int | None = None
     fmr_high: int | None = None
@@ -607,7 +620,10 @@ async def get_or_fetch_local_pricing(
         )
 
     except TimeoutError as t:
-        logger.warning("KBB page navigation timed out for %s: %s", kbb_trim, t.message)
+        logger.warning(
+            "KBB page navigation timed out for %s (%s): %s",
+            kbb_trim, local_url, t.message,
+        )
         return fmr_low, fmr_high, fpp_local, fmv, local_url
 
     fmr_low, fmr_high, fpp_local = await get_price_advisor_values(page)
@@ -667,6 +683,7 @@ async def get_price_advisor_values(
             )
 
         if data_url:
+            logger.debug("KBB price-advisor source: %s", data_url)
             # Now navigate directly to that URL to parse it
             svg_page = await page.context.new_page()
             try:
