@@ -53,4 +53,7 @@ def test_rich_status_can_render_inside_active_progress():
 	assert list(reporter.track(
 		requests(), description="Fetching API data", total=1, unit="request"
 	)) == ["response"]
-	assert "Fetching API data" in output.getvalue()
+	rendered = output.getvalue()
+	assert "Waiting for rate limit" in rendered
+	assert "Fetching API data" in rendered
+	assert "0/?" not in rendered

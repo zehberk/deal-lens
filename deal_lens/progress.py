@@ -9,6 +9,7 @@ from rich.progress import (
 	BarColumn,
 	MofNCompleteColumn,
 	Progress,
+	TaskID,
 	SpinnerColumn,
 	TaskProgressColumn,
 	TextColumn,
@@ -30,6 +31,7 @@ class RichProgressReporter:
 		self.console = console or Console(stderr=True)
 		self.enabled = self.console.is_terminal
 		self._active_display: Progress | None = None
+		self._active_task_id: TaskID | None = None
 
 	def track(
 		self,
@@ -65,10 +67,12 @@ class RichProgressReporter:
 			self._active_display = display
 			try:
 				task_id = display.add_task(description, total=total, unit=unit)
+				self._active_task_id = task_id
 				for item in sequence:
 					yield item
 					display.advance(task_id)
 			finally:
+				self._active_task_id = None
 				self._active_display = None
 
 	def status(self, description: str) -> AbstractContextManager[object]:
@@ -81,14 +85,18 @@ class RichProgressReporter:
 	@contextmanager
 	def _nested_status(self, description: str) -> Iterator[object]:
 		display = self._active_display
-		if display is None:
+		task_id = self._active_task_id
+		if display is None or task_id is None:
 			yield None
 			return
-		task_id = display.add_task(description, total=None, unit="")
+		original_description = display.tasks[task_id].description
+		display.update(task_id, description=description, refresh=True)
 		try:
 			yield task_id
 		finally:
-			display.remove_task(task_id)
+			display.update(
+				task_id, description=original_description, refresh=True
+			)
 
 
 def cli_progress() -> ProgressReporter:

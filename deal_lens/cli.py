@@ -2,6 +2,7 @@ import argparse, asyncio, json, logging, os
 
 from argparse import Namespace
 from pathlib import Path
+from rich.logging import RichHandler
 
 from analysis.level1 import start_level1_analysis
 from analysis.level1_kbb import get_level1_kbb_valuations
@@ -14,7 +15,7 @@ from utils.constants import *
 from utils.download import download_files
 from deal_lens.cli_support import *
 from deal_lens.config import get_visor_api_key, get_visor_rate_limits
-from deal_lens.progress import cli_progress
+from deal_lens.progress import CLI_CONSOLE, cli_progress
 from utils.progress import ProgressReporter
 from visor_api import (
     VisorClient,
@@ -25,7 +26,17 @@ from visor_api import (
 from visor_api.level2_service import Level2Collection
 from visor_api.query import VisorListingQuery
 
-logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(levelname)s] %(message)s",
+    handlers=[RichHandler(
+        console=CLI_CONSOLE,
+        show_time=False,
+        show_level=False,
+        show_path=False,
+        markup=False,
+    )],
+)
 
 
 def _visor_client(progress: ProgressReporter) -> VisorClient:
