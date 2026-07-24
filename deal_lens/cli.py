@@ -15,7 +15,7 @@ from utils.constants import *
 from utils.download import download_files
 from deal_lens.cli_support import *
 from deal_lens.config import get_visor_api_key, get_visor_rate_limits
-from deal_lens.progress import cli_progress
+from deal_lens.progress import CLI_CONSOLE, cli_progress
 from utils.progress import ProgressReporter
 from visor_api import (
     VisorClient,
@@ -246,12 +246,15 @@ async def collect_and_run_level3_api(args: Namespace) -> None:
 
 async def scrape(args: Namespace) -> None:
     if args.level1:
+        CLI_CONSOLE.print("[bold cyan]Running Level 1 analysis[/]")
         await collect_and_run_level1_api(args)
         return
     if args.level2:
+        CLI_CONSOLE.print("[bold cyan]Running Level 2 analysis[/]")
         await collect_and_run_level2_api(args)
         return
     if args.level3:
+        CLI_CONSOLE.print("[bold cyan]Running Level 3 analysis[/]")
         await collect_and_run_level3_api(args)
         return
     raise ValueError("An analysis level is required")

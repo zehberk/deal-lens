@@ -45,6 +45,7 @@ def test_logging_records_exact_command_in_timestamped_file(monkeypatch):
 
 async def test_level1_cli_routes_to_facet_api(monkeypatch):
 	calls = []
+	announcements = []
 
 	async def fake_collect(args):
 		calls.append(args)
@@ -52,11 +53,15 @@ async def test_level1_cli_routes_to_facet_api(monkeypatch):
 	monkeypatch.setattr(
 		"deal_lens.cli.collect_and_run_level1_api", fake_collect
 	)
+	monkeypatch.setattr(
+		"deal_lens.cli.CLI_CONSOLE.print", announcements.append
+	)
 	args = Namespace(level1=True, level2=False, level3=False)
 
 	await scrape(args)
 
 	assert calls == [args]
+	assert announcements == ["[bold cyan]Running Level 1 analysis[/]"]
 
 
 async def test_level3_cli_routes_to_listing_api(monkeypatch):
