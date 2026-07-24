@@ -36,11 +36,18 @@ def _price_assessment(
     fmr_high = int(lc.pricing.fmr_high or 0)
     fmv = int(lc.pricing.fmv or 0)
     msrp = int(lc.pricing.msrp or 0)
-    if not any((fpp_natl, fpp_local, msrp, fmv)):
+    is_new = str(listing.get("condition", "")).casefold() == "new"
+    if not any((fpp_natl, fpp_local, fmv, msrp if is_new else 0)):
         return None
 
     best_comparison = determine_best_price(
-        price, fpp_local, fpp_natl, fmv, narrative, msrp=msrp
+        price,
+        fpp_local,
+        fpp_natl,
+        fmv,
+        narrative,
+        msrp=msrp,
+        is_new=is_new,
     )
     deal, midpoint, increment, percent = classify_deal_rating(
         price, best_comparison, fmv, fpp_local, fmr_high

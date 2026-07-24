@@ -47,7 +47,13 @@ async def create_level1_file(listings: list[dict], metadata: dict):
 
         price = int(listing.get("price") or 0)
         best_comparison = determine_best_price(
-            price, fpp_local, fpp_natl, fmv, [], msrp=msrp
+            price,
+            fpp_local,
+            fpp_natl,
+            fmv,
+            [],
+            msrp=msrp,
+            is_new=str(listing.get("condition", "")).casefold() == "new",
         )
 
         deal, midpoint, _, _ = classify_deal_rating(

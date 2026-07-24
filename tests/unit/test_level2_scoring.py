@@ -175,15 +175,28 @@ def test_explicitly_expired_warranty_remains_neutral_but_known():
 	assert narrative == ["The basic warranty on this vehicle has expired."]
 
 
-def test_purchase_benchmark_prefers_msrp_over_fmv_fallback():
+def test_purchase_benchmark_prefers_fmv_over_msrp_fallback():
 	narrative = []
 
 	result = determine_best_price(
-		25_000, 0, 0, 21_000, narrative, msrp=27_000
+		25_000, 0, 0, 21_000, narrative, msrp=27_000, is_new=True
+	)
+
+	assert result == 21_000
+	assert narrative[0].startswith("FMV was used")
+
+
+def test_msrp_is_worst_case_fallback_for_new_vehicles_only():
+	narrative = []
+
+	result = determine_best_price(
+		25_000, 0, 0, 0, narrative, msrp=27_000, is_new=True
 	)
 
 	assert result == 27_000
 	assert narrative[0].startswith("MSRP was used")
+	assert "worst-case fallback" in narrative[1]
+	assert determine_best_price(25_000, 0, 0, 0, msrp=27_000) == 0
 
 
 def test_any_available_purchase_benchmark_can_be_used():

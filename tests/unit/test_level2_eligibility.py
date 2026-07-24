@@ -13,6 +13,23 @@ from jinja2 import Environment, FileSystemLoader
 from utils.models import AnalysisContext, ListingContext, PricingAnchors
 
 
+def test_level2_uses_msrp_only_for_new_vehicle_fallback():
+	pricing = PricingAnchors(msrp=30_000)
+	used = ListingContext(
+		listing_id="used", listing={"price": 25_000, "condition": "Used"},
+		pricing=pricing,
+	)
+	new = ListingContext(
+		listing_id="new", listing={"price": 25_000, "condition": "New"},
+		pricing=pricing,
+	)
+
+	assert level2._price_assessment(used, []) is None
+	narrative = []
+	assert level2._price_assessment(new, narrative) is not None
+	assert any("worst-case fallback" in message for message in narrative)
+
+
 async def test_level2_keeps_price_only_and_unmapped_listings(monkeypatch):
 	price_only_listing = {
 		"id": "price-only",
