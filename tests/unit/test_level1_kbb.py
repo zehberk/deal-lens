@@ -174,7 +174,7 @@ async def test_fresh_seven_day_cache_avoids_kbb_browser(monkeypatch, caplog):
 		)
 
 	assert result.matches[0].visor_trim == "Sport"
-	assert "1 matches, 0 failures" in caplog.text
+	assert "1 matched, 0 unavailable" in caplog.text
 
 
 async def test_legacy_kbb_postal_code_is_removed_from_cache(

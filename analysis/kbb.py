@@ -141,10 +141,6 @@ async def get_or_fetch_national_pricing(
     )
 
     if all_fresh:
-        logger.info(
-            "Using %d cached national KBB rows for %s %s %s",
-            len(relevant_entries), year, make, model,
-        )
         for e in relevant_entries.values():
             pricing_data.append(
                 (
@@ -163,7 +159,7 @@ async def get_or_fetch_national_pricing(
         )
 
         await goto_with_retry(page, natl_url)
-        logger.info("Loaded national KBB page for %s %s %s", year, make, model)
+        logger.debug("Loaded national KBB page for %s %s %s", year, make, model)
 
         try:
             body = await page.inner_text("body", timeout=KBB_LOCATOR_TIMEOUT_MS)
@@ -248,14 +244,18 @@ async def get_or_fetch_national_pricing(
                 )
             )
             if natl_fpp:
-                logger.info("Parsed national KBB pricing for %s %s", year, table_trim)
-            else:
-                logger.warning("National KBB FPP is missing for %s %s", year, table_trim)
+                logger.debug("Parsed national KBB pricing for %s %s", year, table_trim)
 
-    logger.info(
-        "National KBB lookup completed for %s %s %s with %d rows",
-        year, make, model, len(pricing_data),
-    )
+    missing_fpp = [row[0] for row in pricing_data if not row[2]]
+    source = "cached" if all_fresh else "loaded"
+    logger.info("    National: %d %s rows", len(pricing_data), source)
+    if missing_fpp:
+        logger.warning(
+            "      FPP unavailable for %d trim%s: %s",
+            len(missing_fpp),
+            "" if len(missing_fpp) == 1 else "s",
+            ", ".join(missing_fpp),
+        )
     return pricing_data, None
 
 
@@ -269,8 +269,9 @@ async def populate_pricing_for_year(
     trims: set[str],
 ) -> str | None:
     logger.info(
-        "Starting KBB pricing lookup for %s %s %s (%d requested trims)",
+        "  %s %s %s (%d requested trim%s)",
         year, make, model, len(trims),
+        "" if len(trims) == 1 else "s",
     )
 
     # Get MSRP/National FPP first, will return only entries that need an FMV
@@ -325,7 +326,7 @@ async def populate_pricing_for_year(
         if best_match:
             best_matches.setdefault(best_match, trim)
         else:
-            logger.warning("No KBB trim match for %s %s", year, trim)
+            logger.warning("    No trim match: %s %s", year, trim)
 
     for table_trim, msrp, natl_fpp, natl_source, trim_source, natl_ts in natl_data:
         kbb_trim = f"{prefix} {table_trim}"
@@ -350,7 +351,7 @@ async def populate_pricing_for_year(
                 )
                 if previous_trim:
                     local_trim = previous_trim
-                    logger.info(
+                    logger.debug(
                         "Using prior-year KBB trim path %s for %s",
                         local_trim, kbb_trim,
                     )
@@ -396,7 +397,7 @@ async def populate_pricing_for_year(
             logger.warning("KBB pricing is incomplete for %s", kbb_trim)
         else:
             entry.pop("skip_reason", None)
-            logger.info(
+            logger.debug(
                 "KBB pricing saved for %s: msrp=%s national_fpp=%s local_fpp=%s",
                 kbb_trim, entry["msrp"], natl_val, fpp_local,
             )
@@ -447,8 +448,8 @@ async def populate_pricing_for_year(
             entry["skip_reason"] = "There is currently no pricing data for this trim."
 
     logger.info(
-        "KBB pricing lookup completed for %s %s %s: %d matched trims",
-        year, make, model, len(best_matches),
+        "    Result: %d requested trim%s checked",
+        len(trims), "" if len(trims) == 1 else "s",
     )
     return error
 
@@ -515,7 +516,7 @@ async def get_or_fetch_local_pricing(
 
     # Check cache first
     if is_entry_fresh(entry):
-        logger.info("Using cached local KBB pricing for %s", kbb_trim)
+        logger.debug("Using cached local KBB pricing for %s", kbb_trim)
         return (
             entry.get("fmr_low"),
             entry.get("fmr_high"),
@@ -529,7 +530,7 @@ async def get_or_fetch_local_pricing(
     local_url = source_url or KBB_LOOKUP_TRIM_URL.format(
         make=safe_make, model=model_slug, year=year, trim=safe_trim
     )
-    logger.info("Loading local KBB pricing for %s", kbb_trim)
+    logger.info("    Local: %s", trim)
 
     fmr_low: int | None = None
     fmr_high: int | None = None
@@ -562,18 +563,19 @@ async def get_or_fetch_local_pricing(
             "body", timeout=KBB_LOCATOR_TIMEOUT_MS
         )
     except TimeoutError as t:
-        logger.info("KBB resale value did not render for %s: %s", kbb_trim, t.message)
+        logger.debug("KBB resale value did not render for %s: %s", kbb_trim, t.message)
 
     match = re.search(r"current resale value of \$([\d,]+)", depreciation_text)
     if match:
         fmv = int(match.group(1).replace(",", ""))
     if fpp_local is None:
-        logger.warning("Local KBB FPP is missing for %s", kbb_trim)
+        logger.warning("      Local FPP unavailable: %s", trim)
     if fmv is None:
-        logger.warning("KBB resale value is missing for %s", kbb_trim)
+        logger.debug("KBB resale value is missing for %s", kbb_trim)
     logger.info(
-        "Local KBB lookup completed for %s: local_fpp=%s fmv=%s",
-        kbb_trim, fpp_local, fmv,
+        "      FPP=%s | FMV=%s",
+        f"${fpp_local:,}" if fpp_local is not None else "unavailable",
+        f"${fmv:,}" if fmv is not None else "unavailable",
     )
 
     return fmr_low, fmr_high, fpp_local, fmv, local_url
@@ -615,11 +617,11 @@ async def get_price_advisor_values(
             finally:
                 await svg_page.close()
     except TimeoutError as t:
-        logger.warning("Timed out waiting for KBB price-advisor values: %s", t.message)
+        logger.debug("Timed out waiting for KBB price-advisor values: %s", t.message)
 
     normalized = [re.sub(r"\s+", " ", value).strip() for value in price_values]
     if any(value.casefold() == "unavailable" for value in normalized):
-        logger.warning("KBB price advisor reports local pricing as unavailable")
+        logger.debug("KBB price advisor reports local pricing as unavailable")
         return None, None, None
 
     for index, value in enumerate(normalized):

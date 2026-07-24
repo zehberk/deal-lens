@@ -78,8 +78,9 @@ async def get_level1_kbb_valuations(
 	}
 	if stale_groups:
 		logger.info(
-			"Refreshing KBB pricing for %s %s across %d year/model groups",
+			"KBB pricing: %s %s (%d year/model group%s)",
 			make, model, len(stale_groups),
+			"" if len(stale_groups) == 1 else "s",
 		)
 		request, browser, context, page = await create_kbb_browser()
 		try:
@@ -111,7 +112,7 @@ async def get_level1_kbb_valuations(
 		model_by_year_trim=model_by_year_trim,
 	)
 	logger.info(
-		"Level 1 KBB lookup completed for %s %s: %d matches, %d failures",
+		"KBB result: %s %s — %d matched, %d unavailable",
 		make, model, len(result.matches), len(result.failures),
 	)
 	for failure in result.failures:
