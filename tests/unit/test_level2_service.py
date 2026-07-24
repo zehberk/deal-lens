@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from contextlib import nullcontext
 from typing import Any
 
 import pytest
@@ -83,6 +84,18 @@ def detail_row(listing_id="listing-1"):
 	}
 
 
+class RecordingProgress:
+	def __init__(self):
+		self.tracks = []
+
+	def status(self, description):
+		return nullcontext()
+
+	def track(self, sequence, *, description, total=None, unit="item"):
+		self.tracks.append((description, total, unit))
+		return sequence
+
+
 def test_collection_uses_enriched_search_and_sequential_standard_details():
 	client = FakeLevel2Client(
 		[search_row(), search_row("listing-2", "TESTVIN2")],
@@ -144,6 +157,20 @@ def test_collection_records_malformed_missing_and_duplicate_rows():
 		"duplicate_stable_listing_id",
 	]
 	assert client.detail_calls == [("listing-1", None)]
+
+
+def test_detail_progress_counts_only_actual_api_calls():
+	client = FakeLevel2Client([
+		"not-an-object",
+		{"vin": "NOID"},
+		search_row(),
+		search_row(),
+	])
+	progress = RecordingProgress()
+
+	collect_level2_listings(client, query(), progress=progress)
+
+	assert progress.tracks == [("Fetching listing details", 1, "listing")]
 
 
 def test_collection_rejects_non_array_search_data():

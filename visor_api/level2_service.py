@@ -167,13 +167,8 @@ def collect_level2_listings(
 	listings: list[Level2ListingRecord] = []
 	exclusions: list[Level2Exclusion] = []
 	seen_ids: set[str] = set()
-	indexed_rows = enumerate(rows)
-	for index, raw_row in progress.track(
-		indexed_rows,
-		total=len(rows),
-		description="Fetching listing details",
-		unit="listing",
-	):
+	detail_targets: list[tuple[int, dict[str, Any], str, str | None]] = []
+	for index, raw_row in enumerate(rows):
 		if not isinstance(raw_row, Mapping):
 			exclusions.append(Level2Exclusion(
 				index=index,
@@ -200,7 +195,14 @@ def collect_level2_listings(
 			))
 			continue
 		seen_ids.add(listing_id)
+		detail_targets.append((index, row, listing_id, vin))
 
+	for index, row, listing_id, vin in progress.track(
+		detail_targets,
+		total=len(detail_targets),
+		description="Fetching listing details",
+		unit="listing",
+	):
 		detail, detail_error = _collect_detail(client, listing_id)
 		adapted = adapt_listing(row, detail)
 		if detail_error is not None:
