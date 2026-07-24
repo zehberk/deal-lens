@@ -62,8 +62,9 @@ KBB; DealLens does not inject or cache a postal code for KBB pricing.
 
 Each `deal-lens` invocation writes a timestamped DEBUG diagnostic log under
 `logs/`. The log records the command arguments and KBB national, trim, and
-price-advisor source URLs for later verification, while the interactive console
-remains at INFO level.
+price-advisor source URLs for later verification. Logging at every severity is
+file-only; the interactive console is reserved for Rich progress and final report
+paths.
 
 ### Visor API key
 

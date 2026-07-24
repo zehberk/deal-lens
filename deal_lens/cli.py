@@ -3,7 +3,6 @@ import argparse, asyncio, json, logging, os, subprocess, sys
 from argparse import Namespace
 from datetime import datetime
 from pathlib import Path
-from rich.logging import RichHandler
 
 from analysis.level1 import start_level1_analysis
 from analysis.level1_kbb import get_level1_kbb_valuations
@@ -16,7 +15,7 @@ from utils.constants import *
 from utils.download import download_files
 from deal_lens.cli_support import *
 from deal_lens.config import get_visor_api_key, get_visor_rate_limits
-from deal_lens.progress import CLI_CONSOLE, cli_progress
+from deal_lens.progress import cli_progress
 from utils.progress import ProgressReporter
 from visor_api import (
     VisorClient,
@@ -38,14 +37,6 @@ def configure_logging(
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     log_path = log_dir / f"deal-lens-{timestamp}.log"
 
-    console_handler = RichHandler(
-        console=CLI_CONSOLE,
-        show_time=False,
-        show_level=False,
-        show_path=False,
-        markup=False,
-    )
-    console_handler.setLevel(logging.INFO)
     file_handler = logging.FileHandler(log_path, encoding="utf-8")
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(logging.Formatter(
@@ -53,8 +44,7 @@ def configure_logging(
     ))
     logging.basicConfig(
         level=logging.DEBUG,
-        format="[%(levelname)s] %(message)s",
-        handlers=[console_handler, file_handler],
+        handlers=[file_handler],
         force=True,
     )
 
@@ -106,7 +96,7 @@ def save_results(
             indent=2,
             ensure_ascii=False,
         )
-    print(f"Saved {len(listings)} listings to {path}")
+    logging.getLogger(__name__).info("Saved %d listings to %s", len(listings), path)
     return ts
 
 
@@ -119,7 +109,7 @@ async def run_analysis(
         elif args.level2:
             await start_level2_analysis(metadata, listings, filename)
         elif args.level3:
-            print("Level 3")
+            logging.getLogger(__name__).info("Starting Level 3 analysis")
 
 
 async def collect_and_run_level1_api(args: Namespace) -> None:

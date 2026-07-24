@@ -36,6 +36,7 @@ def test_logging_records_exact_command_in_timestamped_file(monkeypatch):
 	assert result == log_path
 	log_dir.mkdir.assert_called_once_with(parents=True, exist_ok=True)
 	file_handler_type.assert_called_once_with(log_path, encoding="utf-8")
+	assert basic_config.call_args.kwargs["handlers"] == [file_handler]
 	logger.debug.assert_called_once_with(
 		"Command: %s",
 		'deal-lens --url "https://visor.test/search?make=Hyundai IONIQ" --level1',
