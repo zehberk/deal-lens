@@ -128,6 +128,10 @@ class VisorClient:
 		self.max_retries = max_retries
 		self.requests_per_10_seconds = requests_per_10_seconds
 		self.requests_per_minute = requests_per_minute
+		self._request_interval = max(
+			10.0 / requests_per_10_seconds,
+			60.0 / requests_per_minute,
+		)
 		self._request_times: deque[float] = deque()
 		self._rate_limit_lock = threading.Lock()
 		self._progress = progress
@@ -370,7 +374,7 @@ class VisorClient:
 		raise AssertionError("retry loop ended unexpectedly")
 
 	def _wait_for_rate_limit(self) -> None:
-		"""Wait until both configured rolling request windows have capacity."""
+		"""Pace requests while enforcing both configured rolling windows."""
 		with self._rate_limit_lock:
 			while True:
 				now = time.monotonic()
@@ -382,18 +386,22 @@ class VisorClient:
 					if now - request_time < 10.0
 				]
 				delays = []
+				if self._request_times:
+					delays.append(
+						self._request_interval - (now - self._request_times[-1])
+					)
 				if len(recent_10_seconds) >= self.requests_per_10_seconds:
 					delays.append(10.0 - (now - recent_10_seconds[0]))
 				if len(self._request_times) >= self.requests_per_minute:
 					delays.append(60.0 - (now - self._request_times[0]))
-				if not delays:
+				delay = max(delays, default=0.0)
+				if delay <= 0:
 					self._request_times.append(now)
 					return
-				delay = max(delays)
-				with self._progress.status(
-					f"Rate limit reached; resuming in {delay:g} seconds"
-				):
-					time.sleep(delay)
+				logger.debug("Pacing Visor API request for %.3f seconds", delay)
+				time.sleep(delay)
+				self._request_times.append(time.monotonic())
+				return
 
 
 def _log_path(path: str) -> str:

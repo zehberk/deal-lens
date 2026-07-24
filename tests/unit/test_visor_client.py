@@ -122,8 +122,15 @@ def test_api_error_preserves_status_body_and_retry_header():
 
 
 def test_retryable_response_is_retried(monkeypatch, caplog):
+	now = [0.0]
 	sleeps = []
-	monkeypatch.setattr("visor_api.client.time.sleep", sleeps.append)
+
+	def sleep(seconds):
+		sleeps.append(seconds)
+		now[0] += seconds
+
+	monkeypatch.setattr("visor_api.client.time.monotonic", lambda: now[0])
+	monkeypatch.setattr("visor_api.client.time.sleep", sleep)
 	headers = {"Retry-After": "0.5"}
 	opener = FakeOpener(
 		api_error(
@@ -138,7 +145,7 @@ def test_retryable_response_is_retried(monkeypatch, caplog):
 	with caplog.at_level("WARNING", logger="visor_api.client"):
 		assert client.filter_listings() == {"data": []}
 	assert len(opener.requests) == 2
-	assert sleeps == [0.5]
+	assert sleeps == [0.5, 0.5]
 	assert "Retrying Visor API /v1/listings" in caplog.text
 	assert "rate limit error" in caplog.text
 	assert "attempt 2 of 2" in caplog.text
@@ -235,7 +242,7 @@ def test_client_rejects_invalid_rate_limits():
 		VisorClient("test-api-key", requests_per_minute=0)
 
 
-def test_client_enforces_both_rolling_rate_limits(monkeypatch):
+def test_client_paces_requests_for_both_configured_rate_limits(monkeypatch):
 	now = [0.0]
 	sleeps = []
 	statuses = []
@@ -263,11 +270,8 @@ def test_client_enforces_both_rolling_rate_limits(monkeypatch):
 	for _ in range(4):
 		client.filter_listings()
 
-	assert sleeps == [10.0, 50.0]
-	assert statuses == [
-		"Rate limit reached; resuming in 10 seconds",
-		"Rate limit reached; resuming in 50 seconds",
-	]
+	assert sleeps == [20.0, 20.0, 20.0]
+	assert statuses == []
 
 
 def test_legacy_timeout_option_sets_both_request_phases():

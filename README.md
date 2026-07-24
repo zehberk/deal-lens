@@ -85,9 +85,9 @@ Replace `YOUR_API_KEY_HERE` in `api.env`. `VISOR_API_KEY` in the process
 environment takes precedence over `api.env`. Never commit `api.env`, credentials,
 authorization headers, or authenticated response headers.
 
-Outbound Visor calls are proactively limited to 10 requests per rolling 10 seconds
-and 60 requests per rolling minute by default. Override either limit in the process
-environment or `api.env` with `VISOR_REQUESTS_PER_10_SECONDS` and
+Outbound Visor calls are evenly paced to stay within 10 requests per rolling 10
+seconds and 60 requests per rolling minute by default. Override either limit in
+the process environment or `api.env` with `VISOR_REQUESTS_PER_10_SECONDS` and
 `VISOR_REQUESTS_PER_MINUTE`.
 
 DealLens fails with a clear configuration error when the key is missing or still
