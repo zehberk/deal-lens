@@ -34,6 +34,7 @@ from utils.common import make_string_url_safe
 logger = logging.getLogger(__name__)
 from utils.constants import *
 from utils.models import TrimValuation
+from utils.progress import NULL_PROGRESS, ProgressReporter
 
 
 KBB_LOCATOR_TIMEOUT_MS = 10_000
@@ -261,6 +262,7 @@ async def populate_pricing_for_year(
     year: str,
     cache_entries: dict,
     trims: set[str],
+    progress: ProgressReporter = NULL_PROGRESS,
 ) -> str | None:
     # Get MSRP/National FPP first, will return only entries that need an FMV
     natl_data, error = await get_or_fetch_national_pricing(
@@ -361,7 +363,8 @@ async def populate_pricing_for_year(
                         local_trim, kbb_trim,
                     )
             fmr_low, fmr_high, fpp_local, fmv, fpp_source = (
-                await get_or_fetch_local_pricing(
+                await _get_local_pricing_with_progress(
+                    progress,
                     page,
                     year,
                     make,
@@ -430,7 +433,8 @@ async def populate_pricing_for_year(
     for requested_trim in sorted(trims - checked_requested_trims):
         kbb_trim = f"{prefix} {requested_trim}"
         fmr_low, fmr_high, fpp_local, fmv, fpp_source = (
-            await get_or_fetch_local_pricing(
+            await _get_local_pricing_with_progress(
+                progress,
                 page,
                 year,
                 make,
@@ -485,6 +489,31 @@ def _display_price(value: int | None, *, checked: bool) -> str:
     if not checked:
         return "not checked"
     return f"${value:,}" if value is not None else "unavailable"
+
+
+async def _get_local_pricing_with_progress(
+    progress: ProgressReporter,
+    page: Page,
+    year: str,
+    make: str,
+    model_slug: str,
+    trim: str,
+    kbb_trim: str,
+    cache_entries: dict[str, dict],
+    *,
+    source_url: str | None = None,
+):
+    with progress.status(f"KBB local pricing: {year} {trim}"):
+        return await get_or_fetch_local_pricing(
+            page,
+            year,
+            make,
+            model_slug,
+            trim,
+            kbb_trim,
+            cache_entries,
+            source_url=source_url,
+        )
 
 
 def _normalize_kbb_table_trim(
@@ -750,7 +779,14 @@ async def get_trim_valuations_from_scrape(
                     trims.add(trim.lower())
 
                 message = await populate_pricing_for_year(
-                    page, make, model_name, slug, year, cache_entries, trims
+                    page,
+                    make,
+                    model_name,
+                    slug,
+                    year,
+                    cache_entries,
+                    trims,
+                    progress,
                 )
 
                 if message:

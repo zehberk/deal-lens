@@ -107,6 +107,7 @@ async def collect_and_run_level1_api(args: Namespace) -> None:
         model,
         result.collection,
         pricing_cache,
+        progress=progress,
     )
     snapshot = build_market_snapshot(query, result.collection, kbb)
     report_path = await render_level1_market_pdf(snapshot, kbb)

@@ -13,6 +13,7 @@ from utils.cache import is_entry_fresh, load_cache, save_cache
 from utils.common import make_string_url_safe
 from utils.constants import KBB_VARIANT_CACHE, PRICING_CACHE
 from utils.models import TrimValuation
+from utils.progress import NULL_PROGRESS, ProgressReporter
 from visor_api.level1_service import Level1FacetCollection
 
 
@@ -47,6 +48,7 @@ async def get_level1_kbb_valuations(
 	cache: dict,
 	*,
 	cache_path: Path = PRICING_CACHE,
+	progress: ProgressReporter = NULL_PROGRESS,
 ) -> Level1KBBResult:
 	"""Return one cached KBB mapping for every unique Visor year/trim."""
 	trims_by_year = level1_year_trims(facets)
@@ -82,9 +84,15 @@ async def get_level1_kbb_valuations(
 			make, model, len(stale_groups),
 			"" if len(stale_groups) == 1 else "s",
 		)
-		request, browser, context, page = await create_kbb_browser()
+		with progress.status("Starting KBB browser"):
+			request, browser, context, page = await create_kbb_browser()
 		try:
-			for (year, kbb_model), trims in stale_groups.items():
+			for (year, kbb_model), trims in progress.track(
+				stale_groups.items(),
+				total=len(stale_groups),
+				description="Fetching KBB pricing",
+				unit="year/model",
+			):
 				model_key = f"{year} {make} {kbb_model}"
 				slug = slugs.setdefault(model_key, make_string_url_safe(kbb_model))
 				await populate_pricing_for_year(
@@ -95,6 +103,7 @@ async def get_level1_kbb_valuations(
 					str(year),
 					entries,
 					set(trims),
+					progress,
 				)
 		finally:
 			await page.close()

@@ -108,7 +108,7 @@ async def test_level1_api_workflow_forwards_force_and_renders(monkeypatch):
 		"Civic",
 		collection,
 		pricing_cache,
-		{},
+		{"progress": progress},
 	)
 	assert calls["snapshot"] == (query, collection, kbb)
 	assert calls["render"] == (snapshot, kbb)

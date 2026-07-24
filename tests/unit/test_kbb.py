@@ -1,4 +1,5 @@
 from unittest.mock import AsyncMock, MagicMock
+from contextlib import nullcontext
 
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError
@@ -103,6 +104,8 @@ async def test_msrp_only_model_prefixed_row_still_checks_local_fpp(
 ):
 	caplog.set_level("INFO", logger="analysis.kbb")
 	cache_entries = {}
+	progress = MagicMock()
+	progress.status.return_value = nullcontext()
 	local_lookup = AsyncMock(return_value=(36_000, 40_000, 39_500, None, "local"))
 	monkeypatch.setattr(
 		"analysis.kbb.get_or_fetch_national_pricing",
@@ -125,6 +128,7 @@ async def test_msrp_only_model_prefixed_row_still_checks_local_fpp(
 		"2026",
 		cache_entries,
 		{"SE"},
+		progress,
 	)
 
 	local_lookup.assert_awaited_once()
@@ -135,6 +139,7 @@ async def test_msrp_only_model_prefixed_row_still_checks_local_fpp(
 	assert entry["msrp"] == 39_100
 	assert entry["fpp_natl"] is None
 	assert entry["fpp_local"] == 39_500
+	progress.status.assert_called_once_with("KBB local pricing: 2026 SE")
 	assert "2026 Hyundai IONIQ 5 (1 trim found)" in caplog.text
 	assert "MSRP: 1/1 available | National FPP: 0/1 available" in caplog.text
 	assert "SE: Local FPP=$39,500 | FMV=unavailable" in caplog.text
