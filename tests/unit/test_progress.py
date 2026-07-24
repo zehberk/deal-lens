@@ -57,3 +57,21 @@ def test_rich_status_can_render_inside_active_progress():
 	assert "Waiting for rate limit" in rendered
 	assert "Fetching API data" in rendered
 	assert "0/?" not in rendered
+
+
+def test_indeterminate_progress_hides_counts_and_timers():
+	output = StringIO()
+	reporter = RichProgressReporter(Console(
+		file=output,
+		force_terminal=True,
+		color_system=None,
+		width=100,
+	))
+
+	assert list(reporter.track(
+		[1, 2, 3], description="Fetching KBB pricing", total=None, unit=""
+	)) == [1, 2, 3]
+	rendered = output.getvalue()
+	assert "Fetching KBB pricing" in rendered
+	assert "0/?" not in rendered
+	assert "0:00" not in rendered

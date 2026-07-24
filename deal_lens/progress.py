@@ -12,16 +12,38 @@ from rich.progress import (
 	TaskID,
 	SpinnerColumn,
 	TaskProgressColumn,
+	Task,
 	TextColumn,
 	TimeElapsedColumn,
 	TimeRemainingColumn,
 )
+from rich.text import Text
 
 from utils.progress import ProgressReporter
 
 
 T = TypeVar("T")
 CLI_CONSOLE = Console(stderr=True)
+
+
+class _DeterminateMofNColumn(MofNCompleteColumn):
+	def render(self, task: Task) -> Text:
+		return super().render(task) if task.total is not None else Text("")
+
+
+class _DeterminatePercentColumn(TaskProgressColumn):
+	def render(self, task: Task) -> Text:
+		return super().render(task) if task.total is not None else Text("")
+
+
+class _DeterminateElapsedColumn(TimeElapsedColumn):
+	def render(self, task: Task) -> Text:
+		return super().render(task) if task.total is not None else Text("")
+
+
+class _DeterminateRemainingColumn(TimeRemainingColumn):
+	def render(self, task: Task) -> Text:
+		return super().render(task) if task.total is not None else Text("")
 
 
 class RichProgressReporter:
@@ -57,10 +79,10 @@ class RichProgressReporter:
 			SpinnerColumn(),
 			TextColumn("[progress.description]{task.description}"),
 			BarColumn(),
-			MofNCompleteColumn(),
-			TaskProgressColumn(),
-			TimeElapsedColumn(),
-			TimeRemainingColumn(),
+			_DeterminateMofNColumn(),
+			_DeterminatePercentColumn(),
+			_DeterminateElapsedColumn(),
+			_DeterminateRemainingColumn(),
 			TextColumn("{task.fields[unit]}"),
 		)
 		with Progress(*columns, console=self.console) as display:

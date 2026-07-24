@@ -89,9 +89,9 @@ async def get_level1_kbb_valuations(
 		try:
 			for (year, kbb_model), trims in progress.track(
 				stale_groups.items(),
-				total=len(stale_groups),
+				total=None,
 				description="Fetching KBB pricing",
-				unit="year/model",
+				unit="",
 			):
 				model_key = f"{year} {make} {kbb_model}"
 				slug = slugs.setdefault(model_key, make_string_url_safe(kbb_model))
