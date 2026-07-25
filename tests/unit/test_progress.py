@@ -34,7 +34,7 @@ def test_rich_progress_renders_description_and_completion():
 	rendered = output.getvalue()
 	assert "Fetching listings" in rendered
 	assert "2/2" in rendered
-	assert "listing" in rendered
+	assert "listing" not in rendered.replace("Fetching listings", "")
 
 
 def test_rich_status_can_render_inside_active_progress():

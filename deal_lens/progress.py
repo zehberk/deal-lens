@@ -15,7 +15,6 @@ from rich.progress import (
 	Task,
 	TextColumn,
 	TimeElapsedColumn,
-	TimeRemainingColumn,
 )
 from rich.text import Text
 
@@ -37,11 +36,6 @@ class _DeterminatePercentColumn(TaskProgressColumn):
 
 
 class _DeterminateElapsedColumn(TimeElapsedColumn):
-	def render(self, task: Task) -> Text:
-		return super().render(task) if task.total is not None else Text("")
-
-
-class _DeterminateRemainingColumn(TimeRemainingColumn):
 	def render(self, task: Task) -> Text:
 		return super().render(task) if task.total is not None else Text("")
 
@@ -82,8 +76,6 @@ class RichProgressReporter:
 			_DeterminateMofNColumn(),
 			_DeterminatePercentColumn(),
 			_DeterminateElapsedColumn(),
-			_DeterminateRemainingColumn(),
-			TextColumn("{task.fields[unit]}"),
 		)
 		with Progress(*columns, console=self.console) as display:
 			self._active_display = display
