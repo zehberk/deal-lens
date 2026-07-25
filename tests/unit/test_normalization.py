@@ -54,3 +54,30 @@ def test_filter_keeps_failed_lookup_when_no_usable_trim_identity_matches():
 
 	assert valid == []
 	assert skipped == [listing]
+
+
+def test_filter_does_not_collapse_specialty_trim_to_partial_identity():
+	listing = {
+		"id": "standard-range",
+		"year": 2025,
+		"trim": "SE Standard Range",
+		"price": 25_000,
+	}
+	failed_key = "2025 Hyundai IONIQ 5 SE Standard Range"
+	entries = {
+		"2025 Hyundai IONIQ 5 SE": {
+			"natl_source": "https://kbb.com/hyundai/ioniq-5/2025/",
+		},
+		failed_key: {
+			"natl_source": "https://kbb.com/hyundai/ioniq-5/2025/",
+			"skip_reason": "Pricing unavailable.",
+		},
+	}
+	variant_map = {"2025 Hyundai IONIQ 5": [listing]}
+
+	valid, skipped, _ = filter_valid_listings(
+		"Hyundai", "IONIQ 5", [listing], entries, variant_map
+	)
+
+	assert valid == []
+	assert skipped == [listing]

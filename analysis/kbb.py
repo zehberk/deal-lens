@@ -19,7 +19,11 @@ from utils.cache import (
     is_natl_fresh,
     save_cache,
 )
-from analysis.normalization import best_kbb_trim_match, get_variant_map
+from analysis.normalization import (
+    best_kbb_trim_match,
+    get_variant_map,
+    kbb_trim_identity_matches,
+)
 from analysis.analysis_utils import (
     extract_years,
     get_relevant_entries,
@@ -325,7 +329,7 @@ async def populate_pricing_for_year(
     )
 
     best_matches: dict[str, str] = {}
-    checked_requested_trims: set[str] = set()
+    matched_requested_trims: set[str] = set()
     all_kbb_trims = [kbb_trim[0] for kbb_trim in natl_data]
     # Let exact labels claim their national row before fuzzy matches. Otherwise a
     # missing trim can incorrectly consume another trim's row (for example XRT
@@ -340,8 +344,9 @@ async def populate_pricing_for_year(
     )
     for trim in ordered_trims:
         best_match = best_kbb_trim_match(trim, all_kbb_trims)
-        if best_match:
+        if best_match and kbb_trim_identity_matches(trim, best_match):
             best_matches.setdefault(best_match, trim)
+            matched_requested_trims.add(trim)
         else:
             logger.warning("    No trim match: %s %s", year, trim)
 
@@ -386,7 +391,6 @@ async def populate_pricing_for_year(
                 )
             )
             local_ts = datetime.now().isoformat()
-            checked_requested_trims.add(requested_trim)
         else:
             if not natl_fpp or natl_fpp == "TBD":
                 error = f"No national pricing data for {kbb_trim}"
@@ -438,9 +442,7 @@ async def populate_pricing_for_year(
             logger.warning("      No pricing data available")
 
     # A partial national table must not suppress a valid local-price lookup.
-    # This also covers multiple requested trims that KBB's matcher maps to the
-    # same national row.
-    for requested_trim in sorted(trims - checked_requested_trims):
+    for requested_trim in sorted(trims - matched_requested_trims):
         kbb_trim = f"{prefix} {requested_trim}"
         fmr_low, fmr_high, fpp_local, fmv, fpp_source = (
             await _get_local_pricing_with_progress(

@@ -184,6 +184,15 @@ def best_kbb_trim_match(visor_trim: str, kbb_trims: list[str]) -> str | None:
     return best_trim
 
 
+def kbb_trim_identity_matches(visor_trim: str, kbb_trim: str) -> bool:
+    """Return whether a KBB row contains the listing's full trim identity."""
+    if visor_trim.casefold() == kbb_trim.casefold():
+        return True
+    visor_tokens = set(TrimProfile.from_string(visor_trim).tokens) - DRIVETRAINS
+    kbb_tokens = set(TrimProfile.from_string(kbb_trim).tokens)
+    return bool(visor_tokens) and visor_tokens <= kbb_tokens
+
+
 def _best_usable_kbb_trim_match(
     visor_trim: str, entries: dict[str, dict]
 ) -> str | None:
@@ -199,9 +208,11 @@ def _best_usable_kbb_trim_match(
     if not usable_key:
         return cache_key
 
-    visor_tokens = set(TrimProfile.from_string(visor_trim).tokens)
-    usable_tokens = set(TrimProfile.from_string(usable_key).tokens)
-    return usable_key if visor_tokens & usable_tokens else cache_key
+    return (
+        usable_key
+        if kbb_trim_identity_matches(visor_trim, usable_key)
+        else cache_key
+    )
 
 
 async def get_variant_map(

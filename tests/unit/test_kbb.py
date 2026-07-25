@@ -177,6 +177,43 @@ async def test_partial_national_table_checks_every_requested_trim_locally(monkey
 	assert checked_trims == {"SE", "XRT"}
 
 
+async def test_detailed_trim_alias_uses_matching_national_table_row(monkeypatch):
+	cache_entries = {}
+	local_lookup = AsyncMock(
+		return_value=(29_000, 32_000, 30_520, None, "local")
+	)
+	monkeypatch.setattr(
+		"analysis.kbb.get_or_fetch_national_pricing",
+		AsyncMock(return_value=([(
+			"Limited Sport Utility 4D",
+			"$54,875",
+			"$30,400",
+			"https://kbb.com/hyundai/ioniq-5/2024/",
+			"/hyundai/ioniq-5/2024/limited-sport-utility-4d/",
+			"2026-01-01T00:00:00",
+		)], None)),
+	)
+	monkeypatch.setattr("analysis.kbb.get_or_fetch_local_pricing", local_lookup)
+
+	await populate_pricing_for_year(
+		AsyncMock(),
+		"Hyundai",
+		"IONIQ 5",
+		"ioniq-5",
+		"2024",
+		cache_entries,
+		{"Limited", "limited awd"},
+	)
+
+	local_lookup.assert_awaited_once()
+	await_args = local_lookup.await_args
+	assert await_args is not None
+	assert await_args.args[4] == "Limited Sport Utility 4D"
+	assert set(cache_entries) == {
+		"2024 Hyundai IONIQ 5 Limited Sport Utility 4D"
+	}
+
+
 async def test_national_trim_link_is_preferred_and_saved_without_local_lookup(
 	monkeypatch, caplog,
 ):
