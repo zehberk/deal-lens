@@ -60,6 +60,12 @@ unavailable; they do not prevent DealLens from checking local trim pricing. The
 KBB page and its embedded price advisor retain the browser context supplied by
 KBB; DealLens does not inject or cache a postal code for KBB pricing.
 
+For used and certified Level 2 listings, DealLens submits an already-collected
+listing VIN to KBB to resolve KBB's exact used style (for example, `LUXE Sport
+Utility 4D`). It validates that the resulting pricing page is a used-vehicle page
+and does not substitute KBB's new-car national Fair Purchase Price when style
+resolution fails. This KBB lookup does not add a Visor API request.
+
 Each `deal-lens` invocation writes a timestamped DEBUG diagnostic log under
 `logs/`. The log records the command arguments and KBB national, trim, and
 price-advisor source URLs for later verification. Logging at every severity is
@@ -124,6 +130,7 @@ count and ETA; operations whose size is not yet known use a spinner. Redirected
 and non-interactive output remains free of animated progress displays. When a
 configured Visor rolling-window limit is reached, the active display identifies
 the rate-limit wait and its duration before requests resume.
+Every command prints its total wall-clock runtime when it finishes.
 
 The standalone `level1`, `level2`, and `level3` commands analyze the latest
 compatible saved data in `output/raw`; normal acquisition should use `deal-lens`.

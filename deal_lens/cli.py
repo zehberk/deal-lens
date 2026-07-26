@@ -1,4 +1,4 @@
-import argparse, asyncio, json, logging, os, subprocess, sys
+import argparse, asyncio, json, logging, os, subprocess, sys, time
 
 from argparse import Namespace
 from datetime import datetime
@@ -260,6 +260,34 @@ async def scrape(args: Namespace) -> None:
     raise ValueError("An analysis level is required")
 
 
+def format_runtime(seconds: float) -> str:
+    """Format an elapsed wall-clock duration for concise CLI output."""
+    total_seconds = max(seconds, 0.0)
+    hours, remainder = divmod(total_seconds, 3_600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours >= 1:
+        return f"{int(hours)}h {int(minutes)}m {seconds:.1f}s"
+    if minutes >= 1:
+        return f"{int(minutes)}m {seconds:.1f}s"
+    return f"{seconds:.1f}s"
+
+
+async def run_with_runtime(
+    args: Namespace,
+    *,
+    clock=time.perf_counter,
+) -> None:
+    """Run one command and always report its total wall-clock duration."""
+    started_at = clock()
+    try:
+        await scrape(args)
+    finally:
+        elapsed = clock() - started_at
+        display = format_runtime(elapsed)
+        CLI_CONSOLE.print(f"[bold green]Total runtime:[/] {display}")
+        logging.getLogger(__name__).info("Total runtime: %s", display)
+
+
 def apply_url_to_args(args: Namespace) -> Namespace:
     if not args.url:
         logging.error("You must provide a URL")
@@ -325,7 +353,7 @@ def main():  # pragma: no cover
     args = parser.parse_args(raw_args)
     configure_logging(raw_args)
     args = apply_url_to_args(args)
-    asyncio.run(scrape(args))
+    asyncio.run(run_with_runtime(args))
 
 
 if __name__ == "__main__":  # pragma: no cover
