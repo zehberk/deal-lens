@@ -376,6 +376,11 @@ def launch_chrome(port: int, user_data_dir: str):
         "--disable-features=SigninIntercept,SignInProfileCreation,AccountConsistency,ChromeWhatsNewUI",
         "about:blank",
     ]
+    if platform.system() == "Windows":
+        startup_info = subprocess.STARTUPINFO()
+        startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startup_info.wShowWindow = subprocess.SW_HIDE
+        return subprocess.Popen(args, startupinfo=startup_info)
     return subprocess.Popen(args)
 
 

@@ -56,6 +56,8 @@ workflows; it is not used to authenticate to Visor or replace the Visor API.
 VIN resolution and KBB price gathering run installed Google Chrome in headless
 mode with a normal browser context; KBB rejects Playwright's bundled headless
 Chromium at its edge layer.
+CARFAX requires headed Chrome, so on Windows DealLens starts its native browser
+window hidden to prevent it from appearing or taking focus during report downloads.
 KBB browser navigation is bounded to 30 seconds across retries, while individual
 DOM locator waits are bounded to 10 seconds, with up to 30 seconds for KBB's
 dynamically rendered price advisor. Missing national fair-purchase prices remain
