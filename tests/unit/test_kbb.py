@@ -9,9 +9,121 @@ from analysis.kbb import (
 	get_or_fetch_national_pricing,
 	get_or_fetch_local_pricing,
 	get_price_advisor_values,
+	get_used_style_url_from_vins,
 	goto_with_retry,
 	populate_pricing_for_year,
 )
+
+
+async def test_vin_lookup_resolves_exact_used_style_url():
+	page = MagicMock()
+	page.goto = AsyncMock()
+	page.wait_for_url = AsyncMock()
+	page.wait_for_function = AsyncMock()
+	page.inner_text = AsyncMock(return_value=(
+		"2025 INFINITI QX55\nStyle:\nLUXE Sport Utility 4D\nEngine:\n2.0L"
+	))
+	page.url = (
+		"https://www.kbb.com/infiniti/qx55/2025/vin/"
+		"?intent=trade-in-sell&vin=test"
+	)
+	vin_mode = MagicMock()
+	vin_mode.check = AsyncMock()
+	vin_input = MagicMock()
+	vin_input.fill = AsyncMock()
+	submit = MagicMock()
+	submit.click = AsyncMock()
+	page.locator.side_effect = lambda selector: {
+		"input#vinButton": vin_mode,
+		'input[data-lean-auto="vinInput"]': vin_input,
+		'button[data-lean-auto="vinSubmitBtn"]': submit,
+	}[selector]
+
+	result = await get_used_style_url_from_vins(
+		page, "2025", "INFINITI", "qx55", ["TESTVIN"]
+	)
+
+	assert result == (
+		"LUXE Sport Utility 4D",
+		"https://kbb.com/infiniti/qx55/2025/luxe-sport-utility-4d/",
+	)
+	vin_input.fill.assert_awaited_once_with("TESTVIN")
+	page.wait_for_url.assert_awaited_once_with(
+		"**/vin/**", wait_until="commit", timeout=30_000
+	)
+
+
+async def test_used_lookup_rejects_new_kbb_page(monkeypatch):
+	page = MagicMock()
+	page.goto = AsyncMock()
+	heading = MagicMock()
+	heading.first = heading
+	heading.inner_text = AsyncMock(return_value="2025 INFINITI QX55 LUXE")
+	page.locator.return_value = heading
+	price_advisor = AsyncMock(return_value=(40_000, 46_000, 45_600))
+	monkeypatch.setattr("analysis.kbb.get_price_advisor_values", price_advisor)
+
+	result = await get_or_fetch_local_pricing(
+		page,
+		"2025",
+		"INFINITI",
+		"qx55",
+		"LUXE Sport Utility 4D",
+		"2025 INFINITI QX55 LUXE",
+		{},
+		source_url="https://kbb.com/infiniti/qx55/2025/luxe/",
+		expect_used=True,
+	)
+
+	assert result == (None, None, None, None, None)
+	price_advisor.assert_not_awaited()
+
+
+async def test_used_trim_uses_vin_style_and_suppresses_new_national_fpp(monkeypatch):
+	cache_entries = {}
+	local_lookup = AsyncMock(return_value=(32_000, 36_000, 34_300, 32_800, (
+		"https://kbb.com/infiniti/qx55/2025/luxe-sport-utility-4d/"
+	)))
+	monkeypatch.setattr(
+		"analysis.kbb.get_or_fetch_national_pricing",
+		AsyncMock(return_value=([(
+			"LUXE",
+			"$51,500",
+			"$45,600",
+			"https://kbb.com/infiniti/qx55/2025/",
+			"/infiniti/qx55/2025/luxe/",
+			"2026-01-01T00:00:00",
+		)], None)),
+	)
+	monkeypatch.setattr("analysis.kbb.get_or_fetch_local_pricing", local_lookup)
+
+	await populate_pricing_for_year(
+		AsyncMock(),
+		"INFINITI",
+		"QX55",
+		"qx55",
+		"2025",
+		cache_entries,
+		{"luxe"},
+		used_style_urls={"luxe": (
+			"LUXE Sport Utility 4D",
+			"https://kbb.com/infiniti/qx55/2025/luxe-sport-utility-4d/",
+		)},
+	)
+
+	await_args = local_lookup.await_args
+	assert await_args is not None
+	assert await_args.args[4] == "LUXE Sport Utility 4D"
+	assert await_args.kwargs == {
+		"source_url": (
+			"https://kbb.com/infiniti/qx55/2025/luxe-sport-utility-4d/"
+		),
+		"expect_used": True,
+	}
+	entry = cache_entries["2025 INFINITI QX55 LUXE"]
+	assert entry["pricing_basis"] == "used"
+	assert entry["fpp_natl"] is None
+	assert entry["fpp_local"] == 34_300
 
 
 async def test_local_pricing_waits_for_delayed_resale_value(monkeypatch):

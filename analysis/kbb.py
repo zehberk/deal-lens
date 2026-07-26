@@ -70,39 +70,69 @@ async def get_model_slug_map(
     return relevant_slugs
 
 
-async def get_model_slug_from_vins(page: Page, model_key: str, vins: list[str]) -> str:
-    await page.goto(KBB_WHATS_MY_CAR_WORTH_URL)
-
-    # Ensure VIN mode is selected
-    await page.locator("input#vinButton").check()
-
-    # Enter VIN
+async def get_used_style_url_from_vins(
+    page: Page,
+    year: str,
+    make: str,
+    model_slug: str,
+    vins: list[str],
+) -> tuple[str, str] | None:
+    """Resolve KBB's canonical used style label and URL from an existing VIN."""
+    expected_path = f"/{make_string_url_safe(make)}/{model_slug}/{year}/vin/"
     for vin in vins:
+        if not vin:
+            continue
         try:
-            await page.fill('input[data-lean-auto="vinInput"]', vin)
-            await page.wait_for_timeout(500)
+            await page.goto(
+                KBB_WHATS_MY_CAR_WORTH_URL,
+                wait_until="domcontentloaded",
+                timeout=KBB_NAVIGATION_TIMEOUT_MS,
+            )
+            await page.locator("input#vinButton").check()
+            await page.locator('input[data-lean-auto="vinInput"]').fill(vin)
             await page.locator('button[data-lean-auto="vinSubmitBtn"]').click(
                 force=True
             )
-
-            # Wait for redirect
-            await page.wait_for_url("**/vin/**", timeout=5000)
-
-            # Extract canonical URL
-            vin_url = page.url
-
-            # Parse out the slug portion
-            parts = vin_url.split("/")
-            model_slug = parts[4]
-            return make_string_url_safe(model_slug)
-        except TimeoutError as t:
-            # print(f"Could not model slug from VINs: {model_key}", t)
-            mesg = f"Could not model slug from VINs: {model_key}"
-
-    print(
-        f"No models could be mapped for {model_key}. This vehicle's information does not appear on KBB."
-    )
-    return ""
+            await page.wait_for_url(
+                "**/vin/**",
+                wait_until="commit",
+                timeout=KBB_NAVIGATION_TIMEOUT_MS,
+            )
+            parsed = urllib.parse.urlparse(page.url)
+            if parsed.path.casefold() != expected_path.casefold():
+                logger.warning(
+                    "KBB VIN resolved to unexpected vehicle path for %s %s %s: %s",
+                    year, make, model_slug, page.url,
+                )
+                continue
+            await page.wait_for_function(
+                r"""() => /(?:^|\n)Style:\s*(?:\n\s*)?[^\n]+/i.test(
+                    document.body?.innerText || ""
+                )""",
+                timeout=KBB_LOCATOR_TIMEOUT_MS,
+            )
+            body = await page.inner_text("body", timeout=KBB_LOCATOR_TIMEOUT_MS)
+            style_match = re.search(
+                r"(?:^|\n)Style:\s*\n?\s*([^\n]+)", body, re.IGNORECASE
+            )
+            if not style_match:
+                logger.warning("KBB VIN result did not provide a style for %s", vin)
+                continue
+            style = style_match.group(1).strip()
+            style_url = KBB_LOOKUP_TRIM_URL.format(
+                make=make_string_url_safe(make),
+                model=model_slug,
+                year=year,
+                trim=make_string_url_safe(style),
+            )
+            logger.debug(
+                "KBB VIN resolved %s %s %s to used style %s: %s",
+                year, make, model_slug, style, style_url,
+            )
+            return style, style_url
+        except (PlaywrightError, TimeoutError) as error:
+            logger.warning("KBB VIN lookup failed for %s: %s", vin, error)
+    return None
 
 
 async def goto_with_retry(
@@ -277,6 +307,7 @@ async def populate_pricing_for_year(
     cache_entries: dict,
     trims: set[str],
     progress: ProgressReporter = NULL_PROGRESS,
+    used_style_urls: dict[str, tuple[str, str] | None] | None = None,
 ) -> str | None:
     # Get MSRP/National FPP first, will return only entries that need an FMV
     natl_data, error = await get_or_fetch_national_pricing(
@@ -298,6 +329,7 @@ async def populate_pricing_for_year(
         ]
 
     prefix = f"{year} {make} {model}"
+    used_style_urls = used_style_urls or {}
     natl_data = [
         (
             _normalize_kbb_table_trim(table_trim, year, make, model),
@@ -367,6 +399,13 @@ async def populate_pricing_for_year(
         if table_trim in best_matches:
             requested_trim = best_matches[table_trim]
             local_trim = table_trim
+            used_resolution = used_style_urls.get(requested_trim)
+            is_used_pricing = requested_trim in used_style_urls
+            if used_resolution:
+                local_trim, resolved_trim_source = used_resolution
+            elif is_used_pricing:
+                resolved_trim_source = None
+                fpp_source = None
             if make_string_url_safe(table_trim) == model_slug:
                 previous_trim = _previous_local_trim(
                     cache_entries, make, model, year, requested_trim
@@ -377,19 +416,21 @@ async def populate_pricing_for_year(
                         "Using prior-year KBB trim path %s for %s",
                         local_trim, kbb_trim,
                     )
-            fmr_low, fmr_high, fpp_local, fmv, fpp_source = (
-                await _get_local_pricing_with_progress(
-                    progress,
-                    page,
-                    year,
-                    make,
-                    model_slug,
-                    local_trim,
-                    kbb_trim,
-                    cache_entries,
-                    source_url=resolved_trim_source,
+            if not is_used_pricing or used_resolution:
+                fmr_low, fmr_high, fpp_local, fmv, fpp_source = (
+                    await _get_local_pricing_with_progress(
+                        progress,
+                        page,
+                        year,
+                        make,
+                        model_slug,
+                        local_trim,
+                        kbb_trim,
+                        cache_entries,
+                        source_url=resolved_trim_source,
+                        expect_used=is_used_pricing,
+                    )
                 )
-            )
             local_ts = datetime.now().isoformat()
         else:
             if not natl_fpp or natl_fpp == "TBD":
@@ -406,7 +447,11 @@ async def populate_pricing_for_year(
         entry["kbb_trim"] = kbb_trim
 
         entry["msrp"] = to_int(msrp)
-        entry["fpp_natl"] = natl_val
+        is_used_pricing = (
+            table_trim in best_matches
+            and best_matches[table_trim] in used_style_urls
+        )
+        entry["fpp_natl"] = None if is_used_pricing else natl_val
 
         entry["fmr_low"] = fmr_low
         entry["fmr_high"] = fmr_high
@@ -414,13 +459,16 @@ async def populate_pricing_for_year(
         entry["fmv"] = fmv
         entry["natl_source"] = natl_source
         entry["local_source"] = fpp_source
-        if not any((entry["msrp"], natl_val, fpp_local)):
-            entry["skip_reason"] = f"There is currently no pricing data for this trim."
+        entry["pricing_basis"] = "used" if is_used_pricing else "new"
+        if is_used_pricing and not used_style_urls.get(best_matches[table_trim]):
+            entry["skip_reason"] = "KBB used style could not be resolved from VIN."
+        elif not any((entry["msrp"], entry["fpp_natl"], fpp_local, fmv)):
+            entry["skip_reason"] = "There is currently no pricing data for this trim."
         else:
             entry.pop("skip_reason", None)
             logger.debug(
                 "KBB pricing saved for %s: msrp=%s national_fpp=%s local_fpp=%s",
-                kbb_trim, entry["msrp"], natl_val, fpp_local,
+                kbb_trim, entry["msrp"], entry["fpp_natl"], fpp_local,
             )
 
         entry["natl_timestamp"] = natl_ts
@@ -444,24 +492,34 @@ async def populate_pricing_for_year(
     # A partial national table must not suppress a valid local-price lookup.
     for requested_trim in sorted(trims - matched_requested_trims):
         kbb_trim = f"{prefix} {requested_trim}"
-        fmr_low, fmr_high, fpp_local, fmv, fpp_source = (
-            await _get_local_pricing_with_progress(
-                progress,
-                page,
-                year,
-                make,
-                model_slug,
-                requested_trim,
-                kbb_trim,
-                cache_entries,
+        used_resolution = used_style_urls.get(requested_trim)
+        is_used_pricing = requested_trim in used_style_urls
+        if is_used_pricing and not used_resolution:
+            fmr_low = fmr_high = fpp_local = fmv = fpp_source = None
+        else:
+            local_trim, source_url = (
+                used_resolution if used_resolution else (requested_trim, None)
             )
-        )
+            fmr_low, fmr_high, fpp_local, fmv, fpp_source = (
+                await _get_local_pricing_with_progress(
+                    progress,
+                    page,
+                    year,
+                    make,
+                    model_slug,
+                    local_trim,
+                    kbb_trim,
+                    cache_entries,
+                    source_url=source_url,
+                    expect_used=is_used_pricing,
+                )
+            )
         entry = cache_entries.setdefault(kbb_trim, {})
         entry.update({
             "model": model,
             "kbb_trim": kbb_trim,
             "msrp": entry.get("msrp"),
-            "fpp_natl": entry.get("fpp_natl"),
+            "fpp_natl": None if is_used_pricing else entry.get("fpp_natl"),
             "fmr_low": fmr_low,
             "fmr_high": fmr_high,
             "fpp_local": fpp_local,
@@ -474,10 +532,13 @@ async def populate_pricing_for_year(
                 )
             ),
             "local_source": fpp_source,
+            "pricing_basis": "used" if is_used_pricing else "new",
             "natl_timestamp": entry.get("natl_timestamp"),
             "local_timestamp": datetime.now().isoformat(),
         })
-        if any((entry["msrp"], entry["fpp_natl"], fpp_local)):
+        if is_used_pricing and not used_resolution:
+            entry["skip_reason"] = "KBB used style could not be resolved from VIN."
+        elif any((entry["msrp"], entry["fpp_natl"], fpp_local, fmv)):
             entry.pop("skip_reason", None)
         else:
             entry["skip_reason"] = "There is currently no pricing data for this trim."
@@ -514,6 +575,7 @@ async def _get_local_pricing_with_progress(
     cache_entries: dict[str, dict],
     *,
     source_url: str | None = None,
+    expect_used: bool = False,
 ):
     with progress.status(f"KBB local pricing: {year} {trim}"):
         return await get_or_fetch_local_pricing(
@@ -525,6 +587,7 @@ async def _get_local_pricing_with_progress(
             kbb_trim,
             cache_entries,
             source_url=source_url,
+            expect_used=expect_used,
         )
 
 
@@ -585,11 +648,13 @@ async def get_or_fetch_local_pricing(
     cache_entries: dict[str, dict],
     *,
     source_url: str | None = None,
+    expect_used: bool = False,
 ):
     entry = cache_entries.setdefault(kbb_trim, {})
 
     # Check cache first
-    if is_entry_fresh(entry):
+    expected_basis = "used" if expect_used else "new"
+    if is_entry_fresh(entry) and entry.get("pricing_basis", "new") == expected_basis:
         logger.debug(
             "Using cached local KBB pricing for %s: %s",
             kbb_trim, entry.get("local_source") or "source unavailable",
@@ -628,6 +693,21 @@ async def get_or_fetch_local_pricing(
         )
         return fmr_low, fmr_high, fpp_local, fmv, local_url
 
+    if expect_used:
+        heading = await page.locator("h1").first.inner_text(
+            timeout=KBB_LOCATOR_TIMEOUT_MS
+        )
+        normalized_heading = heading.strip().casefold()
+        if (
+            not normalized_heading.startswith("used ")
+            or kbb_trim.casefold() not in normalized_heading
+        ):
+            logger.warning(
+                "Rejected non-used KBB page for %s: %s (%s)",
+                kbb_trim, heading.strip(), local_url,
+            )
+            return fmr_low, fmr_high, fpp_local, fmv, None
+
     fmr_low, fmr_high, fpp_local = await get_price_advisor_values(page)
 
     # Resale value is independent of the local purchase-price advisor. A missing
@@ -648,6 +728,13 @@ async def get_or_fetch_local_pricing(
     match = re.search(r"current resale value of \$([\d,]+)", depreciation_text)
     if match:
         fmv = int(match.group(1).replace(",", ""))
+    if expect_used and fpp_local is None:
+        purchase_match = re.search(
+            r"Fair Purchase Price\s*\$([\d,]+)", depreciation_text,
+            re.IGNORECASE,
+        )
+        if purchase_match:
+            fpp_local = int(purchase_match.group(1).replace(",", ""))
     if fmv is None:
         logger.debug("KBB resale value is missing for %s", kbb_trim)
     logger.debug(
@@ -785,6 +872,7 @@ async def get_trim_valuations_from_scrape(
                 model_name = make_model.replace(make, "").strip()
 
                 trims: set[str] = set()
+                used_vins_by_trim: dict[str, list[str]] = {}
                 for variant in variant_map.get(ymm, []):
                     trim_version = variant.get(
                         "trim_version",
@@ -795,7 +883,20 @@ async def get_trim_valuations_from_scrape(
                         if is_trim_version_valid(trim_version)
                         else variant["trim"]
                     )
-                    trims.add(trim.lower())
+                    normalized_trim = trim.lower()
+                    trims.add(normalized_trim)
+                    if str(variant.get("condition", "")).casefold() in {
+                        "used", "certified", "cpo",
+                    }:
+                        vin = str(variant.get("vin", "") or "")
+                        if vin:
+                            used_vins_by_trim.setdefault(normalized_trim, []).append(vin)
+
+                used_style_urls: dict[str, tuple[str, str] | None] = {}
+                for trim, vins in used_vins_by_trim.items():
+                    used_style_urls[trim] = await get_used_style_url_from_vins(
+                        page, year, make, slug, vins
+                    )
 
                 message = await populate_pricing_for_year(
                     page,
@@ -806,6 +907,7 @@ async def get_trim_valuations_from_scrape(
                     cache_entries,
                     trims,
                     progress,
+                    used_style_urls,
                 )
 
                 if message:
@@ -873,9 +975,41 @@ async def get_pricing_data(
     for y in years:
         relevant_entries[y] = get_relevant_entries(cache_entries, make, model, y)
 
-    if cache_covers_all(list(variant_map.keys()), relevant_entries, cache):
+    used_listings = [
+        listing for listing in norm_listings
+        if str(listing.get("condition", "")).casefold() in {
+            "used", "certified", "cpo",
+        }
+    ]
+    used_cache_is_compatible = all(
+        _used_listing_has_cached_pricing(listing, make, model, cache_entries)
+        for listing in used_listings
+    )
+    if (
+        cache_covers_all(list(variant_map.keys()), relevant_entries, cache)
+        and used_cache_is_compatible
+    ):
         return get_trim_valuations_from_cache(make, model, years, cache_entries)
 
     return await get_trim_valuations_from_scrape(
         make, model, slugs, norm_listings, cache_entries, cache
     )
+
+
+def _used_listing_has_cached_pricing(
+    listing: dict,
+    make: str,
+    model: str,
+    cache_entries: dict[str, dict],
+) -> bool:
+    year = str(listing.get("year", ""))
+    entries = get_relevant_entries(cache_entries, make, model, year)
+    prefix = f"{year} {make} {model} "
+    candidates = [
+        key[len(prefix):] if key.casefold().startswith(prefix.casefold()) else key
+        for key, entry in entries.items()
+        if entry.get("pricing_basis") == "used" and is_entry_fresh(entry)
+    ]
+    trim = str(listing.get("trim_version") or listing.get("trim") or "")
+    match = best_kbb_trim_match(trim, candidates)
+    return bool(match and kbb_trim_identity_matches(trim, match))
