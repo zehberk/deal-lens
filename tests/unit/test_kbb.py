@@ -6,6 +6,8 @@ from playwright.async_api import TimeoutError
 
 from analysis.kbb import (
 	_previous_local_trim,
+	_used_listing_has_cached_pricing,
+	create_kbb_browser,
 	get_or_fetch_national_pricing,
 	get_or_fetch_local_pricing,
 	get_price_advisor_values,
@@ -13,6 +15,52 @@ from analysis.kbb import (
 	goto_with_retry,
 	populate_pricing_for_year,
 )
+
+
+async def test_kbb_browser_launches_headless(monkeypatch):
+	playwright = MagicMock()
+	playwright.request.new_context = AsyncMock(return_value=MagicMock())
+	browser = MagicMock()
+	context = MagicMock()
+	context.route = AsyncMock()
+	context.new_page = AsyncMock(return_value=MagicMock())
+	browser.new_context = AsyncMock(return_value=context)
+	playwright.chromium.launch = AsyncMock(return_value=browser)
+	playwright_starter = MagicMock()
+	playwright_starter.start = AsyncMock(return_value=playwright)
+	playwright_factory = MagicMock(return_value=playwright_starter)
+	monkeypatch.setattr("analysis.kbb.async_playwright", playwright_factory)
+
+	await create_kbb_browser()
+
+	launch_call = playwright.chromium.launch.await_args
+	assert launch_call is not None
+	assert launch_call.kwargs["headless"] is True
+	assert launch_call.kwargs["channel"] == "chrome"
+	browser.new_context.assert_awaited_once()
+	context_call = browser.new_context.await_args
+	assert context_call is not None
+	assert "HeadlessChrome" not in context_call.kwargs["user_agent"]
+
+
+def test_failed_used_cache_entry_does_not_suppress_retry(monkeypatch):
+	monkeypatch.setattr("analysis.kbb.is_entry_fresh", lambda entry: True)
+	entries = {
+		"2025 INFINITI QX55 luxe awd": {
+			"model": "QX55",
+			"pricing_basis": "used",
+			"skip_reason": "KBB used style could not be resolved from VIN.",
+			"msrp": None,
+			"fpp_natl": None,
+			"fpp_local": None,
+			"fmv": None,
+		},
+	}
+	listing = {"year": 2025, "trim": "luxe awd"}
+
+	assert not _used_listing_has_cached_pricing(
+		listing, "INFINITI", "QX55", entries
+	)
 
 
 async def test_vin_lookup_resolves_exact_used_style_url():
@@ -79,7 +127,7 @@ async def test_used_lookup_rejects_new_kbb_page(monkeypatch):
 	price_advisor.assert_not_awaited()
 
 
-async def test_used_trim_uses_vin_style_and_suppresses_new_national_fpp(monkeypatch):
+async def test_used_trim_uses_vin_style_and_retains_national_fpp(monkeypatch):
 	cache_entries = {}
 	local_lookup = AsyncMock(return_value=(32_000, 36_000, 34_300, 32_800, (
 		"https://kbb.com/infiniti/qx55/2025/luxe-sport-utility-4d/"
@@ -122,7 +170,7 @@ async def test_used_trim_uses_vin_style_and_suppresses_new_national_fpp(monkeypa
 	}
 	entry = cache_entries["2025 INFINITI QX55 LUXE"]
 	assert entry["pricing_basis"] == "used"
-	assert entry["fpp_natl"] is None
+	assert entry["fpp_natl"] == 45_600
 	assert entry["fpp_local"] == 34_300
 
 
@@ -211,6 +259,38 @@ async def test_national_pricing_accepts_msrp_only_div_rows(caplog):
 	assert pricing[0][0:3] == ("Ioniq 5 SE", "$39,100", None)
 	assert "KBB national source for Ioniq 5 SE" in caplog.text
 	assert "https://kbb.com/hyundai/ioniq-5/2026/" in caplog.text
+
+
+async def test_empty_national_cache_entry_is_refetched(monkeypatch):
+	page = MagicMock()
+	page.goto = AsyncMock()
+	page.wait_for_timeout = AsyncMock()
+	page.inner_text = AsyncMock(return_value="INFINITI QX55 Pricing")
+	rows = MagicMock()
+	rows.first.wait_for = AsyncMock(side_effect=TimeoutError("missing table"))
+	heading = MagicMock()
+	heading.first = heading
+	heading.locator.return_value = rows
+	page.get_by_role.return_value = heading
+	monkeypatch.setattr("analysis.kbb.is_natl_fresh", lambda entry: True)
+	cache_entries = {
+		"2025 INFINITI QX55 Luxe": {
+			"model": "QX55",
+			"kbb_trim": "2025 INFINITI QX55 Luxe",
+			"msrp": None,
+			"fpp_natl": None,
+			"natl_source": "https://kbb.com/infiniti/qx55/2025/",
+			"local_source": None,
+			"natl_timestamp": "2026-07-26T13:07:16",
+		},
+	}
+
+	pricing, _ = await get_or_fetch_national_pricing(
+		page, "INFINITI", "QX55", "qx55", "2025", cache_entries
+	)
+
+	page.goto.assert_awaited_once()
+	assert pricing == []
 
 
 async def test_msrp_only_model_prefixed_row_still_checks_local_fpp(

@@ -53,6 +53,9 @@ playwright install
 
 Playwright is still required by KBB and approved supplemental dealer-document
 workflows; it is not used to authenticate to Visor or replace the Visor API.
+VIN resolution and KBB price gathering run installed Google Chrome in headless
+mode with a normal browser context; KBB rejects Playwright's bundled headless
+Chromium at its edge layer.
 KBB browser navigation is bounded to 30 seconds across retries, while individual
 DOM locator waits are bounded to 10 seconds, with up to 30 seconds for KBB's
 dynamically rendered price advisor. Missing national fair-purchase prices remain
@@ -63,8 +66,8 @@ KBB; DealLens does not inject or cache a postal code for KBB pricing.
 For used and certified Level 2 listings, DealLens submits an already-collected
 listing VIN to KBB to resolve KBB's exact used style (for example, `LUXE Sport
 Utility 4D`). It validates that the resulting pricing page is a used-vehicle page
-and does not substitute KBB's new-car national Fair Purchase Price when style
-resolution fails. This KBB lookup does not add a Visor API request.
+and records the VIN-derived used local pricing separately from KBB's national
+Fair Purchase Price. This KBB lookup does not add a Visor API request.
 
 Each `deal-lens` invocation writes a timestamped DEBUG diagnostic log under
 `logs/`. The log records the command arguments and KBB national, trim, and

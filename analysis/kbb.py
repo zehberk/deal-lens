@@ -45,6 +45,11 @@ KBB_LOCATOR_TIMEOUT_MS = 10_000
 KBB_NAVIGATION_TIMEOUT_MS = 30_000
 KBB_NAVIGATION_ATTEMPT_TIMEOUT_MS = 10_000
 KBB_DYNAMIC_PRICING_TIMEOUT_MS = 30_000
+KBB_HEADLESS_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/138.0.0.0 Safari/537.36"
+)
 
 
 async def get_model_slug_map(
@@ -172,7 +177,8 @@ async def get_or_fetch_national_pricing(
     }
 
     all_fresh = bool(relevant_entries) and all(
-        is_natl_fresh(e) for e in relevant_entries.values()
+        is_natl_fresh(e) and (e.get("msrp") is not None or e.get("fpp_natl") is not None)
+        for e in relevant_entries.values()
     )
 
     if all_fresh:
@@ -451,7 +457,7 @@ async def populate_pricing_for_year(
             table_trim in best_matches
             and best_matches[table_trim] in used_style_urls
         )
-        entry["fpp_natl"] = None if is_used_pricing else natl_val
+        entry["fpp_natl"] = natl_val
 
         entry["fmr_low"] = fmr_low
         entry["fmr_high"] = fmr_high
@@ -519,7 +525,7 @@ async def populate_pricing_for_year(
             "model": model,
             "kbb_trim": kbb_trim,
             "msrp": entry.get("msrp"),
-            "fpp_natl": None if is_used_pricing else entry.get("fpp_natl"),
+            "fpp_natl": entry.get("fpp_natl"),
             "fmr_low": fmr_low,
             "fmr_high": fmr_high,
             "fpp_local": fpp_local,
@@ -815,7 +821,8 @@ async def create_kbb_browser() -> (
     p = await async_playwright().start()
     request: APIRequestContext = await p.request.new_context()
     browser: Browser = await p.chromium.launch(
-        headless=False,
+        headless=True,
+        channel="chrome",
         args=[
             "--disable-blink-features=AutomationControlled",
             "--disable-gpu",
@@ -824,7 +831,11 @@ async def create_kbb_browser() -> (
             "--disable-infobars",
         ],
     )
-    context: BrowserContext = await browser.new_context()
+    context: BrowserContext = await browser.new_context(
+        locale="en-US",
+        user_agent=KBB_HEADLESS_USER_AGENT,
+        viewport={"width": 1440, "height": 900},
+    )
     context.set_default_timeout(KBB_LOCATOR_TIMEOUT_MS)
     context.set_default_navigation_timeout(KBB_NAVIGATION_TIMEOUT_MS)
     await context.route(
@@ -1008,7 +1019,15 @@ def _used_listing_has_cached_pricing(
     candidates = [
         key[len(prefix):] if key.casefold().startswith(prefix.casefold()) else key
         for key, entry in entries.items()
-        if entry.get("pricing_basis") == "used" and is_entry_fresh(entry)
+        if (
+            entry.get("pricing_basis") == "used"
+            and not entry.get("skip_reason")
+            and any(
+                entry.get(field) is not None
+                for field in ("msrp", "fpp_natl", "fpp_local", "fmv")
+            )
+            and is_entry_fresh(entry)
+        )
     ]
     trim = str(listing.get("trim_version") or listing.get("trim") or "")
     match = best_kbb_trim_match(trim, candidates)
