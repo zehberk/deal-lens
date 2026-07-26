@@ -130,6 +130,7 @@ count and ETA; operations whose size is not yet known use a spinner. Redirected
 and non-interactive output remains free of animated progress displays. When a
 configured Visor rolling-window limit is reached, the active display identifies
 the rate-limit wait and its duration before requests resume.
+Every command prints its total wall-clock runtime when it finishes.
 
 The standalone `level1`, `level2`, and `level3` commands analyze the latest
 compatible saved data in `output/raw`; normal acquisition should use `deal-lens`.

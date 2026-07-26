@@ -9,6 +9,8 @@ from deal_lens.cli import (
 	collect_and_run_level1_api,
 	collect_and_run_level3_api,
 	configure_logging,
+	format_runtime,
+	run_with_runtime,
 	scrape,
 )
 
@@ -85,6 +87,28 @@ async def test_scrape_requires_an_analysis_level():
 
 	with pytest.raises(ValueError, match="analysis level is required"):
 		await scrape(args)
+
+
+def test_runtime_format_is_compact_and_readable():
+	assert format_runtime(8.562) == "8.6s"
+	assert format_runtime(83.25) == "1m 23.2s"
+	assert format_runtime(3_723.25) == "1h 2m 3.2s"
+
+
+async def test_cli_reports_total_runtime(monkeypatch):
+	args = Namespace(level1=False, level2=True, level3=False)
+	clock = iter((100.0, 183.25)).__next__
+	output = []
+
+	async def fake_scrape(actual_args):
+		assert actual_args is args
+
+	monkeypatch.setattr("deal_lens.cli.scrape", fake_scrape)
+	monkeypatch.setattr("deal_lens.cli.CLI_CONSOLE.print", output.append)
+
+	await run_with_runtime(args, clock=clock)
+
+	assert output == ["[bold green]Total runtime:[/] 1m 23.2s"]
 
 
 async def test_level1_api_workflow_forwards_force_and_renders(monkeypatch):
