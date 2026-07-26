@@ -1,6 +1,5 @@
 import io
 import shutil
-import subprocess
 import uuid
 
 from collections.abc import Iterator
@@ -66,10 +65,16 @@ async def test_image_timeout_does_not_abort_remaining_downloads(output_dir):
 
 def test_carfax_chrome_window_is_hidden_on_windows(monkeypatch):
 	calls = []
+	process = type("Process", (), {"pid": 1234})()
+	hide_calls = []
 	monkeypatch.setattr("utils.download.platform.system", lambda: "Windows")
 	monkeypatch.setattr(
 		"utils.download.subprocess.Popen",
-		lambda args, **kwargs: calls.append((args, kwargs)) or object(),
+		lambda args, **kwargs: calls.append((args, kwargs)) or process,
+	)
+	monkeypatch.setattr(
+		"utils.download.hide_process_windows",
+		lambda process_id: hide_calls.append(process_id) or 1,
 	)
 
 	launch_chrome(9223, "test-profile")
@@ -77,6 +82,6 @@ def test_carfax_chrome_window_is_hidden_on_windows(monkeypatch):
 	assert len(calls) == 1
 	args, kwargs = calls[0]
 	assert "--remote-debugging-port=9223" in args
-	startup_info = kwargs["startupinfo"]
-	assert startup_info.dwFlags & subprocess.STARTF_USESHOWWINDOW
-	assert startup_info.wShowWindow == subprocess.SW_HIDE
+	assert "--window-position=-32000,-32000" in args
+	assert kwargs == {}
+	assert hide_calls == [1234]

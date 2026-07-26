@@ -1,4 +1,4 @@
-import asyncio, base64, glob, hashlib, io, json, os, platform, re, requests, shutil, subprocess, time, urllib.parse
+import asyncio, base64, ctypes, glob, hashlib, io, json, os, platform, re, requests, shutil, subprocess, time, urllib.parse
 
 from bs4 import BeautifulSoup
 from datetime import timedelta
@@ -373,15 +373,47 @@ def launch_chrome(port: int, user_data_dir: str):
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-sync",
+        "--window-position=-32000,-32000",
+        "--window-size=1280,900",
         "--disable-features=SigninIntercept,SignInProfileCreation,AccountConsistency,ChromeWhatsNewUI",
         "about:blank",
     ]
     if platform.system() == "Windows":
-        startup_info = subprocess.STARTUPINFO()
-        startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startup_info.wShowWindow = subprocess.SW_HIDE
-        return subprocess.Popen(args, startupinfo=startup_info)
+        process = subprocess.Popen(args)
+        hidden_windows = hide_process_windows(process.pid)
+        if hidden_windows == 0:
+            process.terminate()
+            raise RuntimeError("Chrome browser window could not be hidden")
+        return process
     return subprocess.Popen(args)
+
+
+def hide_process_windows(process_id: int, timeout: float = 5.0) -> int:
+    """Hide and verify every top-level window owned by a Windows process."""
+    if platform.system() != "Windows":
+        return 0
+
+    user32 = ctypes.windll.user32
+    callback_type = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    deadline = time.monotonic() + timeout
+    hidden: set[int] = set()
+
+    while time.monotonic() < deadline:
+        def hide_window(window, _parameter):
+            owner = ctypes.c_ulong()
+            user32.GetWindowThreadProcessId(window, ctypes.byref(owner))
+            if owner.value == process_id:
+                user32.ShowWindow(window, subprocess.SW_HIDE)
+                if not user32.IsWindowVisible(window):
+                    hidden.add(int(window))
+            return True
+
+        user32.EnumWindows(callback_type(hide_window), 0)
+        if hidden:
+            return len(hidden)
+        time.sleep(0.05)
+
+    return 0
 
 
 def get_cdp_websocket_url(port: int) -> str:
@@ -620,6 +652,11 @@ def download_report_pdfs(listings: list[dict]) -> None:
 
             try:
                 target_id = open_cdp_target(ws, url)
+                if (
+                    platform.system() == "Windows"
+                    and hide_process_windows(proc.pid) == 0
+                ):
+                    raise RuntimeError("Chrome report window could not be hidden")
                 sid = attach_cdp_session(ws, target_id)
 
                 if provider == "carfax":
