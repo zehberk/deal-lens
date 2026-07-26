@@ -3,7 +3,9 @@
 import json
 import logging
 import time
+import threading
 
+from collections import deque
 from collections.abc import Callable, Mapping, Sequence
 from email.message import Message
 from typing import TYPE_CHECKING, Any, Protocol
@@ -14,10 +16,13 @@ import urllib3
 from urllib3.exceptions import ConnectTimeoutError, MaxRetryError, ReadTimeoutError
 from urllib3.util import Timeout
 
+from utils.progress import NULL_PROGRESS, ProgressReporter
 
 DEFAULT_BASE_URL = "https://api.visor.vin"
 DEFAULT_CONNECTION_TIMEOUT_SECONDS = 10.0
 DEFAULT_READ_TIMEOUT_SECONDS = 30.0
+DEFAULT_REQUESTS_PER_10_SECONDS = 10
+DEFAULT_REQUESTS_PER_MINUTE = 60
 RETRYABLE_STATUS_CODES = frozenset({429, 503})
 
 logger = logging.getLogger(__name__)
@@ -91,6 +96,9 @@ class VisorClient:
 		read_timeout: float = DEFAULT_READ_TIMEOUT_SECONDS,
 		timeout: float | None = None,
 		max_retries: int = 2,
+		requests_per_10_seconds: int = DEFAULT_REQUESTS_PER_10_SECONDS,
+		requests_per_minute: int = DEFAULT_REQUESTS_PER_MINUTE,
+		progress: ProgressReporter = NULL_PROGRESS,
 		opener: OpenRequest | None = None,
 	) -> None:
 		api_key = api_key.strip()
@@ -107,6 +115,10 @@ class VisorClient:
 			raise ValueError("read_timeout must be greater than zero")
 		if max_retries < 0:
 			raise ValueError("max_retries must not be negative")
+		if requests_per_10_seconds <= 0:
+			raise ValueError("requests_per_10_seconds must be greater than zero")
+		if requests_per_minute <= 0:
+			raise ValueError("requests_per_minute must be greater than zero")
 
 		self._api_key = api_key
 		self.base_url = base_url.rstrip("/")
@@ -114,6 +126,15 @@ class VisorClient:
 		self.read_timeout = read_timeout
 		self.timeout = read_timeout
 		self.max_retries = max_retries
+		self.requests_per_10_seconds = requests_per_10_seconds
+		self.requests_per_minute = requests_per_minute
+		self._request_interval = max(
+			10.0 / requests_per_10_seconds,
+			60.0 / requests_per_minute,
+		)
+		self._request_times: deque[float] = deque()
+		self._rate_limit_lock = threading.Lock()
+		self._progress = progress
 		self._opener = opener or urllib3.PoolManager().request
 
 	def __repr__(self) -> str:
@@ -266,6 +287,7 @@ class VisorClient:
 		)
 
 		for attempt in range(self.max_retries + 1):
+			self._wait_for_rate_limit()
 			try:
 				response = self._opener(
 					"GET",
@@ -350,6 +372,36 @@ class VisorClient:
 			raise error
 
 		raise AssertionError("retry loop ended unexpectedly")
+
+	def _wait_for_rate_limit(self) -> None:
+		"""Pace requests while enforcing both configured rolling windows."""
+		with self._rate_limit_lock:
+			while True:
+				now = time.monotonic()
+				while self._request_times and now - self._request_times[0] >= 60.0:
+					self._request_times.popleft()
+				recent_10_seconds = [
+					request_time
+					for request_time in self._request_times
+					if now - request_time < 10.0
+				]
+				delays = []
+				if self._request_times:
+					delays.append(
+						self._request_interval - (now - self._request_times[-1])
+					)
+				if len(recent_10_seconds) >= self.requests_per_10_seconds:
+					delays.append(10.0 - (now - recent_10_seconds[0]))
+				if len(self._request_times) >= self.requests_per_minute:
+					delays.append(60.0 - (now - self._request_times[0]))
+				delay = max(delays, default=0.0)
+				if delay <= 0:
+					self._request_times.append(now)
+					return
+				logger.debug("Pacing Visor API request for %.3f seconds", delay)
+				time.sleep(delay)
+				self._request_times.append(time.monotonic())
+				return
 
 
 def _log_path(path: str) -> str:

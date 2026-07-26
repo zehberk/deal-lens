@@ -60,6 +60,9 @@ def determine_best_price(
     fpp_natl: int,
     fmv: int,
     narrative: Optional[list[str]] = None,
+    *,
+    msrp: int = 0,
+    is_new: bool = False,
 ) -> int:
     source: str = ""
     reason: str = ""
@@ -69,8 +72,8 @@ def determine_best_price(
         source = "None"
         reason = "sale price could not be found"
 
-    # Local -> National -> FMV
-    # FMV is basically a catch all, but is discouraged because it will lead to wonky ratings
+    # Local FPP -> National FPP -> FMV -> MSRP. MSRP is a last-resort
+    # benchmark for new vehicles only.
     if fpp_local:
         value = fpp_local
         source = "Local FPP"
@@ -79,16 +82,28 @@ def determine_best_price(
         value = fpp_natl
         source = "National FPP"
         reason = "it provides the next most accurate pricing data available"
-    else:
+    elif fmv:
         value = fmv
         source = "FMV"
         reason = "no national or local FPP could be found"
+    elif msrp and is_new:
+        value = msrp
+        source = "MSRP"
+        reason = "the vehicle is new and no market-based benchmark could be found"
+    else:
+        value = 0
+        source = "None"
+        reason = "no pricing benchmark could be found"
 
     if narrative is not None:
         narrative.append(f"{source} was used as the comparison value because {reason}.")
         if source == "FMV":
             narrative.append(
                 "As FMV is a measure of how much a car would be sold privately, the following ratings may be inaccurate."
+            )
+        elif source == "MSRP":
+            narrative.append(
+                "MSRP is being used only as a worst-case fallback so some pricing feedback can be provided; it should not be treated as the expected purchase price."
             )
 
     return value

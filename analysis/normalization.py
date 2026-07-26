@@ -184,6 +184,37 @@ def best_kbb_trim_match(visor_trim: str, kbb_trims: list[str]) -> str | None:
     return best_trim
 
 
+def kbb_trim_identity_matches(visor_trim: str, kbb_trim: str) -> bool:
+    """Return whether a KBB row contains the listing's full trim identity."""
+    if visor_trim.casefold() == kbb_trim.casefold():
+        return True
+    visor_tokens = set(TrimProfile.from_string(visor_trim).tokens) - DRIVETRAINS
+    kbb_tokens = set(TrimProfile.from_string(kbb_trim).tokens)
+    return bool(visor_tokens) and visor_tokens <= kbb_tokens
+
+
+def _best_usable_kbb_trim_match(
+    visor_trim: str, entries: dict[str, dict]
+) -> str | None:
+    """Prefer a compatible priced row over a failed trim-specific lookup."""
+    cache_key = best_kbb_trim_match(visor_trim, list(entries.keys()))
+    if not cache_key or not entries[cache_key].get("skip_reason"):
+        return cache_key
+
+    usable_keys = [
+        key for key, entry in entries.items() if not entry.get("skip_reason")
+    ]
+    usable_key = best_kbb_trim_match(visor_trim, usable_keys)
+    if not usable_key:
+        return cache_key
+
+    return (
+        usable_key
+        if kbb_trim_identity_matches(visor_trim, usable_key)
+        else cache_key
+    )
+
+
 async def get_variant_map(
     make: str, model: str, listings: list[dict]
 ) -> dict[str, list[dict]]:
@@ -281,7 +312,7 @@ def filter_valid_listings(
             else model
         )
         entries = get_relevant_entries(cache_entries, make, variant_model, year)
-        cache_key = best_kbb_trim_match(base_trim, list(entries.keys()))
+        cache_key = _best_usable_kbb_trim_match(base_trim, entries)
 
         if (
             not cache_key

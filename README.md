@@ -53,6 +53,18 @@ playwright install
 
 Playwright is still required by KBB and approved supplemental dealer-document
 workflows; it is not used to authenticate to Visor or replace the Visor API.
+KBB browser navigation is bounded to 30 seconds across retries, while individual
+DOM locator waits are bounded to 10 seconds, with up to 30 seconds for KBB's
+dynamically rendered price advisor. Missing national fair-purchase prices remain
+unavailable; they do not prevent DealLens from checking local trim pricing. The
+KBB page and its embedded price advisor retain the browser context supplied by
+KBB; DealLens does not inject or cache a postal code for KBB pricing.
+
+Each `deal-lens` invocation writes a timestamped DEBUG diagnostic log under
+`logs/`. The log records the command arguments and KBB national, trim, and
+price-advisor source URLs for later verification. Logging at every severity is
+file-only; the interactive console is reserved for Rich progress and final report
+paths.
 
 ### Visor API key
 
@@ -72,6 +84,11 @@ Copy-Item api.env.example api.env
 Replace `YOUR_API_KEY_HERE` in `api.env`. `VISOR_API_KEY` in the process
 environment takes precedence over `api.env`. Never commit `api.env`, credentials,
 authorization headers, or authenticated response headers.
+
+Outbound Visor calls are evenly paced to stay within 10 requests per rolling 10
+seconds and 60 requests per rolling minute by default. Override either limit in
+the process environment or `api.env` with `VISOR_REQUESTS_PER_10_SECONDS` and
+`VISOR_REQUESTS_PER_MINUTE`.
 
 DealLens fails with a clear configuration error when the key is missing or still
 contains the placeholder.
@@ -100,6 +117,13 @@ Useful collection options:
 
 Run `deal-lens --help` for the installed command help. You can also invoke the
 CLI with `python -m deal_lens`.
+
+Interactive commands use Rich progress displays for API collection, KBB lookups,
+dealer-data searches, and supplemental document downloads. Known work shows a
+count and ETA; operations whose size is not yet known use a spinner. Redirected
+and non-interactive output remains free of animated progress displays. When a
+configured Visor rolling-window limit is reached, the active display identifies
+the rate-limit wait and its duration before requests resume.
 
 The standalone `level1`, `level2`, and `level3` commands analyze the latest
 compatible saved data in `output/raw`; normal acquisition should use `deal-lens`.
@@ -150,7 +174,8 @@ detail request. Pricing and account limits can change, so treat Visor's current
 usage dashboard and response usage headers as authoritative. `--force` can cause
 new billable calls because it bypasses the daily cache.
 
-The client uses a 10-second connection timeout and a 30-second read timeout. It
+The client enforces the configured 10-second and one-minute rolling request limits.
+It uses a 10-second connection timeout and a 30-second read timeout. It
 retries HTTP 429 and 503 responses a bounded number of times, honors `Retry-After`
 when supplied, and never retries indefinitely. The account observed during the
 migration advertised 10 requests per 10 seconds; do not assume that limit applies

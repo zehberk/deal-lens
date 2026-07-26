@@ -3,6 +3,7 @@ import shutil
 import uuid
 
 from collections.abc import Iterator
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -63,6 +64,18 @@ class FakeCachedFacetClient:
 		}), {"X-Usage-Cost": "1"}
 
 
+class RecordingProgress:
+	def __init__(self):
+		self.tracks = []
+
+	def status(self, description):
+		return nullcontext()
+
+	def track(self, sequence, *, description, total=None, unit="item"):
+		self.tracks.append((description, total, unit))
+		return sequence
+
+
 @pytest.fixture
 def cache_dir() -> Iterator[Path]:
 	path = Path("cache") / "test-level1-cache" / uuid.uuid4().hex
@@ -112,6 +125,23 @@ def test_fresh_run_caches_each_complete_query(cache_dir):
 		for item in result.collection.responses
 	)
 	assert all(item.request_url for item in result.collection.responses)
+
+
+def test_level1_progress_uses_two_exact_phases(cache_dir):
+	client = FakeCachedFacetClient()
+	progress = RecordingProgress()
+
+	cached_level1_facets(
+		client,
+		query("2023,2024"),
+		cache_dir=cache_dir,
+		progress=progress,
+	)
+
+	assert progress.tracks == [
+		("Discovering Level 1 market", 6, "request"),
+		("Enriching Level 1 trims", 2, "request"),
+	]
 
 
 def test_normal_rerun_uses_cache_without_api_calls(cache_dir):

@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from utils.progress import NULL_PROGRESS, ProgressReporter
 from visor_api.level2_service import (
 	Level2Client,
 	Level2Collection,
@@ -36,6 +37,7 @@ def cached_level2_collection(
 	max_listings: int = 100,
 	force: bool = False,
 	clock: Callable[[], datetime] | None = None,
+	progress: ProgressReporter = NULL_PROGRESS,
 ) -> CachedLevel2Result:
 	"""Return a Level 2 collection cached through the local calendar day."""
 	if query.unsupported:
@@ -62,6 +64,7 @@ def cached_level2_collection(
 		query,
 		max_listings=max_listings,
 		clock=lambda: current,
+		progress=progress,
 	)
 	_write_cache(cache_path, {
 		"cache_schema": LEVEL2_CACHE_SCHEMA_VERSION,

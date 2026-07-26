@@ -1,5 +1,6 @@
 import json
 
+from contextlib import nullcontext
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -8,6 +9,7 @@ from urllib3.exceptions import ConnectTimeoutError, ReadTimeoutError
 from urllib3.connectionpool import HTTPConnectionPool
 from urllib3.util import Timeout
 
+from utils.progress import NullProgressReporter
 from visor_api import (
 	VisorAPIError,
 	VisorClient,
@@ -120,8 +122,15 @@ def test_api_error_preserves_status_body_and_retry_header():
 
 
 def test_retryable_response_is_retried(monkeypatch, caplog):
+	now = [0.0]
 	sleeps = []
-	monkeypatch.setattr("visor_api.client.time.sleep", sleeps.append)
+
+	def sleep(seconds):
+		sleeps.append(seconds)
+		now[0] += seconds
+
+	monkeypatch.setattr("visor_api.client.time.monotonic", lambda: now[0])
+	monkeypatch.setattr("visor_api.client.time.sleep", sleep)
 	headers = {"Retry-After": "0.5"}
 	opener = FakeOpener(
 		api_error(
@@ -136,7 +145,7 @@ def test_retryable_response_is_retried(monkeypatch, caplog):
 	with caplog.at_level("WARNING", logger="visor_api.client"):
 		assert client.filter_listings() == {"data": []}
 	assert len(opener.requests) == 2
-	assert sleeps == [0.5]
+	assert sleeps == [0.5, 0.5]
 	assert "Retrying Visor API /v1/listings" in caplog.text
 	assert "rate limit error" in caplog.text
 	assert "attempt 2 of 2" in caplog.text
@@ -224,6 +233,45 @@ def test_timeout_errors_identify_request_phase(
 def test_client_rejects_invalid_timeouts(option, value):
 	with pytest.raises(ValueError, match=option):
 		VisorClient("test-api-key", **{option: value})
+
+
+def test_client_rejects_invalid_rate_limits():
+	with pytest.raises(ValueError, match="requests_per_10_seconds"):
+		VisorClient("test-api-key", requests_per_10_seconds=0)
+	with pytest.raises(ValueError, match="requests_per_minute"):
+		VisorClient("test-api-key", requests_per_minute=0)
+
+
+def test_client_paces_requests_for_both_configured_rate_limits(monkeypatch):
+	now = [0.0]
+	sleeps = []
+	statuses = []
+
+	class Progress(NullProgressReporter):
+		def status(self, description):
+			statuses.append(description)
+			return nullcontext()
+
+	def sleep(seconds):
+		sleeps.append(seconds)
+		now[0] += seconds
+
+	monkeypatch.setattr("visor_api.client.time.monotonic", lambda: now[0])
+	monkeypatch.setattr("visor_api.client.time.sleep", sleep)
+	opener = FakeOpener(*(FakeResponse({"data": []}) for _ in range(4)))
+	client = VisorClient(
+		"test-api-key",
+		opener=opener,
+		requests_per_10_seconds=2,
+		requests_per_minute=3,
+		progress=Progress(),
+	)
+
+	for _ in range(4):
+		client.filter_listings()
+
+	assert sleeps == [20.0, 20.0, 20.0]
+	assert statuses == []
 
 
 def test_legacy_timeout_option_sets_both_request_phases():

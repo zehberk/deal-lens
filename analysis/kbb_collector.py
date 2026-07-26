@@ -8,7 +8,7 @@ base_subprocess.BaseSubprocessTransport.__del__ = lambda self: None
 from datetime import datetime
 from pathlib import Path
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
-from tqdm import tqdm
+from deal_lens.progress import cli_progress
 from typing import Tuple
 
 from utils.cache import load_cache, save_cache
@@ -194,7 +194,10 @@ async def main():
 
         # DEBUG_FILE.write_text("")
         cache: dict[str, dict[str, list[str]]] = load_cache(KBB_VARIANT_CACHE)
-        for year in tqdm(years, desc="Saving years", unit="year"):
+        progress = cli_progress()
+        for year in progress.track(
+            years, total=len(years), description="Saving KBB years", unit="year"
+        ):
             # KBB has a bad tendency to not include models from this year consistency, so we add an additional check
             this_year: int = datetime.now().year
             if int(year) < this_year and year in cache and cache[year]:

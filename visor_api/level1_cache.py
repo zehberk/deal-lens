@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
+from utils.progress import NULL_PROGRESS, ProgressReporter
 from visor_api.client import QueryParams
 from visor_api.level1_query import (
 	Level1FacetQuery,
@@ -47,6 +48,7 @@ def cached_level1_facets(
 	cache_dir: str | Path,
 	force: bool = False,
 	clock: Callable[[], datetime] | None = None,
+	progress: ProgressReporter = NULL_PROGRESS,
 ) -> CachedLevel1FacetResult:
 	"""Return a complete Level 1 collection cached through the local day."""
 	if query.unsupported:
@@ -75,13 +77,23 @@ def cached_level1_facets(
 					cache_used=True,
 				)
 
-	responses, entries = _fetch_queries(client, initial_queries, now)
+	responses, entries = _fetch_queries(
+		client,
+		initial_queries,
+		now,
+		progress,
+		description="Discovering Level 1 market",
+	)
 	initial_collection = assemble_level1_facets(tuple(responses))
 	enrichment_plan = build_level1_trim_enrichment_query_plan(
 		query, _trims_by_year(initial_collection)
 	)
 	enrichment_responses, enrichment_entries = _fetch_queries(
-		client, _query_map(enrichment_plan), now
+		client,
+		_query_map(enrichment_plan),
+		now,
+		progress,
+		description="Enriching Level 1 trims",
 	)
 	responses.extend(enrichment_responses)
 	entries.update(enrichment_entries)
@@ -103,10 +115,18 @@ def _fetch_queries(
 	client: CachedFacetClient,
 	queries: dict[str, Level1FacetQuery],
 	clock: Callable[[], datetime],
+	progress: ProgressReporter,
+	*,
+	description: str,
 ) -> tuple[list[RetrievedLevel1Facet], dict[str, dict[str, Any]]]:
 	responses = []
 	entries = {}
-	for fingerprint, planned_query in queries.items():
+	for fingerprint, planned_query in progress.track(
+		queries.items(),
+		total=len(queries),
+		description=description,
+		unit="request",
+	):
 		response, usage_headers = client.filter_facets_model_with_headers(
 			planned_query.api_params()
 		)

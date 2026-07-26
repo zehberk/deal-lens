@@ -52,8 +52,10 @@ async def start_level3_analysis(metadata: dict, listings: list[dict], filename: 
         fpp_local = int(ctx.cache_entries[cache_key].get("fpp_local") or 0)
         fmr_high = int(ctx.cache_entries[cache_key].get("fmr_high") or 0)
         fmv = int(ctx.cache_entries[cache_key].get("fmv") or 0)
+        msrp = int(ctx.cache_entries[cache_key].get("msrp") or 0)
+        is_new = str(listing.get("condition", "")).casefold() == "new"
 
-        if not (fpp_natl and fpp_local and fmv):
+        if not any((fpp_natl, fpp_local, fmv, msrp if is_new else 0)):
             narrative.append(
                 "Unable to provide ratings for this vehicle: no pricing data is available for this vehicle."
             )
@@ -62,7 +64,13 @@ async def start_level3_analysis(metadata: dict, listings: list[dict], filename: 
         # Initial deal ratings
         narrative.append(f"This vehicle is being listed at ${price}.")
         best_comparison = determine_best_price(
-            price, fpp_local, fpp_natl, fmv, narrative
+            price,
+            fpp_local,
+            fpp_natl,
+            fmv,
+            narrative,
+            msrp=msrp,
+            is_new=is_new,
         )
         deal, midpoint, increment, percent = classify_deal_rating(
             price, best_comparison, fmv, fpp_local, fmr_high

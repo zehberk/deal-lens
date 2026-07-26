@@ -25,7 +25,7 @@ tr { break-inside: avoid; page-break-inside: avoid; }
 th { padding: 5px; color: #fff; background: #294f73; text-align: right; vertical-align: middle; }
 th small { color: #d9e7f2; font-weight: 400; }
 th:first-child, td:first-child { text-align: left; }
-.listing-link { color: #1769aa; text-decoration: underline; text-decoration-thickness: .5px; text-underline-offset: 1px; }
+.listing-link { display: inline-block; color: #1769aa; border-bottom: .5pt solid currentColor; text-decoration: none; }
 td { padding: 5px; border-bottom: 1px solid #dbe3ea; text-align: right; vertical-align: middle; }
 .comparison tbody tr:first-child { break-before: avoid; }
 tbody tr:nth-child(even) { background: #f7f9fb; }

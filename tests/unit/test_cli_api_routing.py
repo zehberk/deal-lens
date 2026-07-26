@@ -1,18 +1,51 @@
 from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
 from deal_lens.cli import (
 	collect_and_run_level1_api,
 	collect_and_run_level3_api,
+	configure_logging,
 	scrape,
 )
 
 
+def test_logging_records_exact_command_in_timestamped_file(monkeypatch):
+	file_handler = MagicMock()
+	file_handler_type = MagicMock(return_value=file_handler)
+	basic_config = MagicMock()
+	logger = MagicMock()
+	log_dir = MagicMock()
+	log_path = Path("logs/deal-lens-20260723-212459-123456.log")
+	log_dir.__truediv__.return_value = log_path
+	clock = MagicMock()
+	clock.now.return_value.strftime.return_value = "20260723-212459-123456"
+	monkeypatch.setattr("deal_lens.cli.logging.FileHandler", file_handler_type)
+	monkeypatch.setattr("deal_lens.cli.logging.basicConfig", basic_config)
+	monkeypatch.setattr("deal_lens.cli.logging.getLogger", lambda _name=None: logger)
+	monkeypatch.setattr("deal_lens.cli.datetime", clock)
+
+	result = configure_logging(
+		["--url", "https://visor.test/search?make=Hyundai IONIQ", "--level1"],
+		log_dir=log_dir,
+	)
+
+	assert result == log_path
+	log_dir.mkdir.assert_called_once_with(parents=True, exist_ok=True)
+	file_handler_type.assert_called_once_with(log_path, encoding="utf-8")
+	assert basic_config.call_args.kwargs["handlers"] == [file_handler]
+	logger.debug.assert_called_once_with(
+		"Command: %s",
+		'deal-lens --url "https://visor.test/search?make=Hyundai IONIQ" --level1',
+	)
+
+
 async def test_level1_cli_routes_to_facet_api(monkeypatch):
 	calls = []
+	announcements = []
 
 	async def fake_collect(args):
 		calls.append(args)
@@ -20,11 +53,15 @@ async def test_level1_cli_routes_to_facet_api(monkeypatch):
 	monkeypatch.setattr(
 		"deal_lens.cli.collect_and_run_level1_api", fake_collect
 	)
+	monkeypatch.setattr(
+		"deal_lens.cli.CLI_CONSOLE.print", announcements.append
+	)
 	args = Namespace(level1=True, level2=False, level3=False)
 
 	await scrape(args)
 
 	assert calls == [args]
+	assert announcements == ["[bold cyan]Running Level 1 analysis[/]"]
 
 
 async def test_level3_cli_routes_to_listing_api(monkeypatch):
@@ -82,12 +119,14 @@ async def test_level1_api_workflow_forwards_force_and_renders(monkeypatch):
 
 	query = FakeQuery()
 	client = object()
+	progress = object()
 	pricing_cache = {"entries": {}}
 	monkeypatch.setattr(
 		"deal_lens.cli.VisorListingQuery.from_url", lambda url: query
 	)
 	monkeypatch.setattr("deal_lens.cli.get_visor_api_key", lambda: "key")
-	monkeypatch.setattr("deal_lens.cli.VisorClient", lambda key: client)
+	monkeypatch.setattr("deal_lens.cli.VisorClient", lambda key, **kwargs: client)
+	monkeypatch.setattr("deal_lens.cli.cli_progress", lambda: progress)
 	monkeypatch.setattr("deal_lens.cli.cached_level1_facets", fake_cached)
 	monkeypatch.setattr("deal_lens.cli.load_cache", lambda path: pricing_cache)
 	monkeypatch.setattr("deal_lens.cli.get_level1_kbb_valuations", fake_kbb)
@@ -99,14 +138,14 @@ async def test_level1_api_workflow_forwards_force_and_renders(monkeypatch):
 	assert calls["cached"] == (
 		client,
 		query,
-		{"cache_dir": Path("cache/level1"), "force": True},
+		{"cache_dir": Path("cache/level1"), "force": True, "progress": progress},
 	)
 	assert calls["kbb"] == (
 		"Honda",
 		"Civic",
 		collection,
 		pricing_cache,
-		{"postal_code": "80202"},
+		{"progress": progress},
 	)
 	assert calls["snapshot"] == (query, collection, kbb)
 	assert calls["render"] == (snapshot, kbb)
@@ -115,6 +154,7 @@ async def test_level1_api_workflow_forwards_force_and_renders(monkeypatch):
 async def test_level3_api_workflow_forwards_collection_options(monkeypatch):
 	query = object()
 	client = object()
+	progress = object()
 	listings = [{"id": "listing-1", "vin": "TESTVIN"}]
 	metadata = {"sources": {"visor_api": {}}}
 	calls = {}
@@ -140,7 +180,8 @@ async def test_level3_api_workflow_forwards_collection_options(monkeypatch):
 		"deal_lens.cli.VisorListingQuery.from_url", lambda url: query
 	)
 	monkeypatch.setattr("deal_lens.cli.get_visor_api_key", lambda: "key")
-	monkeypatch.setattr("deal_lens.cli.VisorClient", lambda key: client)
+	monkeypatch.setattr("deal_lens.cli.VisorClient", lambda key, **kwargs: client)
+	monkeypatch.setattr("deal_lens.cli.cli_progress", lambda: progress)
 	monkeypatch.setattr("deal_lens.cli.cached_listing_search", fake_cached)
 	monkeypatch.setattr("deal_lens.cli.save_results", fake_save)
 	monkeypatch.setattr("deal_lens.cli.run_analysis", fake_analysis)
@@ -166,6 +207,7 @@ async def test_level3_api_workflow_forwards_collection_options(monkeypatch):
 			"max_listings": 25,
 			"force": True,
 			"include_projection": True,
+			"progress": progress,
 		},
 	)
 	assert calls["save"] == (listings, metadata, args)

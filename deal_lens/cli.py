@@ -1,6 +1,7 @@
-import argparse, asyncio, json, logging, os
+import argparse, asyncio, json, logging, os, subprocess, sys
 
 from argparse import Namespace
+from datetime import datetime
 from pathlib import Path
 
 from analysis.level1 import start_level1_analysis
@@ -13,7 +14,9 @@ from utils.common import current_timestamp
 from utils.constants import *
 from utils.download import download_files
 from deal_lens.cli_support import *
-from deal_lens.config import get_visor_api_key
+from deal_lens.config import get_visor_api_key, get_visor_rate_limits
+from deal_lens.progress import CLI_CONSOLE, cli_progress
+from utils.progress import ProgressReporter
 from visor_api import (
     VisorClient,
     cached_level1_facets,
@@ -23,7 +26,43 @@ from visor_api import (
 from visor_api.level2_service import Level2Collection
 from visor_api.query import VisorListingQuery
 
-logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+
+def configure_logging(
+    argv: list[str] | None = None,
+    *,
+    log_dir: Path = Path("logs"),
+) -> Path:
+    """Configure concise Rich output and a detailed per-command log file."""
+    log_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    log_path = log_dir / f"deal-lens-{timestamp}.log"
+
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    ))
+    logging.basicConfig(
+        level=logging.DEBUG,
+        handlers=[file_handler],
+        force=True,
+    )
+
+    actual_argv = sys.argv[1:] if argv is None else argv
+    command = subprocess.list2cmdline(["deal-lens", *actual_argv])
+    logging.getLogger(__name__).info("Diagnostic log: %s", log_path)
+    logging.getLogger(__name__).debug("Command: %s", command)
+    return log_path
+
+
+def _visor_client(progress: ProgressReporter) -> VisorClient:
+    rate_limits = get_visor_rate_limits()
+    return VisorClient(
+        get_visor_api_key(),
+        requests_per_10_seconds=rate_limits.requests_per_10_seconds,
+        requests_per_minute=rate_limits.requests_per_minute,
+        progress=progress,
+    )
 
 
 def save_results(
@@ -57,7 +96,7 @@ def save_results(
             indent=2,
             ensure_ascii=False,
         )
-    print(f"Saved {len(listings)} listings to {path}")
+    logging.getLogger(__name__).info("Saved %d listings to %s", len(listings), path)
     return ts
 
 
@@ -70,31 +109,32 @@ async def run_analysis(
         elif args.level2:
             await start_level2_analysis(metadata, listings, filename)
         elif args.level3:
-            print("Level 3")
+            logging.getLogger(__name__).info("Starting Level 3 analysis")
 
 
 async def collect_and_run_level1_api(args: Namespace) -> None:
     """Collect facet-native Level 1 data and render its market report."""
     query = VisorListingQuery.from_url(args.url)
-    client = VisorClient(get_visor_api_key())
+    progress = cli_progress()
+    client = _visor_client(progress)
     result = await asyncio.to_thread(
         cached_level1_facets,
         client,
         query,
         cache_dir=Path("cache") / "level1",
         force=args.force,
+        progress=progress,
     )
     filters = query.market_filters()
     make = next(iter(filters.get("make", ())), "")
     model = next(iter(filters.get("model", ())), "")
-    postal_code = filters.get("postal_code")
     pricing_cache = load_cache(PRICING_CACHE)
     kbb = await get_level1_kbb_valuations(
         make,
         model,
         result.collection,
         pricing_cache,
-        postal_code=str(postal_code) if postal_code else None,
+        progress=progress,
     )
     snapshot = build_market_snapshot(query, result.collection, kbb)
     report_path = await render_level1_market_pdf(snapshot, kbb)
@@ -152,7 +192,8 @@ def apply_level2_collection_metadata(
 async def collect_and_run_level2_api(args: Namespace) -> None:
     """Collect Level 2 API listings and pass them to the legacy analysis workflow."""
     query = VisorListingQuery.from_url(args.url)
-    client = VisorClient(get_visor_api_key())
+    progress = cli_progress()
+    client = _visor_client(progress)
     result = await asyncio.to_thread(
         cached_level2_collection,
         client,
@@ -160,6 +201,7 @@ async def collect_and_run_level2_api(args: Namespace) -> None:
         cache_dir=Path("cache") / "level2",
         max_listings=args.max_listings,
         force=args.force,
+        progress=progress,
     )
     listings = [record.listing for record in result.collection.listings]
     metadata = build_metadata(args)
@@ -177,7 +219,8 @@ async def collect_and_run_level2_api(args: Namespace) -> None:
 async def collect_and_run_level3_api(args: Namespace) -> None:
     """Collect API listings before invoking the current Level 3 placeholder."""
     query = VisorListingQuery.from_url(args.url)
-    client = VisorClient(get_visor_api_key())
+    progress = cli_progress()
+    client = _visor_client(progress)
     result = await asyncio.to_thread(
         cached_listing_search,
         client,
@@ -186,6 +229,7 @@ async def collect_and_run_level3_api(args: Namespace) -> None:
         max_listings=args.max_listings,
         force=args.force,
         include_projection=True,
+        progress=progress,
     )
     listings = result.payload["listings"]
     metadata = result.payload["metadata"]
@@ -202,12 +246,15 @@ async def collect_and_run_level3_api(args: Namespace) -> None:
 
 async def scrape(args: Namespace) -> None:
     if args.level1:
+        CLI_CONSOLE.print("[bold cyan]Running Level 1 analysis[/]")
         await collect_and_run_level1_api(args)
         return
     if args.level2:
+        CLI_CONSOLE.print("[bold cyan]Running Level 2 analysis[/]")
         await collect_and_run_level2_api(args)
         return
     if args.level3:
+        CLI_CONSOLE.print("[bold cyan]Running Level 3 analysis[/]")
         await collect_and_run_level3_api(args)
         return
     raise ValueError("An analysis level is required")
@@ -250,7 +297,7 @@ def main():  # pragma: no cover
 
     behavior.add_argument(
         "--max_listings",
-        default=50,
+        default=100,
         type=max_listings_type,
         help="Maximum number of listings to retrieve, up to 500",
     )
@@ -274,7 +321,9 @@ def main():  # pragma: no cover
         "--level3", action="store_true", help="Creates a level 3 analysis report"
     )
 
-    args = parser.parse_args()
+    raw_args = sys.argv[1:]
+    args = parser.parse_args(raw_args)
+    configure_logging(raw_args)
     args = apply_url_to_args(args)
     asyncio.run(scrape(args))
 
