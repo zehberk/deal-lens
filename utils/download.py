@@ -619,9 +619,11 @@ def complete_carfax_challenge(
     if show_process_windows(process_id) == 0:
         raise RuntimeError("CARFAX challenge window could not be shown")
 
-    print("CARFAX verification required; complete the puzzle in the Chrome window.")
+    print(
+        "CARFAX verification required; complete any puzzle in the Chrome window. "
+        "The download will resume automatically."
+    )
     try:
-        input("After the report loads in Chrome, press Enter to continue...")
         wait_for_carfax_report(
             ws,
             sid,

@@ -172,10 +172,6 @@ def test_carfax_challenge_shows_then_reparks_window(monkeypatch):
 		lambda *args, **kwargs: calls.append(("wait", kwargs)),
 	)
 	monkeypatch.setattr(
-		"builtins.input",
-		lambda prompt: calls.append(("input", prompt)) or "",
-	)
-	monkeypatch.setattr(
 		"utils.download.park_process_windows",
 		lambda process_id: calls.append(("park", process_id)) or 1,
 	)
@@ -186,7 +182,6 @@ def test_carfax_challenge_shows_then_reparks_window(monkeypatch):
 
 	assert calls == [
 		("show", 1234),
-		("input", "After the report loads in Chrome, press Enter to continue..."),
 		("wait", {"timeout": 45, "allow_challenge": True}),
 		("park", 1234),
 	]
