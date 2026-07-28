@@ -45,6 +45,8 @@ KBB_LOCATOR_TIMEOUT_MS = 10_000
 KBB_NAVIGATION_TIMEOUT_MS = 30_000
 KBB_NAVIGATION_ATTEMPT_TIMEOUT_MS = 10_000
 KBB_DYNAMIC_PRICING_TIMEOUT_MS = 30_000
+KBB_USED_VIN_MAX_ATTEMPTS = 3
+KBB_USED_VIN_TOTAL_TIMEOUT_SECONDS = 60
 KBB_HEADLESS_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -84,59 +86,82 @@ async def get_used_style_url_from_vins(
 ) -> tuple[str, str] | None:
     """Resolve KBB's canonical used style label and URL from an existing VIN."""
     expected_path = f"/{make_string_url_safe(make)}/{model_slug}/{year}/vin/"
-    for vin in vins:
-        if not vin:
-            continue
-        try:
-            await page.goto(
-                KBB_WHATS_MY_CAR_WORTH_URL,
-                wait_until="domcontentloaded",
-                timeout=KBB_NAVIGATION_TIMEOUT_MS,
-            )
-            await page.locator("input#vinButton").check()
-            await page.locator('input[data-lean-auto="vinInput"]').fill(vin)
-            await page.locator('button[data-lean-auto="vinSubmitBtn"]').click(
-                force=True
-            )
-            await page.wait_for_url(
-                "**/vin/**",
-                wait_until="commit",
-                timeout=KBB_NAVIGATION_TIMEOUT_MS,
-            )
-            parsed = urllib.parse.urlparse(page.url)
-            if parsed.path.casefold() != expected_path.casefold():
-                logger.warning(
-                    "KBB VIN resolved to unexpected vehicle path for %s %s %s: %s",
-                    year, make, model_slug, page.url,
+    attempted_vins = [vin for vin in vins if vin][:KBB_USED_VIN_MAX_ATTEMPTS]
+    try:
+        async with asyncio.timeout(KBB_USED_VIN_TOTAL_TIMEOUT_SECONDS):
+            for attempt, vin in enumerate(attempted_vins, start=1):
+                logger.info(
+                    "KBB used-style VIN attempt %d/%d for %s %s %s: %s",
+                    attempt, len(attempted_vins), year, make, model_slug, vin,
                 )
-                continue
-            await page.wait_for_function(
-                r"""() => /(?:^|\n)Style:\s*(?:\n\s*)?[^\n]+/i.test(
-                    document.body?.innerText || ""
-                )""",
-                timeout=KBB_LOCATOR_TIMEOUT_MS,
-            )
-            body = await page.inner_text("body", timeout=KBB_LOCATOR_TIMEOUT_MS)
-            style_match = re.search(
-                r"(?:^|\n)Style:\s*\n?\s*([^\n]+)", body, re.IGNORECASE
-            )
-            if not style_match:
-                logger.warning("KBB VIN result did not provide a style for %s", vin)
-                continue
-            style = style_match.group(1).strip()
-            style_url = KBB_LOOKUP_TRIM_URL.format(
-                make=make_string_url_safe(make),
-                model=model_slug,
-                year=year,
-                trim=make_string_url_safe(style),
-            )
-            logger.debug(
-                "KBB VIN resolved %s %s %s to used style %s: %s",
-                year, make, model_slug, style, style_url,
-            )
-            return style, style_url
-        except (PlaywrightError, TimeoutError) as error:
-            logger.warning("KBB VIN lookup failed for %s: %s", vin, error)
+                try:
+                    await page.goto(
+                        KBB_WHATS_MY_CAR_WORTH_URL,
+                        wait_until="domcontentloaded",
+                        timeout=KBB_NAVIGATION_TIMEOUT_MS,
+                    )
+                    await page.locator("input#vinButton").check()
+                    await page.locator('input[data-lean-auto="vinInput"]').fill(vin)
+                    await page.locator(
+                        'button[data-lean-auto="vinSubmitBtn"]'
+                    ).click(force=True)
+                    await page.wait_for_url(
+                        "**/vin/**",
+                        wait_until="commit",
+                        timeout=KBB_NAVIGATION_TIMEOUT_MS,
+                    )
+                    parsed = urllib.parse.urlparse(page.url)
+                    if parsed.path.casefold() != expected_path.casefold():
+                        logger.warning(
+                            "KBB VIN resolved to unexpected vehicle path for %s %s %s: %s",
+                            year, make, model_slug, page.url,
+                        )
+                        continue
+                    await page.wait_for_function(
+                        r"""() => /(?:^|\n)Style:\s*(?:\n\s*)?[^\n]+/i.test(
+                            document.body?.innerText || ""
+                        )""",
+                        timeout=KBB_LOCATOR_TIMEOUT_MS,
+                    )
+                    body = await page.inner_text(
+                        "body", timeout=KBB_LOCATOR_TIMEOUT_MS
+                    )
+                    style_match = re.search(
+                        r"(?:^|\n)Style:\s*\n?\s*([^\n]+)", body, re.IGNORECASE
+                    )
+                    if not style_match:
+                        logger.warning(
+                            "KBB VIN result did not provide a style for %s", vin
+                        )
+                        continue
+                    style = style_match.group(1).strip()
+                    style_url = KBB_LOOKUP_TRIM_URL.format(
+                        make=make_string_url_safe(make),
+                        model=model_slug,
+                        year=year,
+                        trim=make_string_url_safe(style),
+                    )
+                    logger.debug(
+                        "KBB VIN resolved %s %s %s to used style %s: %s",
+                        year, make, model_slug, style, style_url,
+                    )
+                    return style, style_url
+                except (PlaywrightError, TimeoutError) as error:
+                    logger.warning("KBB VIN lookup failed for %s: %s", vin, error)
+    except asyncio.TimeoutError:
+        logger.warning(
+            "KBB used-style VIN resolution exceeded %d seconds for %s %s %s; "
+            "continuing with national-table links",
+            KBB_USED_VIN_TOTAL_TIMEOUT_SECONDS, year, make, model_slug,
+        )
+        return None
+
+    if attempted_vins:
+        logger.warning(
+            "KBB used-style VIN resolution exhausted %d attempt(s) for %s %s %s; "
+            "continuing with national-table links",
+            len(attempted_vins), year, make, model_slug,
+        )
     return None
 
 
@@ -410,8 +435,11 @@ async def populate_pricing_for_year(
             if used_resolution:
                 local_trim, resolved_trim_source = used_resolution
             elif is_used_pricing:
-                resolved_trim_source = None
-                fpp_source = None
+                logger.info(
+                    "KBB VIN style unavailable for %s; trying national-table "
+                    "trim link directly: %s",
+                    kbb_trim, resolved_trim_source,
+                )
             if make_string_url_safe(table_trim) == model_slug:
                 previous_trim = _previous_local_trim(
                     cache_entries, make, model, year, requested_trim
@@ -422,21 +450,20 @@ async def populate_pricing_for_year(
                         "Using prior-year KBB trim path %s for %s",
                         local_trim, kbb_trim,
                     )
-            if not is_used_pricing or used_resolution:
-                fmr_low, fmr_high, fpp_local, fmv, fpp_source = (
-                    await _get_local_pricing_with_progress(
-                        progress,
-                        page,
-                        year,
-                        make,
-                        model_slug,
-                        local_trim,
-                        kbb_trim,
-                        cache_entries,
-                        source_url=resolved_trim_source,
-                        expect_used=is_used_pricing,
-                    )
+            fmr_low, fmr_high, fpp_local, fmv, fpp_source = (
+                await _get_local_pricing_with_progress(
+                    progress,
+                    page,
+                    year,
+                    make,
+                    model_slug,
+                    local_trim,
+                    kbb_trim,
+                    cache_entries,
+                    source_url=resolved_trim_source,
+                    expect_used=is_used_pricing,
                 )
+            )
             local_ts = datetime.now().isoformat()
         else:
             if not natl_fpp or natl_fpp == "TBD":
@@ -466,9 +493,12 @@ async def populate_pricing_for_year(
         entry["natl_source"] = natl_source
         entry["local_source"] = fpp_source
         entry["pricing_basis"] = "used" if is_used_pricing else "new"
-        if is_used_pricing and not used_style_urls.get(best_matches[table_trim]):
-            entry["skip_reason"] = "KBB used style could not be resolved from VIN."
-        elif not any((entry["msrp"], entry["fpp_natl"], fpp_local, fmv)):
+        usable_prices = (
+            (entry["fpp_natl"], fpp_local, fmv)
+            if is_used_pricing
+            else (entry["msrp"], entry["fpp_natl"], fpp_local, fmv)
+        )
+        if not any(usable_prices):
             entry["skip_reason"] = "There is currently no pricing data for this trim."
         else:
             entry.pop("skip_reason", None)
@@ -501,7 +531,23 @@ async def populate_pricing_for_year(
         used_resolution = used_style_urls.get(requested_trim)
         is_used_pricing = requested_trim in used_style_urls
         if is_used_pricing and not used_resolution:
-            fmr_low = fmr_high = fpp_local = fmv = fpp_source = None
+            logger.info(
+                "KBB VIN style unavailable for %s; trying requested trim link directly",
+                kbb_trim,
+            )
+            fmr_low, fmr_high, fpp_local, fmv, fpp_source = (
+                await _get_local_pricing_with_progress(
+                    progress,
+                    page,
+                    year,
+                    make,
+                    model_slug,
+                    requested_trim,
+                    kbb_trim,
+                    cache_entries,
+                    expect_used=True,
+                )
+            )
         else:
             local_trim, source_url = (
                 used_resolution if used_resolution else (requested_trim, None)
@@ -542,9 +588,12 @@ async def populate_pricing_for_year(
             "natl_timestamp": entry.get("natl_timestamp"),
             "local_timestamp": datetime.now().isoformat(),
         })
-        if is_used_pricing and not used_resolution:
-            entry["skip_reason"] = "KBB used style could not be resolved from VIN."
-        elif any((entry["msrp"], entry["fpp_natl"], fpp_local, fmv)):
+        usable_prices = (
+            (entry["fpp_natl"], fpp_local, fmv)
+            if is_used_pricing
+            else (entry["msrp"], entry["fpp_natl"], fpp_local, fmv)
+        )
+        if any(usable_prices):
             entry.pop("skip_reason", None)
         else:
             entry["skip_reason"] = "There is currently no pricing data for this trim."

@@ -1,3 +1,5 @@
+import asyncio
+
 from unittest.mock import AsyncMock, MagicMock
 from contextlib import nullcontext
 
@@ -99,6 +101,51 @@ async def test_vin_lookup_resolves_exact_used_style_url():
 	page.wait_for_url.assert_awaited_once_with(
 		"**/vin/**", wait_until="commit", timeout=30_000
 	)
+
+
+async def test_vin_lookup_stops_after_three_failed_vins():
+	page = MagicMock()
+	page.goto = AsyncMock()
+	vin_mode = MagicMock()
+	vin_mode.check = AsyncMock()
+	vin_input = MagicMock()
+	vin_input.fill = AsyncMock(side_effect=TimeoutError("VIN input disabled"))
+	page.locator.side_effect = lambda selector: {
+		"input#vinButton": vin_mode,
+		'input[data-lean-auto="vinInput"]': vin_input,
+	}[selector]
+
+	result = await get_used_style_url_from_vins(
+		page,
+		"2024",
+		"Hyundai",
+		"ioniq-5",
+		["VIN1", "VIN2", "VIN3", "VIN4"],
+	)
+
+	assert result is None
+	assert [call.args[0] for call in vin_input.fill.await_args_list] == [
+		"VIN1",
+		"VIN2",
+		"VIN3",
+	]
+
+
+async def test_vin_lookup_has_one_overall_time_limit(monkeypatch):
+	page = MagicMock()
+
+	async def never_finishes(*_args, **_kwargs):
+		await asyncio.Event().wait()
+
+	page.goto = AsyncMock(side_effect=never_finishes)
+	monkeypatch.setattr("analysis.kbb.KBB_USED_VIN_TOTAL_TIMEOUT_SECONDS", 0.01)
+
+	result = await get_used_style_url_from_vins(
+		page, "2024", "Hyundai", "ioniq-5", ["VIN1"]
+	)
+
+	assert result is None
+	page.goto.assert_awaited_once()
 
 
 async def test_used_lookup_rejects_new_kbb_page(monkeypatch):
@@ -481,6 +528,47 @@ async def test_requested_trim_uses_national_table_link_first(monkeypatch):
 		"https://kbb.com/hyundai/ioniq-5/2024/"
 		"disney100-platinum-edition-sport-utility-4d/"
 	)
+
+
+async def test_failed_used_vin_resolution_tries_national_table_link(monkeypatch):
+	cache_entries = {}
+	local_lookup = AsyncMock(
+		return_value=(28_000, 32_000, 30_000, None, "direct-used-link")
+	)
+	monkeypatch.setattr(
+		"analysis.kbb.get_or_fetch_national_pricing",
+		AsyncMock(return_value=([(
+			"Limited Sport Utility 4D",
+			"$54,875",
+			"$30,400",
+			"https://kbb.com/hyundai/ioniq-5/2024/",
+			"/hyundai/ioniq-5/2024/limited-sport-utility-4d/",
+			"2026-01-01T00:00:00",
+		)], None)),
+	)
+	monkeypatch.setattr("analysis.kbb.get_or_fetch_local_pricing", local_lookup)
+
+	await populate_pricing_for_year(
+		AsyncMock(),
+		"Hyundai",
+		"IONIQ 5",
+		"ioniq-5",
+		"2024",
+		cache_entries,
+		{"limited"},
+		used_style_urls={"limited": None},
+	)
+
+	await_args = local_lookup.await_args
+	assert await_args is not None
+	assert await_args.kwargs["source_url"] == (
+		"https://kbb.com/hyundai/ioniq-5/2024/"
+		"limited-sport-utility-4d/"
+	)
+	assert await_args.kwargs["expect_used"] is True
+	entry = cache_entries["2024 Hyundai IONIQ 5 Limited Sport Utility 4D"]
+	assert entry["fpp_local"] == 30_000
+	assert "skip_reason" not in entry
 
 
 async def test_navigation_retries_share_one_total_timeout(monkeypatch):
