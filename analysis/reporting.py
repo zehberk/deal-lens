@@ -312,7 +312,7 @@ async def render_level2_pdf(
         for name in ("Great", "Good", "Fair", "Poor", "Bad")
         for rating in rating_bins[name]
     ]
-    all_images = collect_all_images(rating_bins)
+    all_images = collect_all_images({**rating_bins, "Price only": price_only})
     information_summary = summarize_level2_failures(price_only, information_only)
 
     summary = create_report_filter_summary(metadata)

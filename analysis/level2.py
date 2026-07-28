@@ -131,8 +131,10 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
     ratings: list[
         tuple[dict, str, int, list[str], dict[str, int | float]]
     ] = []
-    # listing, price assessment, narrative
-    price_only: list[tuple[dict, str, list[str]]] = []
+    # listing, price assessment, unavailable risk, narrative, pricing visual
+    price_only: list[
+        tuple[dict, str, None, list[str], dict[str, int | float]]
+    ] = []
     # listing, concrete reason
     information_only: list[tuple[dict, str]] = []
 
@@ -149,13 +151,13 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
             continue
 
         deal = assessment[0]
+        pricing_visual = assessment[4]
         if report is None or not report.exists():
             narrative.append(
                 "A vehicle-history report was not collected, so risk and the final Level 2 rating are unavailable."
             )
-            price_only.append((listing, deal, narrative))
+            price_only.append((listing, deal, None, narrative, pricing_visual))
             continue
-        pricing_visual = assessment[4]
 
         # Risk ratings and deal adjustment
         carfax: CarfaxData = get_carfax_data(report)

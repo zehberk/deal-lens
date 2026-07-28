@@ -213,8 +213,6 @@ async def collect_and_run_level2_api(args: Namespace) -> None:
             " ", "_"
         )
     )
-    if args.save_docs:
-        await download_files(listings, filename)
     await start_level2_analysis(metadata, listings, filename)
 
 

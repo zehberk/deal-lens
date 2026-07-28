@@ -23,7 +23,7 @@
 			<p class="footnote">A complete Level 2 rating requires both compatible KBB pricing and a vehicle-history report. Listings without that evidence receive a price assessment or are counted under an evaluation failure reason.</p>
 		</section>
 
-		<p class="report-counts">Of {{ total_count }} returned listings, <strong>{{ full_count }}</strong> received a complete risk-adjusted Level 2 rating. The remaining <strong>{{ total_count - full_count }}</strong> could not be fully evaluated and are summarized by reason below.</p>
+		<p class="report-counts">Of {{ total_count }} returned listings, <strong>{{ full_count }}</strong> received a complete risk-adjusted Level 2 rating and <strong>{{ price_only|length }}</strong> received a price-only rating. The remaining <strong>{{ total_count - full_count - (price_only|length) }}</strong> could not be evaluated and are summarized by reason below.</p>
 
 		{% macro miles(n) -%}{{ "{:,}".format(n) }}{%- endmacro %}
 		{% macro money(n) -%}{{ "${:,.0f}".format(n) }}{%- endmacro %}
@@ -57,7 +57,7 @@
 				<div>VIN: <strong>{{ vin }}</strong></div>
 				<div>Mileage: <strong>{{ miles(listing.mileage) }}</strong></div>
 				<div>Listing Price: <strong>{{ money(listing.price) }}</strong></div>
-				<div>Risk Score: <strong>{{ risk }}</strong></div>
+				<div>Risk Score: <strong>{{ risk if risk is not none else "Not available" }}</strong></div>
 				<div>Dealer: <strong>{{ seller_name }} - {{ seller_location }}</strong></div>
 				<div><a class="dealer-link" href="{{ listing.dealer_listing }}">View Dealer Listing</a></div>
 			</div>
@@ -89,10 +89,18 @@
 			{% for rating in all_ratings %}<article class="listing {{ rating[1]|lower }}-listing">{{ vehicle_row(rating) }}</article>{% endfor %}
 		</main>
 
+		{% if price_only %}
+			<section class="deal-bin">
+				<h2>Price-only ratings</h2>
+				<p>These ratings use compatible KBB pricing but do not include vehicle-history risk.</p>
+				{% for rating in price_only %}<article class="listing {{ rating[1]|lower }}-listing">{{ vehicle_row(rating) }}</article>{% endfor %}
+			</section>
+		{% endif %}
+
 		{% if information_summary %}
 			<section class="unable-summary">
 				<h2>Unable to Evaluate</h2>
-				<p>These listings are excluded from individual display:</p>
+				<p>These listings are excluded from individual display or lack a complete risk-adjusted rating:</p>
 				<ul>{% for reason, count in information_summary %}<li>{{ reason }} <strong>({{ count }})</strong></li>{% endfor %}</ul>
 			</section>
 		{% endif %}

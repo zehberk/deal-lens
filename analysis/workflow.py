@@ -117,16 +117,23 @@ async def prepare_level1_analysis(
 async def prepare_level2_analysis(
     metadata: dict, listings: list[dict], filename: str
 ) -> AnalysisContext:
+    ctx = build_analysis_context(metadata)
+    norm_listings = [normalize_listing(l) for l in listings]
+
+    # Pricing is the primary eligibility input for Level 2. Resolve it before
+    # slower dealer, supplementary-document, and vehicle-history enrichment so
+    # cached KBB data remains usable even when those later services are degraded.
+    populate_cache(ctx)
+    await populate_variants(ctx, norm_listings)
+    await populate_pricing_data(ctx, norm_listings)
 
     if not all(get_vehicle_dir(l) for l in listings):
         await download_files(listings, filename)
 
-    norm_listings = [normalize_listing(l) for l in listings]
-
     # Keep every listing in the Level 2 workflow. Report availability determines
     # whether a listing receives a full risk-adjusted rating later; it should not
     # determine whether the listing is represented in the report at all.
-    ctx = await prepare_level1_analysis(metadata, norm_listings, is_normalized=True)
+    populate_filtered_listings(ctx, norm_listings, full_listings=listings)
 
     check_missing_docs(listings)
 

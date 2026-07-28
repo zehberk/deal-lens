@@ -176,7 +176,7 @@ async def test_level1_api_workflow_forwards_force_and_renders(monkeypatch):
 	assert calls["render"] == (snapshot, kbb)
 
 
-async def test_level2_save_docs_runs_before_analysis(monkeypatch):
+async def test_level2_delegates_document_collection_to_analysis(monkeypatch):
 	query = object()
 	client = object()
 	progress = object()
@@ -208,13 +208,9 @@ async def test_level2_save_docs_runs_before_analysis(monkeypatch):
 		lambda *args: "20260728_120000",
 	)
 
-	async def fake_download(listings, filename):
-		order.append(("download", listings, filename))
-
 	async def fake_analysis(actual_metadata, listings, filename):
 		order.append(("analysis", listings, filename))
 
-	monkeypatch.setattr("deal_lens.cli.download_files", fake_download)
 	monkeypatch.setattr("deal_lens.cli.start_level2_analysis", fake_analysis)
 	args = Namespace(
 		url="search-url",
@@ -228,10 +224,7 @@ async def test_level2_save_docs_runs_before_analysis(monkeypatch):
 	await collect_and_run_level2_api(args)
 
 	filename = "output/raw/INFINITI_QX55_listings_20260728_120000.json"
-	assert order == [
-		("download", [listing], filename),
-		("analysis", [listing], filename),
-	]
+	assert order == [("analysis", [listing], filename)]
 
 
 async def test_level3_api_workflow_forwards_collection_options(monkeypatch):

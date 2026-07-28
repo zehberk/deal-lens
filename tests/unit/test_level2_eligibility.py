@@ -61,7 +61,7 @@ async def test_level2_keeps_price_only_and_unmapped_listings(monkeypatch):
 		level2,
 		"_price_assessment",
 		lambda _lc, narrative: narrative.append("Price evidence available.")
-		or ("Good", 0, 0, 0.0),
+		or ("Good", 0, 0, 0.0, {"listing_price": 25_000}),
 	)
 	monkeypatch.setattr(level2, "render_level2_pdf", fake_render)
 
@@ -76,10 +76,12 @@ async def test_level2_keeps_price_only_and_unmapped_listings(monkeypatch):
 		(
 			price_only_listing,
 			"Good",
+			None,
 			[
 				"Price evidence available.",
 				"A vehicle-history report was not collected, so risk and the final Level 2 rating are unavailable.",
 			],
+			{"listing_price": 25_000},
 		)
 	]
 	assert render_args[5] == [
@@ -126,9 +128,11 @@ async def test_level2_uses_available_national_fpp_without_fmv(monkeypatch):
 
 	assert render_args[3] == []
 	assert len(render_args[4]) == 1
-	assessed_listing, _, narrative = render_args[4][0]
+	assessed_listing, _, risk, narrative, pricing = render_args[4][0]
 	assert assessed_listing == listing
+	assert risk is None
 	assert narrative[0].startswith("National FPP was used")
+	assert pricing["listing_price"] == listing["price"]
 	assert render_args[5] == []
 
 
