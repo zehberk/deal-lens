@@ -372,6 +372,7 @@ def launch_chrome(port: int, user_data_dir: str):
         f"--user-data-dir={user_data_dir}",
         "--no-first-run",
         "--no-default-browser-check",
+        "--hide-crash-restore-bubble",
         "--disable-sync",
         "--window-position=-32000,-32000",
         "--window-size=1280,900",
@@ -402,7 +403,7 @@ def park_process_windows(process_id: int, timeout: float = 5.0) -> int:
         def park_window(window, _parameter):
             owner = ctypes.c_ulong()
             user32.GetWindowThreadProcessId(window, ctypes.byref(owner))
-            if owner.value == process_id:
+            if owner.value == process_id and is_chrome_browser_window(user32, window):
                 user32.EnableWindow(window, True)
                 user32.SetWindowPos(
                     window, 0, -32000, -32000, 1280, 900, 0x0040 | 0x0010 | 0x0004
@@ -420,6 +421,16 @@ def park_process_windows(process_id: int, timeout: float = 5.0) -> int:
     return 0
 
 
+def is_chrome_browser_window(user32, window) -> bool:
+    """Return whether an HWND is Chrome's titled, interactive browser window."""
+    class_name = ctypes.create_unicode_buffer(256)
+    user32.GetClassNameW(window, class_name, len(class_name))
+    return (
+        class_name.value == "Chrome_WidgetWin_1"
+        and user32.GetWindowTextLengthW(window) > 0
+    )
+
+
 def show_process_windows(process_id: int, timeout: float = 5.0) -> int:
     """Restore a process's top-level windows on-screen for user interaction."""
     if platform.system() != "Windows":
@@ -434,7 +445,7 @@ def show_process_windows(process_id: int, timeout: float = 5.0) -> int:
         def show_window(window, _parameter):
             owner = ctypes.c_ulong()
             user32.GetWindowThreadProcessId(window, ctypes.byref(owner))
-            if owner.value == process_id:
+            if owner.value == process_id and is_chrome_browser_window(user32, window):
                 # Chrome starts far off-screen so it cannot flash or take focus
                 # during normal report downloads. Move it back before restoring it.
                 user32.EnableWindow(window, True)

@@ -15,6 +15,7 @@ from websocket import WebSocket
 from utils.download import (
 	complete_carfax_challenge,
 	download_images,
+	is_chrome_browser_window,
 	launch_chrome,
 	needs_poll,
 	wait_for_carfax_report,
@@ -92,6 +93,27 @@ def test_carfax_chrome_window_is_parked_offscreen_on_windows(monkeypatch):
 	assert "--window-position=-32000,-32000" in args
 	assert kwargs == {}
 	assert park_calls == [1234]
+
+
+@pytest.mark.parametrize(
+	("window_class", "title_length", "expected"),
+	[
+		("Chrome_WidgetWin_1", 24, True),
+		("Chrome_WidgetWin_1", 0, False),
+		("Chrome_WidgetWin_0", 24, False),
+	],
+)
+def test_only_titled_chrome_browser_windows_are_managed(
+	window_class, title_length, expected
+):
+	class User32:
+		def GetClassNameW(self, _window, class_name, _length):
+			class_name.value = window_class
+
+		def GetWindowTextLengthW(self, _window):
+			return title_length
+
+	assert is_chrome_browser_window(User32(), 100) is expected
 
 
 def test_cached_dealer_fees_satisfy_polling_requirement():
