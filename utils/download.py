@@ -416,6 +416,38 @@ def hide_process_windows(process_id: int, timeout: float = 5.0) -> int:
     return 0
 
 
+def show_process_windows(process_id: int, timeout: float = 5.0) -> int:
+    """Restore a process's top-level windows on-screen for user interaction."""
+    if platform.system() != "Windows":
+        return 0
+
+    user32 = ctypes.windll.user32
+    callback_type = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    deadline = time.monotonic() + timeout
+    shown: set[int] = set()
+
+    while time.monotonic() < deadline:
+        def show_window(window, _parameter):
+            owner = ctypes.c_ulong()
+            user32.GetWindowThreadProcessId(window, ctypes.byref(owner))
+            if owner.value == process_id:
+                # Chrome starts far off-screen so it cannot flash or take focus
+                # during normal report downloads. Move it back before restoring it.
+                user32.SetWindowPos(window, 0, 100, 100, 1280, 900, 0x0040 | 0x0004)
+                user32.ShowWindow(window, 9)  # SW_RESTORE
+                user32.SetForegroundWindow(window)
+                if user32.IsWindowVisible(window):
+                    shown.add(int(window))
+            return True
+
+        user32.EnumWindows(callback_type(show_window), 0)
+        if shown:
+            return len(shown)
+        time.sleep(0.05)
+
+    return 0
+
+
 def get_cdp_websocket_url(port: int) -> str:
     info = requests.get(f"http://127.0.0.1:{port}/json/version", timeout=5).json()
     return info["webSocketDebuggerUrl"]
@@ -515,7 +547,13 @@ def set_emulated_media(ws: WebSocket, sid: str, media: str = "screen"):
     send_cdp_command(ws, 150, "Emulation.setEmulatedMedia", {"media": media}, sid)
 
 
-def wait_for_carfax_report(ws: WebSocket, sid: str, timeout=90):
+def wait_for_carfax_report(
+    ws: WebSocket,
+    sid: str,
+    timeout: float = 90,
+    *,
+    allow_challenge: bool = False,
+):
     send_cdp_command(ws, 10, "Page.enable", sid=sid)
     send_cdp_command(ws, 11, "Runtime.enable", sid=sid)
     end = time.time() + timeout
@@ -523,22 +561,53 @@ def wait_for_carfax_report(ws: WebSocket, sid: str, timeout=90):
         info = evaluate_js(
             ws,
             sid,
-            "({t: document.title, href: location.href, ready: document.readyState})",
+            "({t: document.title, href: location.href, ready: document.readyState, "
+            "challenge: Boolean(document.querySelector("
+            "'iframe[src*=\"captcha\"], iframe[src*=\"datadome\"], "
+            "iframe[title*=\"challenge\" i]'"
+            "))})",
         )
         t = (info.get("t") or "").lower()
         href = (info.get("href") or "").lower()
         ready = (info.get("ready") or "").lower()
+        challenge = bool(info.get("challenge"))
 
         host = (urlparse(href).hostname or "").lower()
         if host == "secure.carfax.com":
             raise RuntimeError("secure.carfax.com redirect")
 
-        if "access blocked" in t or "/record-check" in href:
+        if (
+            not allow_challenge
+            and ("access blocked" in t or "/record-check" in href or challenge)
+        ):
             raise RuntimeError("access blocked")
         if "vehicle history report" in t and "carfax" in t and ready == "complete":
             return
         time.sleep(0.5)
     raise TimeoutError("report not ready")
+
+
+def complete_carfax_challenge(
+    ws: WebSocket,
+    sid: str,
+    process_id: int,
+    timeout: float = 300,
+) -> None:
+    """Show Chrome for a human challenge, then hide it after completion."""
+    if show_process_windows(process_id) == 0:
+        raise RuntimeError("CARFAX challenge window could not be shown")
+
+    print("CARFAX verification required; complete the puzzle in the Chrome window.")
+    try:
+        wait_for_carfax_report(
+            ws,
+            sid,
+            timeout=timeout,
+            allow_challenge=True,
+        )
+    finally:
+        if hide_process_windows(process_id) == 0:
+            raise RuntimeError("Chrome challenge window could not be hidden")
 
 
 def print_to_pdf(ws: WebSocket, sid: str, out_path: Path):
@@ -665,10 +734,12 @@ def download_report_pdfs(listings: list[dict]) -> None:
                     except RuntimeError as e:
                         if "access blocked" not in str(e).lower():
                             raise
-                        send_cdp_command(ws, 12, "Page.reload", sid=sid)
-                        # tiny pause so the reload actually kicks in
-                        time.sleep(0.5)
-                        wait_for_carfax_report(ws, sid, timeout=60)
+                        if platform.system() == "Windows":
+                            complete_carfax_challenge(ws, sid, proc.pid)
+                        else:
+                            send_cdp_command(ws, 12, "Page.reload", sid=sid)
+                            time.sleep(0.5)
+                            wait_for_carfax_report(ws, sid, timeout=60)
 
                     set_emulated_media(
                         ws, sid, "screen"

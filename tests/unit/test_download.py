@@ -10,8 +10,15 @@ import pytest
 
 from PIL import Image
 from playwright.async_api import APIRequestContext, TimeoutError as PlaywrightTimeout
+from websocket import WebSocket
 
-from utils.download import download_images, launch_chrome, needs_poll
+from utils.download import (
+	complete_carfax_challenge,
+	download_images,
+	launch_chrome,
+	needs_poll,
+	wait_for_carfax_report,
+)
 
 
 class Response:
@@ -107,3 +114,52 @@ def test_missing_carfax_url_remains_due_after_poll_window():
 	cache = {"TESTVIN": {"dealer_fees": [["Unknown", -1, None]]}}
 
 	assert needs_poll(listing, cache)
+
+
+def test_carfax_challenge_wait_allows_user_to_complete_puzzle(monkeypatch):
+	states = iter((
+		{
+			"t": "carfax.com",
+			"href": "https://www.carfax.com/record-check/",
+			"ready": "complete",
+			"challenge": True,
+		},
+		{
+			"t": "CARFAX Vehicle History Report",
+			"href": "https://www.carfax.com/vehiclehistory/report",
+			"ready": "complete",
+			"challenge": False,
+		},
+	))
+	monkeypatch.setattr("utils.download.send_cdp_command", lambda *args, **kwargs: None)
+	monkeypatch.setattr("utils.download.evaluate_js", lambda *args: next(states))
+
+	wait_for_carfax_report(
+		cast(WebSocket, object()), "session", timeout=1, allow_challenge=True
+	)
+
+
+def test_carfax_challenge_shows_then_rehides_window(monkeypatch):
+	calls = []
+	monkeypatch.setattr(
+		"utils.download.show_process_windows",
+		lambda process_id: calls.append(("show", process_id)) or 1,
+	)
+	monkeypatch.setattr(
+		"utils.download.wait_for_carfax_report",
+		lambda *args, **kwargs: calls.append(("wait", kwargs)),
+	)
+	monkeypatch.setattr(
+		"utils.download.hide_process_windows",
+		lambda process_id: calls.append(("hide", process_id)) or 1,
+	)
+
+	complete_carfax_challenge(
+		cast(WebSocket, object()), "session", 1234, timeout=45
+	)
+
+	assert calls == [
+		("show", 1234),
+		("wait", {"timeout": 45, "allow_challenge": True}),
+		("hide", 1234),
+	]
