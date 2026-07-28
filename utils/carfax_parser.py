@@ -331,10 +331,9 @@ def get_carfax_data(path: Path) -> CarfaxData:
     )
 
     # Save cache
-    cache[vin] = {
-        "hash": html_hash,
-        "data": parsed.__dict__,  # Everything inside CarfaxData is JSON-safe
-    }
+    entry = cache.setdefault(vin, {})
+    entry["hash"] = html_hash
+    entry["data"] = parsed.__dict__  # Everything inside CarfaxData is JSON-safe
     save_cache(cache, ANALYSIS_CACHE)
 
     return parsed

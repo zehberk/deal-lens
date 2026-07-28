@@ -735,14 +735,14 @@ def needs_poll(l: dict, cache: dict) -> bool:
 
     cached_url = cached_entry.get("carfax_url")
     # 3: If URL is missing/unavailable → poll
-    if not cached_url and current == "Unavailable":
+    if not cached_url and (not current or current == "Unavailable"):
         return True
 
     # 4: If URL exists but changed → poll again
     if cached_url and current != cached_url:
         return True
 
-    cached_fee = cached_entry.get("dealer_fee")
+    cached_fee = cached_entry.get("dealer_fees") or cached_entry.get("dealer_fee")
     # 5: If no cached fee exists → poll
     # The listing will not have the dealer fee included
     if not cached_fee:
@@ -809,11 +809,15 @@ async def download_files(
 
         if vin:
             cached_url = analysis_cache.get(vin, {}).get("carfax_url")
-            cached_fee = analysis_cache.get(vin, {}).get("dealer_fee")
-            cached_included = analysis_cache.get(vin, {}).get("dealer_fee_included")
+            cached_entry = analysis_cache.get(vin, {})
+            cached_fees = cached_entry.get("dealer_fees")
+            cached_fee = cached_entry.get("dealer_fee")
+            cached_included = cached_entry.get("dealer_fee_included")
             if cached_url and (not url or url == "Unavailable"):
                 l.setdefault("additional_docs", {})["carfax_url"] = cached_url
-            if cached_fee:
+            if cached_fees:
+                l.setdefault("seller", {})["dealer_fees"] = cached_fees
+            elif cached_fee:
                 l.setdefault("seller", {})["dealer_fee"] = cached_fee
             if cached_included:
                 l.setdefault("seller", {})["dealer_fee_included"] = cached_included
@@ -901,7 +905,7 @@ def needs_supplementary_info(
         return (
             d.get("price"),
             d.get("additional_docs", {}).get("carfax_url"),
-            d.get("seller", {}).get("dealer_fee"),
+            d.get("seller", {}).get("dealer_fees"),
         )
 
     if _key_fields(old) != _key_fields(listing):

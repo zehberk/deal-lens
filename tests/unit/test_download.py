@@ -11,7 +11,7 @@ import pytest
 from PIL import Image
 from playwright.async_api import APIRequestContext, TimeoutError as PlaywrightTimeout
 
-from utils.download import download_images, launch_chrome
+from utils.download import download_images, launch_chrome, needs_poll
 
 
 class Response:
@@ -85,3 +85,25 @@ def test_carfax_chrome_window_is_hidden_on_windows(monkeypatch):
 	assert "--window-position=-32000,-32000" in args
 	assert kwargs == {}
 	assert hide_calls == [1234]
+
+
+def test_cached_dealer_fees_satisfy_polling_requirement():
+	listing = {
+		"vin": "TESTVIN",
+		"additional_docs": {"carfax_url": "https://carfax.test/report"},
+	}
+	cache = {
+		"TESTVIN": {
+			"carfax_url": "https://carfax.test/report",
+			"dealer_fees": [["Doc fee", 250, False]],
+		},
+	}
+
+	assert not needs_poll(listing, cache)
+
+
+def test_missing_carfax_url_remains_due_after_poll_window():
+	listing = {"vin": "TESTVIN", "additional_docs": {"carfax_url": None}}
+	cache = {"TESTVIN": {"dealer_fees": [["Unknown", -1, None]]}}
+
+	assert needs_poll(listing, cache)

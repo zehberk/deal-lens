@@ -135,6 +135,11 @@ count and ETA; operations whose size is not yet known use a spinner. Redirected
 and non-interactive output remains free of animated progress displays. When a
 configured Visor rolling-window limit is reached, the active display identifies
 the rate-limit wait and its duration before requests resume.
+Dealer-page discovery runs before supplementary files and CARFAX reports are
+downloaded, allowing a CARFAX link discovered from a dealer page to be used in
+the same invocation. Its progress total includes only listings due for polling;
+recent cached dealer results are not requested again until their polling window
+expires.
 Every command prints its total wall-clock runtime when it finishes.
 
 The standalone `level1`, `level2`, and `level3` commands analyze the latest
