@@ -380,37 +380,41 @@ def launch_chrome(port: int, user_data_dir: str):
     ]
     if platform.system() == "Windows":
         process = subprocess.Popen(args)
-        hidden_windows = hide_process_windows(process.pid)
-        if hidden_windows == 0:
+        parked_windows = park_process_windows(process.pid)
+        if parked_windows == 0:
             process.terminate()
-            raise RuntimeError("Chrome browser window could not be hidden")
+            raise RuntimeError("Chrome browser window could not be parked off-screen")
         return process
     return subprocess.Popen(args)
 
 
-def hide_process_windows(process_id: int, timeout: float = 5.0) -> int:
-    """Hide and verify every top-level window owned by a Windows process."""
+def park_process_windows(process_id: int, timeout: float = 5.0) -> int:
+    """Keep a process enabled but move its windows outside the visible desktop."""
     if platform.system() != "Windows":
         return 0
 
     user32 = ctypes.windll.user32
     callback_type = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
     deadline = time.monotonic() + timeout
-    hidden: set[int] = set()
+    parked: set[int] = set()
 
     while time.monotonic() < deadline:
-        def hide_window(window, _parameter):
+        def park_window(window, _parameter):
             owner = ctypes.c_ulong()
             user32.GetWindowThreadProcessId(window, ctypes.byref(owner))
             if owner.value == process_id:
-                user32.ShowWindow(window, subprocess.SW_HIDE)
-                if not user32.IsWindowVisible(window):
-                    hidden.add(int(window))
+                user32.EnableWindow(window, True)
+                user32.SetWindowPos(
+                    window, 0, -32000, -32000, 1280, 900, 0x0040 | 0x0010 | 0x0004
+                )
+                user32.ShowWindow(window, 4)  # SW_SHOWNOACTIVATE
+                if user32.IsWindowVisible(window):
+                    parked.add(int(window))
             return True
 
-        user32.EnumWindows(callback_type(hide_window), 0)
-        if hidden:
-            return len(hidden)
+        user32.EnumWindows(callback_type(park_window), 0)
+        if parked:
+            return len(parked)
         time.sleep(0.05)
 
     return 0
@@ -433,8 +437,10 @@ def show_process_windows(process_id: int, timeout: float = 5.0) -> int:
             if owner.value == process_id:
                 # Chrome starts far off-screen so it cannot flash or take focus
                 # during normal report downloads. Move it back before restoring it.
-                user32.SetWindowPos(window, 0, 100, 100, 1280, 900, 0x0040 | 0x0004)
+                user32.EnableWindow(window, True)
                 user32.ShowWindow(window, 9)  # SW_RESTORE
+                user32.SetWindowPos(window, 0, 100, 100, 1280, 900, 0x0040 | 0x0004)
+                user32.BringWindowToTop(window)
                 user32.SetForegroundWindow(window)
                 if user32.IsWindowVisible(window):
                     shown.add(int(window))
@@ -612,8 +618,8 @@ def complete_carfax_challenge(
             allow_challenge=True,
         )
     finally:
-        if hide_process_windows(process_id) == 0:
-            raise RuntimeError("Chrome challenge window could not be hidden")
+        if park_process_windows(process_id) == 0:
+            raise RuntimeError("Chrome challenge window could not be parked off-screen")
 
 
 def print_to_pdf(ws: WebSocket, sid: str, out_path: Path):
@@ -729,9 +735,9 @@ def download_report_pdfs(listings: list[dict]) -> None:
                 target_id = open_cdp_target(ws, url)
                 if (
                     platform.system() == "Windows"
-                    and hide_process_windows(proc.pid) == 0
+                    and park_process_windows(proc.pid) == 0
                 ):
-                    raise RuntimeError("Chrome report window could not be hidden")
+                    raise RuntimeError("Chrome report window could not be parked off-screen")
                 sid = attach_cdp_session(ws, target_id)
 
                 if provider == "carfax":

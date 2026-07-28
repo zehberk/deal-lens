@@ -70,18 +70,18 @@ async def test_image_timeout_does_not_abort_remaining_downloads(output_dir):
 	assert (output_dir / "images" / "2.jpg").is_file()
 
 
-def test_carfax_chrome_window_is_hidden_on_windows(monkeypatch):
+def test_carfax_chrome_window_is_parked_offscreen_on_windows(monkeypatch):
 	calls = []
 	process = type("Process", (), {"pid": 1234})()
-	hide_calls = []
+	park_calls = []
 	monkeypatch.setattr("utils.download.platform.system", lambda: "Windows")
 	monkeypatch.setattr(
 		"utils.download.subprocess.Popen",
 		lambda args, **kwargs: calls.append((args, kwargs)) or process,
 	)
 	monkeypatch.setattr(
-		"utils.download.hide_process_windows",
-		lambda process_id: hide_calls.append(process_id) or 1,
+		"utils.download.park_process_windows",
+		lambda process_id: park_calls.append(process_id) or 1,
 	)
 
 	launch_chrome(9223, "test-profile")
@@ -91,7 +91,7 @@ def test_carfax_chrome_window_is_hidden_on_windows(monkeypatch):
 	assert "--remote-debugging-port=9223" in args
 	assert "--window-position=-32000,-32000" in args
 	assert kwargs == {}
-	assert hide_calls == [1234]
+	assert park_calls == [1234]
 
 
 def test_cached_dealer_fees_satisfy_polling_requirement():
@@ -139,7 +139,7 @@ def test_carfax_challenge_wait_allows_user_to_complete_puzzle(monkeypatch):
 	)
 
 
-def test_carfax_challenge_shows_then_rehides_window(monkeypatch):
+def test_carfax_challenge_shows_then_reparks_window(monkeypatch):
 	calls = []
 	monkeypatch.setattr(
 		"utils.download.show_process_windows",
@@ -154,8 +154,8 @@ def test_carfax_challenge_shows_then_rehides_window(monkeypatch):
 		lambda prompt: calls.append(("input", prompt)) or "",
 	)
 	monkeypatch.setattr(
-		"utils.download.hide_process_windows",
-		lambda process_id: calls.append(("hide", process_id)) or 1,
+		"utils.download.park_process_windows",
+		lambda process_id: calls.append(("park", process_id)) or 1,
 	)
 
 	complete_carfax_challenge(
@@ -166,5 +166,5 @@ def test_carfax_challenge_shows_then_rehides_window(monkeypatch):
 		("show", 1234),
 		("input", "After the report loads in Chrome, press Enter to continue..."),
 		("wait", {"timeout": 45, "allow_challenge": True}),
-		("hide", 1234),
+		("park", 1234),
 	]

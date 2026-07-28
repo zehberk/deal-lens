@@ -57,10 +57,11 @@ VIN resolution and KBB price gathering run installed Google Chrome in headless
 mode with a normal browser context; KBB rejects Playwright's bundled headless
 Chromium at its edge layer.
 CARFAX requires headed Chrome, so on Windows DealLens starts its browser off-screen,
-then hides and verifies its native window before downloading reports.
+keeps it enabled without taking focus, and verifies its off-screen position before
+downloading reports.
 If CARFAX presents an interactive verification puzzle, DealLens restores and focuses
 the browser and waits for Enter after the user completes it. DealLens then verifies
-that the report loaded, with a five-minute timeout, and hides Chrome again.
+that the report loaded, with a five-minute timeout, and parks Chrome off-screen again.
 KBB browser navigation is bounded to 30 seconds across retries, while individual
 DOM locator waits are bounded to 10 seconds, with up to 30 seconds for KBB's
 dynamically rendered price advisor. Missing national fair-purchase prices remain
