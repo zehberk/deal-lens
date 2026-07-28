@@ -46,7 +46,7 @@ KBB_NAVIGATION_TIMEOUT_MS = 30_000
 KBB_NAVIGATION_ATTEMPT_TIMEOUT_MS = 10_000
 KBB_DYNAMIC_PRICING_TIMEOUT_MS = 30_000
 KBB_USED_VIN_MAX_ATTEMPTS = 3
-KBB_USED_VIN_TOTAL_TIMEOUT_SECONDS = 60
+KBB_USED_VIN_ATTEMPT_TIMEOUT_SECONDS = 60
 KBB_HEADLESS_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -87,13 +87,13 @@ async def get_used_style_url_from_vins(
     """Resolve KBB's canonical used style label and URL from an existing VIN."""
     expected_path = f"/{make_string_url_safe(make)}/{model_slug}/{year}/vin/"
     attempted_vins = [vin for vin in vins if vin][:KBB_USED_VIN_MAX_ATTEMPTS]
-    try:
-        async with asyncio.timeout(KBB_USED_VIN_TOTAL_TIMEOUT_SECONDS):
-            for attempt, vin in enumerate(attempted_vins, start=1):
-                logger.info(
-                    "KBB used-style VIN attempt %d/%d for %s %s %s: %s",
-                    attempt, len(attempted_vins), year, make, model_slug, vin,
-                )
+    for attempt, vin in enumerate(attempted_vins, start=1):
+        logger.info(
+            "KBB used-style VIN attempt %d/%d for %s %s %s: %s",
+            attempt, len(attempted_vins), year, make, model_slug, vin,
+        )
+        try:
+            async with asyncio.timeout(KBB_USED_VIN_ATTEMPT_TIMEOUT_SECONDS):
                 try:
                     await page.goto(
                         KBB_WHATS_MY_CAR_WORTH_URL,
@@ -101,7 +101,17 @@ async def get_used_style_url_from_vins(
                         timeout=KBB_NAVIGATION_TIMEOUT_MS,
                     )
                     await page.locator("input#vinButton").check()
-                    await page.locator('input[data-lean-auto="vinInput"]').fill(vin)
+                    vin_input = page.locator('input[data-lean-auto="vinInput"]')
+                    await page.wait_for_function(
+                        """() => {
+                            const element = document.querySelector(
+                                'input[data-lean-auto="vinInput"]'
+                            );
+                            return Boolean(element && !element.disabled);
+                        }""",
+                        timeout=KBB_USED_VIN_ATTEMPT_TIMEOUT_SECONDS * 1000,
+                    )
+                    await vin_input.fill(vin)
                     await page.locator(
                         'button[data-lean-auto="vinSubmitBtn"]'
                     ).click(force=True)
@@ -148,13 +158,15 @@ async def get_used_style_url_from_vins(
                     return style, style_url
                 except (PlaywrightError, TimeoutError) as error:
                     logger.warning("KBB VIN lookup failed for %s: %s", vin, error)
-    except asyncio.TimeoutError:
-        logger.warning(
-            "KBB used-style VIN resolution exceeded %d seconds for %s %s %s; "
-            "continuing with national-table links",
-            KBB_USED_VIN_TOTAL_TIMEOUT_SECONDS, year, make, model_slug,
-        )
-        return None
+        except asyncio.TimeoutError:
+            logger.warning(
+                "KBB used-style VIN attempt %d/%d exceeded %d seconds for %s; "
+                "trying the next VIN",
+                attempt,
+                len(attempted_vins),
+                KBB_USED_VIN_ATTEMPT_TIMEOUT_SECONDS,
+                vin,
+            )
 
     if attempted_vins:
         logger.warning(

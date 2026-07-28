@@ -106,6 +106,7 @@ async def test_vin_lookup_resolves_exact_used_style_url():
 async def test_vin_lookup_stops_after_three_failed_vins():
 	page = MagicMock()
 	page.goto = AsyncMock()
+	page.wait_for_function = AsyncMock()
 	vin_mode = MagicMock()
 	vin_mode.check = AsyncMock()
 	vin_input = MagicMock()
@@ -131,14 +132,14 @@ async def test_vin_lookup_stops_after_three_failed_vins():
 	]
 
 
-async def test_vin_lookup_has_one_overall_time_limit(monkeypatch):
+async def test_each_vin_lookup_has_its_own_time_limit(monkeypatch):
 	page = MagicMock()
 
 	async def never_finishes(*_args, **_kwargs):
 		await asyncio.Event().wait()
 
 	page.goto = AsyncMock(side_effect=never_finishes)
-	monkeypatch.setattr("analysis.kbb.KBB_USED_VIN_TOTAL_TIMEOUT_SECONDS", 0.01)
+	monkeypatch.setattr("analysis.kbb.KBB_USED_VIN_ATTEMPT_TIMEOUT_SECONDS", 0.01)
 
 	result = await get_used_style_url_from_vins(
 		page, "2024", "Hyundai", "ioniq-5", ["VIN1"]
