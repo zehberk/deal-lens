@@ -25,7 +25,8 @@ async def test_kbb_browser_launches_headless(monkeypatch):
 	browser = MagicMock()
 	context = MagicMock()
 	context.route = AsyncMock()
-	context.new_page = AsyncMock(return_value=MagicMock())
+	page = MagicMock()
+	context.new_page = AsyncMock(return_value=page)
 	browser.new_context = AsyncMock(return_value=context)
 	playwright.chromium.launch = AsyncMock(return_value=browser)
 	playwright_starter = MagicMock()
@@ -43,6 +44,12 @@ async def test_kbb_browser_launches_headless(monkeypatch):
 	context_call = browser.new_context.await_args
 	assert context_call is not None
 	assert "HeadlessChrome" not in context_call.kwargs["user_agent"]
+	assert {call.args[0] for call in page.on.call_args_list} == {
+		"console",
+		"pageerror",
+		"requestfailed",
+		"response",
+	}
 
 
 def test_failed_used_cache_entry_does_not_suppress_retry(monkeypatch):
@@ -79,8 +86,10 @@ async def test_vin_lookup_resolves_exact_used_style_url():
 	)
 	vin_mode = MagicMock()
 	vin_mode.check = AsyncMock()
+	vin_mode.evaluate = AsyncMock(return_value={"checked": True, "disabled": False})
 	vin_input = MagicMock()
 	vin_input.fill = AsyncMock()
+	vin_input.evaluate = AsyncMock(return_value={"disabled": False, "readOnly": False})
 	submit = MagicMock()
 	submit.click = AsyncMock()
 	page.locator.side_effect = lambda selector: {
@@ -103,14 +112,18 @@ async def test_vin_lookup_resolves_exact_used_style_url():
 	)
 
 
-async def test_vin_lookup_stops_after_three_failed_vins():
+async def test_vin_lookup_stops_after_three_failed_vins(caplog):
+	caplog.set_level("INFO", logger="analysis.kbb")
 	page = MagicMock()
 	page.goto = AsyncMock()
 	page.wait_for_function = AsyncMock()
 	vin_mode = MagicMock()
 	vin_mode.check = AsyncMock()
+	vin_mode.evaluate = AsyncMock(return_value={"checked": True, "disabled": False})
 	vin_input = MagicMock()
 	vin_input.fill = AsyncMock(side_effect=TimeoutError("VIN input disabled"))
+	vin_input.evaluate = AsyncMock(return_value={"disabled": True, "readOnly": False})
+	page.evaluate = AsyncMock(return_value={"vinInput": {"disabled": True}})
 	page.locator.side_effect = lambda selector: {
 		"input#vinButton": vin_mode,
 		'input[data-lean-auto="vinInput"]': vin_input,
@@ -130,6 +143,9 @@ async def test_vin_lookup_stops_after_three_failed_vins():
 		"VIN2",
 		"VIN3",
 	]
+	assert page.evaluate.await_count == 3
+	assert "during filling VIN input" in caplog.text
+	assert "KBB VIN diagnostic for VIN1" in caplog.text
 
 
 async def test_each_vin_lookup_has_its_own_time_limit(monkeypatch):

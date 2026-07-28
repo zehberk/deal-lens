@@ -1,4 +1,4 @@
-import asyncio, json, logging, re
+import asyncio, json, logging, re, time
 import urllib.parse
 
 from datetime import datetime
@@ -54,6 +54,89 @@ KBB_HEADLESS_USER_AGENT = (
 )
 
 
+def configure_kbb_page_diagnostics(page: Page) -> None:
+    """Record browser failures that can prevent KBB controls from initializing."""
+    page.on(
+        "console",
+        lambda message: logger.warning(
+            "KBB browser console %s: %s", message.type, message.text
+        ) if message.type in {"error", "warning"} else logger.debug(
+            "KBB browser console %s: %s", message.type, message.text
+        ),
+    )
+    page.on(
+        "pageerror",
+        lambda error: logger.warning("KBB browser page error: %s", error),
+    )
+    page.on(
+        "requestfailed",
+        lambda request: logger.warning(
+            "KBB request failed: %s %s (%s)",
+            request.method,
+            request.url,
+            request.failure,
+        ),
+    )
+    page.on(
+        "response",
+        lambda response: logger.warning(
+            "KBB HTTP %d: %s", response.status, response.url
+        ) if response.status >= 400 else None,
+    )
+
+
+async def log_kbb_vin_diagnostic_state(
+    page: Page, vin: str, phase: str, elapsed: float
+) -> None:
+    """Log the KBB form state without allowing diagnostics to mask the failure."""
+    try:
+        state = await page.evaluate(
+            """() => {
+                const vinMode = document.querySelector('input#vinButton');
+                const vinInput = document.querySelector(
+                    'input[data-lean-auto="vinInput"]'
+                );
+                const style = vinInput ? getComputedStyle(vinInput) : null;
+                return {
+                    url: location.href,
+                    title: document.title,
+                    readyState: document.readyState,
+                    bodyText: (document.body?.innerText || '').slice(0, 500),
+                    vinMode: vinMode ? {
+                        checked: vinMode.checked,
+                        disabled: vinMode.disabled,
+                        visible: Boolean(vinMode.offsetWidth || vinMode.offsetHeight),
+                    } : null,
+                    vinInput: vinInput ? {
+                        disabled: vinInput.disabled,
+                        readOnly: vinInput.readOnly,
+                        visible: Boolean(vinInput.offsetWidth || vinInput.offsetHeight),
+                        display: style?.display,
+                        visibility: style?.visibility,
+                    } : null,
+                    challenge: Boolean(document.querySelector(
+                        'iframe[src*="captcha"], iframe[src*="datadome"], '
+                        'iframe[title*="challenge" i]'
+                    )),
+                };
+            }"""
+        )
+        logger.warning(
+            "KBB VIN diagnostic for %s after %.1fs during %s: %s",
+            vin,
+            elapsed,
+            phase,
+            json.dumps(state, ensure_ascii=False, default=str),
+        )
+    except Exception as error:
+        logger.warning(
+            "KBB VIN diagnostic capture failed for %s during %s: %s",
+            vin,
+            phase,
+            error,
+        )
+
+
 async def get_model_slug_map(
     slugs: dict[str, str],
     make: str,
@@ -88,6 +171,8 @@ async def get_used_style_url_from_vins(
     expected_path = f"/{make_string_url_safe(make)}/{model_slug}/{year}/vin/"
     attempted_vins = [vin for vin in vins if vin][:KBB_USED_VIN_MAX_ATTEMPTS]
     for attempt, vin in enumerate(attempted_vins, start=1):
+        started = time.monotonic()
+        phase = "navigation"
         logger.info(
             "KBB used-style VIN attempt %d/%d for %s %s %s: %s",
             attempt, len(attempted_vins), year, make, model_slug, vin,
@@ -100,8 +185,24 @@ async def get_used_style_url_from_vins(
                         wait_until="domcontentloaded",
                         timeout=KBB_NAVIGATION_TIMEOUT_MS,
                     )
+                    logger.info(
+                        "KBB VIN page loaded for %s in %.1fs: %s",
+                        vin, time.monotonic() - started, page.url,
+                    )
+                    phase = "selecting VIN mode"
                     await page.locator("input#vinButton").check()
                     vin_input = page.locator('input[data-lean-auto="vinInput"]')
+                    mode_state = await page.locator("input#vinButton").evaluate(
+                        "element => ({checked: element.checked, disabled: element.disabled})"
+                    )
+                    input_state = await vin_input.evaluate(
+                        "element => ({disabled: element.disabled, readOnly: element.readOnly})"
+                    )
+                    logger.info(
+                        "KBB VIN controls after selection for %s: mode=%s input=%s",
+                        vin, mode_state, input_state,
+                    )
+                    phase = "waiting for VIN input to enable"
                     await page.wait_for_function(
                         """() => {
                             const element = document.querySelector(
@@ -111,10 +212,17 @@ async def get_used_style_url_from_vins(
                         }""",
                         timeout=KBB_USED_VIN_ATTEMPT_TIMEOUT_SECONDS * 1000,
                     )
+                    logger.info(
+                        "KBB VIN input enabled for %s after %.1fs",
+                        vin, time.monotonic() - started,
+                    )
+                    phase = "filling VIN input"
                     await vin_input.fill(vin)
+                    phase = "submitting VIN"
                     await page.locator(
                         'button[data-lean-auto="vinSubmitBtn"]'
                     ).click(force=True)
+                    phase = "waiting for VIN result URL"
                     await page.wait_for_url(
                         "**/vin/**",
                         wait_until="commit",
@@ -157,16 +265,24 @@ async def get_used_style_url_from_vins(
                     )
                     return style, style_url
                 except (PlaywrightError, TimeoutError) as error:
-                    logger.warning("KBB VIN lookup failed for %s: %s", vin, error)
+                    elapsed = time.monotonic() - started
+                    logger.warning(
+                        "KBB VIN lookup failed for %s after %.1fs during %s: %s",
+                        vin, elapsed, phase, error,
+                    )
+                    await log_kbb_vin_diagnostic_state(page, vin, phase, elapsed)
         except asyncio.TimeoutError:
+            elapsed = time.monotonic() - started
             logger.warning(
-                "KBB used-style VIN attempt %d/%d exceeded %d seconds for %s; "
-                "trying the next VIN",
+                "KBB used-style VIN attempt %d/%d exceeded %d seconds for %s "
+                "during %s; trying the next VIN",
                 attempt,
                 len(attempted_vins),
                 KBB_USED_VIN_ATTEMPT_TIMEOUT_SECONDS,
                 vin,
+                phase,
             )
+            await log_kbb_vin_diagnostic_state(page, vin, phase, elapsed)
 
     if attempted_vins:
         logger.warning(
@@ -908,6 +1024,7 @@ async def create_kbb_browser() -> (
         ),
     )
     page: Page = await context.new_page()
+    configure_kbb_page_diagnostics(page)
     return request, browser, context, page
 
 
