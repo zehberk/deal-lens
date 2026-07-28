@@ -119,7 +119,7 @@ def test_missing_carfax_url_remains_due_after_poll_window():
 def test_carfax_challenge_wait_allows_user_to_complete_puzzle(monkeypatch):
 	states = iter((
 		{
-			"t": "carfax.com",
+			"t": "CARFAX Vehicle History Report",
 			"href": "https://www.carfax.com/record-check/",
 			"ready": "complete",
 			"challenge": True,
@@ -150,6 +150,10 @@ def test_carfax_challenge_shows_then_rehides_window(monkeypatch):
 		lambda *args, **kwargs: calls.append(("wait", kwargs)),
 	)
 	monkeypatch.setattr(
+		"builtins.input",
+		lambda prompt: calls.append(("input", prompt)) or "",
+	)
+	monkeypatch.setattr(
 		"utils.download.hide_process_windows",
 		lambda process_id: calls.append(("hide", process_id)) or 1,
 	)
@@ -160,6 +164,7 @@ def test_carfax_challenge_shows_then_rehides_window(monkeypatch):
 
 	assert calls == [
 		("show", 1234),
+		("input", "After the report loads in Chrome, press Enter to continue..."),
 		("wait", {"timeout": 45, "allow_challenge": True}),
 		("hide", 1234),
 	]

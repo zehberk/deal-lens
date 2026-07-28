@@ -576,12 +576,17 @@ def wait_for_carfax_report(
         if host == "secure.carfax.com":
             raise RuntimeError("secure.carfax.com redirect")
 
-        if (
-            not allow_challenge
-            and ("access blocked" in t or "/record-check" in href or challenge)
-        ):
+        challenge_active = (
+            "access blocked" in t or "/record-check" in href or challenge
+        )
+        if not allow_challenge and challenge_active:
             raise RuntimeError("access blocked")
-        if "vehicle history report" in t and "carfax" in t and ready == "complete":
+        if (
+            not challenge_active
+            and "vehicle history report" in t
+            and "carfax" in t
+            and ready == "complete"
+        ):
             return
         time.sleep(0.5)
     raise TimeoutError("report not ready")
@@ -599,6 +604,7 @@ def complete_carfax_challenge(
 
     print("CARFAX verification required; complete the puzzle in the Chrome window.")
     try:
+        input("After the report loads in Chrome, press Enter to continue...")
         wait_for_carfax_report(
             ws,
             sid,

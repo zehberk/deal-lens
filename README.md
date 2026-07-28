@@ -59,8 +59,8 @@ Chromium at its edge layer.
 CARFAX requires headed Chrome, so on Windows DealLens starts its browser off-screen,
 then hides and verifies its native window before downloading reports.
 If CARFAX presents an interactive verification puzzle, DealLens restores and focuses
-the browser for completion, waits up to five minutes, and hides it again after the
-report loads.
+the browser and waits for Enter after the user completes it. DealLens then verifies
+that the report loaded, with a five-minute timeout, and hides Chrome again.
 KBB browser navigation is bounded to 30 seconds across retries, while individual
 DOM locator waits are bounded to 10 seconds, with up to 30 seconds for KBB's
 dynamically rendered price advisor. Missing national fair-purchase prices remain
