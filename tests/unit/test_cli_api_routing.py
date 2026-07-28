@@ -7,6 +7,7 @@ import pytest
 
 from deal_lens.cli import (
 	collect_and_run_level1_api,
+	collect_and_run_level2_api,
 	collect_and_run_level3_api,
 	configure_logging,
 	format_runtime,
@@ -173,6 +174,64 @@ async def test_level1_api_workflow_forwards_force_and_renders(monkeypatch):
 	)
 	assert calls["snapshot"] == (query, collection, kbb)
 	assert calls["render"] == (snapshot, kbb)
+
+
+async def test_level2_save_docs_runs_before_analysis(monkeypatch):
+	query = object()
+	client = object()
+	progress = object()
+	listing = {"id": "listing-1", "vin": "TESTVIN"}
+	collection = SimpleNamespace(
+		listings=(SimpleNamespace(listing=listing),),
+	)
+	metadata = {"site_info": {}, "runtime": {}, "warnings": []}
+	order = []
+
+	monkeypatch.setattr(
+		"deal_lens.cli.VisorListingQuery.from_url", lambda url: query
+	)
+	monkeypatch.setattr("deal_lens.cli._visor_client", lambda actual: client)
+	monkeypatch.setattr("deal_lens.cli.cli_progress", lambda: progress)
+	monkeypatch.setattr(
+		"deal_lens.cli.cached_level2_collection",
+		lambda *args, **kwargs: SimpleNamespace(
+			collection=collection, cache_used=False
+		),
+	)
+	monkeypatch.setattr("deal_lens.cli.build_metadata", lambda args: metadata)
+	monkeypatch.setattr(
+		"deal_lens.cli.apply_level2_collection_metadata",
+		lambda *args: None,
+	)
+	monkeypatch.setattr(
+		"deal_lens.cli.save_results",
+		lambda *args: "20260728_120000",
+	)
+
+	async def fake_download(listings, filename):
+		order.append(("download", listings, filename))
+
+	async def fake_analysis(actual_metadata, listings, filename):
+		order.append(("analysis", listings, filename))
+
+	monkeypatch.setattr("deal_lens.cli.download_files", fake_download)
+	monkeypatch.setattr("deal_lens.cli.start_level2_analysis", fake_analysis)
+	args = Namespace(
+		url="search-url",
+		make="INFINITI",
+		model="QX55",
+		max_listings=25,
+		force=False,
+		save_docs=True,
+	)
+
+	await collect_and_run_level2_api(args)
+
+	filename = "output/raw/INFINITI_QX55_listings_20260728_120000.json"
+	assert order == [
+		("download", [listing], filename),
+		("analysis", [listing], filename),
+	]
 
 
 async def test_level3_api_workflow_forwards_collection_options(monkeypatch):
