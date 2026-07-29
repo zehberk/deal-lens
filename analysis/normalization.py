@@ -103,9 +103,16 @@ def best_kbb_model_match(
     for v in (
         listing.get("trim", ""),
         listing.get("trim_version", ""),
+        listing.get("fuel_type", ""),
+        listing.get("powertrain_type", ""),
+        listing.get("body_style", ""),
         after_com(listing.get("dealer_listing", "")),
     ):
         listing_tokens |= tokenize(v)
+    if listing.get("is_plugin") is True:
+        listing_tokens |= {"plug", "in", "hybrid", "phev"}
+    elif listing.get("is_hybrid") is True:
+        listing_tokens |= {"hybrid", "hev"}
 
     exact_base = next(
         (candidate for candidate in kbb_models if candidate.casefold() == model.casefold()),
@@ -140,6 +147,19 @@ def best_kbb_model_match(
     best_score = max((score for score, _ in scored), default=0)
     best_models = [candidate for score, candidate in scored if score == best_score]
     return best_models[0] if best_score > 0 and len(best_models) == 1 else None
+
+
+def model_variant_title(
+    title: str | None, base_model: str, selected_model: str
+) -> str | None:
+    """Correct a display title without changing the source listing title."""
+    if not title or selected_model.casefold() == base_model.casefold():
+        return title
+    if selected_model.casefold() in title.casefold():
+        return title
+    return re.sub(
+        re.escape(base_model), selected_model, title, count=1, flags=re.IGNORECASE
+    )
 
 
 def best_kbb_trim_match(visor_trim: str, kbb_trims: list[str]) -> str | None:
@@ -286,6 +306,8 @@ async def get_variant_map(
                 no_match.append(l)
                 continue
 
+        l["model_variant"] = selected
+        l["display_title"] = model_variant_title(l.get("title"), model, selected)
         ymm = f"{year} {make} {selected}"
         variant_map.setdefault(ymm, []).append(l)
 
@@ -421,6 +443,9 @@ def normalize_listing(listing: dict) -> dict:
         "mileage": to_int(listing.get("mileage")),
         "is_hybrid": is_hybrid,
         "is_plugin": is_plugin,
+        "fuel_type": fuel_type,
+        "powertrain_type": powertrain_type,
+        "body_style": str(specs.get("Body Style") or "").strip().lower(),
         "report_present": carfax_present,  # or autocheck_present,
         "window_sticker_present": sticker_present,
         "warranty_info_present": warranty_present,

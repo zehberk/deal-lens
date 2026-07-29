@@ -44,7 +44,7 @@
 			{% if imgs %}<div class="image-viewer">{% for img in imgs %}<img src="{{ img }}" alt="Vehicle image">{% endfor %}</div>{% endif %}
 			<div class="listing-content">
 			<div class="listing-title">
-				{{ listing.title }}
+				{{ listing.display_title or listing.title }}
 				<span class="condition-badge">{{ display_listing_condition(listing.get("condition")) }}</span>
 				<span class="deal-rating">{{ deal }}</span>
 				{% if is_downgraded %}<span class="downgrade-tag">Downgraded</span>{% endif %}

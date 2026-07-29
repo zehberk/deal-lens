@@ -232,6 +232,7 @@ def test_report_renders_price_only_row_without_deal_score():
 	)
 	listing = {
 		"title": "2025 Toyota Prius LE",
+		"display_title": "2025 Toyota Prius Plug-in Hybrid LE",
 		"seller": {"name": "Test dealer", "location": "Denver, CO"},
 		"vin": "TESTVIN",
 		"mileage": 10_000,
@@ -271,7 +272,8 @@ def test_report_renders_price_only_row_without_deal_score():
 	)
 
 	assert "Price-only ratings" in html
-	assert "2025 Toyota Prius LE" in html
+	assert "2025 Toyota Prius Plug-in Hybrid LE" in html
+	assert ">2025 Toyota Prius LE<" not in html
 	assert '<div class="deal-score">' not in html
 
 

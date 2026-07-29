@@ -2,6 +2,7 @@ from analysis.normalization import (
 	best_kbb_model_match,
 	filter_valid_listings,
 	get_variant_map,
+	model_variant_title,
 )
 
 
@@ -24,6 +25,31 @@ def test_model_match_uses_exact_base_unless_specialized_tokens_are_present():
 		},
 		candidates,
 	) == "Prius Plug-in Hybrid"
+	assert best_kbb_model_match(
+		"Toyota",
+		"Prius",
+		{
+			"trim": "SE",
+			"trim_version": "",
+			"dealer_listing": "https://dealer.example/vehicle/123",
+			"fuel_type": "plug-in hybrid",
+			"powertrain_type": "phev",
+			"body_style": "hatchback",
+			"is_plugin": True,
+		},
+		candidates,
+	) == "Prius Plug-in Hybrid"
+
+
+def test_model_variant_title_corrects_display_value_only_once():
+	assert model_variant_title(
+		"2025 Toyota Prius SE", "Prius", "Prius Plug-in Hybrid"
+	) == "2025 Toyota Prius Plug-in Hybrid SE"
+	assert model_variant_title(
+		"2025 Toyota Prius Plug-in Hybrid SE",
+		"Prius",
+		"Prius Plug-in Hybrid",
+	) == "2025 Toyota Prius Plug-in Hybrid SE"
 
 
 def test_model_match_distinguishes_ioniq_n_from_exact_base():

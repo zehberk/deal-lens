@@ -175,7 +175,7 @@
 			{% set seller_location = listing.seller.location if listing.seller.location else "N/A" %}
 
 			<div class="listing-title">
-				{{ listing.title }}
+				{{ listing.display_title or listing.title }}
 				{% if is_downgraded %}
 					<span class="downgrade-tag">Downgraded</span>
 				{% endif %}
