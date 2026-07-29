@@ -225,6 +225,55 @@ def test_report_summarizes_unevaluated_reasons_without_listing_rows():
 	assert "HIDDENVIN" not in html
 
 
+def test_report_renders_price_only_row_without_deal_score():
+	template = Environment(loader=FileSystemLoader("templates")).get_template(
+		"level2.html"
+	)
+	listing = {
+		"title": "2025 Toyota Prius LE",
+		"seller": {"name": "Test dealer", "location": "Denver, CO"},
+		"vin": "TESTVIN",
+		"mileage": 10_000,
+		"price": 25_000,
+		"condition": "Used",
+		"dealer_listing": "https://dealer.test/listing",
+		"visor_listing": "https://visor.test/listing",
+	}
+	pricing = {
+		"great_end_pct": 20,
+		"good_end_pct": 40,
+		"fair_end_pct": 60,
+		"poor_end_pct": 80,
+		"marker_pct": 50,
+		"great_high": 20_000,
+		"good_high": 23_000,
+		"fair_high": 26_000,
+		"poor_high": 29_000,
+	}
+	empty_bins = {
+		name: [] for name in ("Great", "Good", "Fair", "Poor", "Bad")
+	}
+
+	html = template.render(
+		make="Toyota",
+		model="Prius",
+		generated_at="today",
+		summary="Used listings",
+		total_count=1,
+		full_count=0,
+		price_only=[(listing, "Good", None, ["Price-only rating."], pricing)],
+		information_summary=[],
+		all_ratings=[],
+		all_images={},
+		display_dealer_location=display_dealer_location,
+		display_listing_condition=display_listing_condition,
+	)
+
+	assert "Price-only ratings" in html
+	assert "2025 Toyota Prius LE" in html
+	assert '<div class="deal-score">' not in html
+
+
 def test_price_only_listings_are_grouped_with_other_failure_reasons():
 	summary = summarize_level2_failures(
 		[({"id": "one"}, "Good", []), ({"id": "two"}, "Fair", [])],

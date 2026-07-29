@@ -51,7 +51,7 @@
 				<a class="visor-link" href="{{ listing.visor_listing }}">View on Visor</a>
 			</div>
 			<div class="listing-title-bar"></div>
-			<div class="listing-evaluation{% if pricing.deal_score is not none %} has-score{% endif %}">
+			<div class="listing-evaluation{% if pricing.deal_score is defined and pricing.deal_score is not none %} has-score{% endif %}">
 			<div class="listing-measures">
 			<div class="listing-specs compact-grid">
 				<div>VIN: <strong>{{ vin }}</strong></div>
@@ -78,7 +78,7 @@
 				</div>
 			</div>
 			</div>
-			{% if pricing.deal_score is not none %}<div class="deal-score"><strong>Deal Score</strong><span>{{ pricing.deal_score|round|int }}%</span></div>{% endif %}
+			{% if pricing.deal_score is defined and pricing.deal_score is not none %}<div class="deal-score"><strong>Deal Score</strong><span>{{ pricing.deal_score|round|int }}%</span></div>{% endif %}
 			</div>
 			<div class="listing-notes"><strong>Notes:</strong><ul>{% for line in narrative %}<li>{{ line }}</li>{% endfor %}</ul></div>
 			</div>

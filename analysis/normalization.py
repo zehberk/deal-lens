@@ -89,11 +89,7 @@ def best_kbb_model_match(
 ) -> str | None:
 
     def tokenize(s: str) -> set[str]:
-        return {
-            t
-            for t in re.sub(r"[-_/]", " ", s.lower()).split()
-            if t not in {make.lower(), model.lower()}
-        }
+        return set(re.findall(r"[a-z0-9]+", s.casefold()))
 
     def after_com(url: str) -> str:
         if not url:
@@ -101,7 +97,9 @@ def best_kbb_model_match(
         _, _, tail = url.partition(".com")
         return tail
 
-    listing_tokens = set()
+    make_tokens = tokenize(make)
+    base_tokens = tokenize(model) | make_tokens
+    listing_tokens: set[str] = set()
     for v in (
         listing.get("trim", ""),
         listing.get("trim_version", ""),
@@ -109,16 +107,39 @@ def best_kbb_model_match(
     ):
         listing_tokens |= tokenize(v)
 
-    best_score = 0
-    best_model = ""
+    exact_base = next(
+        (candidate for candidate in kbb_models if candidate.casefold() == model.casefold()),
+        None,
+    )
+    specialized_matches: list[tuple[int, str]] = []
     for kbb_model in kbb_models:
-        model_tokens = tokenize(kbb_model)
-        score = len(listing_tokens & model_tokens)
-        if score > best_score:
-            best_score = score
-            best_model = kbb_model
+        if kbb_model == exact_base:
+            continue
+        unique_tokens = tokenize(kbb_model) - base_tokens
+        if unique_tokens and unique_tokens <= listing_tokens:
+            specialized_matches.append((len(unique_tokens), kbb_model))
 
-    return best_model if best_model else None
+    if specialized_matches:
+        best_score = max(score for score, _ in specialized_matches)
+        best_models = [
+            candidate
+            for score, candidate in specialized_matches
+            if score == best_score
+        ]
+        return best_models[0] if len(best_models) == 1 else None
+
+    if exact_base:
+        return exact_base
+
+    # When KBB has no exact base model, retain positive token matching but do not
+    # guess between equally supported candidates.
+    scored = [
+        (len(listing_tokens & (tokenize(candidate) - make_tokens)), candidate)
+        for candidate in kbb_models
+    ]
+    best_score = max((score for score, _ in scored), default=0)
+    best_models = [candidate for score, candidate in scored if score == best_score]
+    return best_models[0] if best_score > 0 and len(best_models) == 1 else None
 
 
 def best_kbb_trim_match(visor_trim: str, kbb_trims: list[str]) -> str | None:
