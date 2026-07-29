@@ -46,43 +46,54 @@ KBB_NAVIGATION_TIMEOUT_MS = 30_000
 KBB_NAVIGATION_ATTEMPT_TIMEOUT_MS = 10_000
 KBB_DYNAMIC_PRICING_TIMEOUT_MS = 30_000
 KBB_USED_VIN_MAX_ATTEMPTS = 3
-KBB_USED_VIN_ATTEMPT_TIMEOUT_SECONDS = 60
+KBB_USED_VIN_ATTEMPT_TIMEOUT_SECONDS = 10
 KBB_HEADLESS_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/138.0.0.0 Safari/537.36"
 )
+_KBB_PAGE_HEALTH: dict[int, list[str]] = {}
 
 
 def configure_kbb_page_diagnostics(page: Page) -> None:
     """Record browser failures that can prevent KBB controls from initializing."""
+    health = _KBB_PAGE_HEALTH.setdefault(id(page), [])
+
+    def on_console(message) -> None:
+        text = message.text
+        if message.type in {"error", "warning"}:
+            logger.warning("KBB browser console %s: %s", message.type, text)
+        else:
+            logger.debug("KBB browser console %s: %s", message.type, text)
+
+    def on_page_error(error) -> None:
+        health.append(f"page error: {error}")
+        logger.warning("KBB browser page error: %s", error)
+
+    def on_request_failed(request) -> None:
+        message = f"{request.method} {request.url} ({request.failure})"
+        if request.resource_type == "script":
+            health.append(f"script request failed: {message}")
+            logger.warning("KBB script request failed: %s", message)
+        elif request.resource_type in {"image", "media", "font"}:
+            logger.debug("KBB optional request failed: %s", message)
+        else:
+            logger.warning("KBB request failed: %s", message)
+
+    def on_response(response) -> None:
+        if response.status < 400:
+            return
+        if response.request.resource_type == "script":
+            health.append(f"script HTTP {response.status}: {response.url}")
+        logger.warning("KBB HTTP %d: %s", response.status, response.url)
+
     page.on(
         "console",
-        lambda message: logger.warning(
-            "KBB browser console %s: %s", message.type, message.text
-        ) if message.type in {"error", "warning"} else logger.debug(
-            "KBB browser console %s: %s", message.type, message.text
-        ),
+        on_console,
     )
-    page.on(
-        "pageerror",
-        lambda error: logger.warning("KBB browser page error: %s", error),
-    )
-    page.on(
-        "requestfailed",
-        lambda request: logger.warning(
-            "KBB request failed: %s %s (%s)",
-            request.method,
-            request.url,
-            request.failure,
-        ),
-    )
-    page.on(
-        "response",
-        lambda response: logger.warning(
-            "KBB HTTP %d: %s", response.status, response.url
-        ) if response.status >= 400 else None,
-    )
+    page.on("pageerror", on_page_error)
+    page.on("requestfailed", on_request_failed)
+    page.on("response", on_response)
 
 
 async def log_kbb_vin_diagnostic_state(
@@ -115,8 +126,7 @@ async def log_kbb_vin_diagnostic_state(
                         visibility: style?.visibility,
                     } : null,
                     challenge: Boolean(document.querySelector(
-                        'iframe[src*="captcha"], iframe[src*="datadome"], '
-                        'iframe[title*="challenge" i]'
+                        'iframe[src*="captcha"], iframe[src*="datadome"], iframe[title*="challenge" i]'
                     )),
                 };
             }"""
@@ -170,63 +180,33 @@ async def get_used_style_url_from_vins(
     """Resolve KBB's canonical used style label and URL from an existing VIN."""
     expected_path = f"/{make_string_url_safe(make)}/{model_slug}/{year}/vin/"
     attempted_vins = [vin for vin in vins if vin][:KBB_USED_VIN_MAX_ATTEMPTS]
+    health = _KBB_PAGE_HEALTH.setdefault(id(page), [])
     for attempt, vin in enumerate(attempted_vins, start=1):
+        health.clear()
         started = time.monotonic()
-        phase = "navigation"
+        phase = "direct VIN navigation"
+        base_url = KBB_LOOKUP_BASE_URL.format(
+            make=make_string_url_safe(make), model=model_slug, year=year
+        )
+        vin_url = urllib.parse.urljoin(base_url, "vin/") + "?" + urllib.parse.urlencode({
+            "intent": "trade-in-sell",
+            "vin": vin,
+        })
         logger.info(
-            "KBB used-style VIN attempt %d/%d for %s %s %s: %s",
-            attempt, len(attempted_vins), year, make, model_slug, vin,
+            "KBB direct VIN attempt %d/%d for %s %s %s: %s",
+            attempt, len(attempted_vins), year, make, model_slug, vin_url,
         )
         try:
             async with asyncio.timeout(KBB_USED_VIN_ATTEMPT_TIMEOUT_SECONDS):
                 try:
                     await page.goto(
-                        KBB_WHATS_MY_CAR_WORTH_URL,
+                        vin_url,
                         wait_until="domcontentloaded",
-                        timeout=KBB_NAVIGATION_TIMEOUT_MS,
-                    )
-                    logger.info(
-                        "KBB VIN page loaded for %s in %.1fs: %s",
-                        vin, time.monotonic() - started, page.url,
-                    )
-                    phase = "selecting VIN mode"
-                    await page.locator("input#vinButton").check()
-                    vin_input = page.locator('input[data-lean-auto="vinInput"]')
-                    mode_state = await page.locator("input#vinButton").evaluate(
-                        "element => ({checked: element.checked, disabled: element.disabled})"
-                    )
-                    input_state = await vin_input.evaluate(
-                        "element => ({disabled: element.disabled, readOnly: element.readOnly})"
-                    )
-                    logger.info(
-                        "KBB VIN controls after selection for %s: mode=%s input=%s",
-                        vin, mode_state, input_state,
-                    )
-                    phase = "waiting for VIN input to enable"
-                    await page.wait_for_function(
-                        """() => {
-                            const element = document.querySelector(
-                                'input[data-lean-auto="vinInput"]'
-                            );
-                            return Boolean(element && !element.disabled);
-                        }""",
                         timeout=KBB_USED_VIN_ATTEMPT_TIMEOUT_SECONDS * 1000,
                     )
                     logger.info(
-                        "KBB VIN input enabled for %s after %.1fs",
-                        vin, time.monotonic() - started,
-                    )
-                    phase = "filling VIN input"
-                    await vin_input.fill(vin)
-                    phase = "submitting VIN"
-                    await page.locator(
-                        'button[data-lean-auto="vinSubmitBtn"]'
-                    ).click(force=True)
-                    phase = "waiting for VIN result URL"
-                    await page.wait_for_url(
-                        "**/vin/**",
-                        wait_until="commit",
-                        timeout=KBB_NAVIGATION_TIMEOUT_MS,
+                        "KBB direct VIN page loaded for %s in %.1fs: %s",
+                        vin, time.monotonic() - started, page.url,
                     )
                     parsed = urllib.parse.urlparse(page.url)
                     if parsed.path.casefold() != expected_path.casefold():
@@ -235,11 +215,12 @@ async def get_used_style_url_from_vins(
                             year, make, model_slug, page.url,
                         )
                         continue
+                    phase = "waiting for VIN style"
                     await page.wait_for_function(
                         r"""() => /(?:^|\n)Style:\s*(?:\n\s*)?[^\n]+/i.test(
                             document.body?.innerText || ""
                         )""",
-                        timeout=KBB_LOCATOR_TIMEOUT_MS,
+                        timeout=KBB_USED_VIN_ATTEMPT_TIMEOUT_SECONDS * 1000,
                     )
                     body = await page.inner_text(
                         "body", timeout=KBB_LOCATOR_TIMEOUT_MS
@@ -271,6 +252,13 @@ async def get_used_style_url_from_vins(
                         vin, elapsed, phase, error,
                     )
                     await log_kbb_vin_diagnostic_state(page, vin, phase, elapsed)
+                    if health:
+                        logger.warning(
+                            "KBB application is unhealthy after VIN %s; skipping "
+                            "remaining VINs and continuing with national-table links: %s",
+                            vin, "; ".join(health[:5]),
+                        )
+                        break
         except asyncio.TimeoutError:
             elapsed = time.monotonic() - started
             logger.warning(
@@ -283,6 +271,13 @@ async def get_used_style_url_from_vins(
                 phase,
             )
             await log_kbb_vin_diagnostic_state(page, vin, phase, elapsed)
+            if health:
+                logger.warning(
+                    "KBB application is unhealthy after VIN %s; skipping remaining "
+                    "VINs and continuing with national-table links: %s",
+                    vin, "; ".join(health[:5]),
+                )
+                break
 
     if attempted_vins:
         logger.warning(

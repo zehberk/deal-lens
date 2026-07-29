@@ -9,6 +9,7 @@ from playwright.async_api import TimeoutError
 from analysis.kbb import (
 	_previous_local_trim,
 	_used_listing_has_cached_pricing,
+	configure_kbb_page_diagnostics,
 	create_kbb_browser,
 	get_or_fetch_national_pricing,
 	get_or_fetch_local_pricing,
@@ -84,19 +85,6 @@ async def test_vin_lookup_resolves_exact_used_style_url():
 		"https://www.kbb.com/infiniti/qx55/2025/vin/"
 		"?intent=trade-in-sell&vin=test"
 	)
-	vin_mode = MagicMock()
-	vin_mode.check = AsyncMock()
-	vin_mode.evaluate = AsyncMock(return_value={"checked": True, "disabled": False})
-	vin_input = MagicMock()
-	vin_input.fill = AsyncMock()
-	vin_input.evaluate = AsyncMock(return_value={"disabled": False, "readOnly": False})
-	submit = MagicMock()
-	submit.click = AsyncMock()
-	page.locator.side_effect = lambda selector: {
-		"input#vinButton": vin_mode,
-		'input[data-lean-auto="vinInput"]': vin_input,
-		'button[data-lean-auto="vinSubmitBtn"]': submit,
-	}[selector]
 
 	result = await get_used_style_url_from_vins(
 		page, "2025", "INFINITI", "qx55", ["TESTVIN"]
@@ -106,9 +94,11 @@ async def test_vin_lookup_resolves_exact_used_style_url():
 		"LUXE Sport Utility 4D",
 		"https://kbb.com/infiniti/qx55/2025/luxe-sport-utility-4d/",
 	)
-	vin_input.fill.assert_awaited_once_with("TESTVIN")
-	page.wait_for_url.assert_awaited_once_with(
-		"**/vin/**", wait_until="commit", timeout=30_000
+	page.goto.assert_awaited_once_with(
+		"https://kbb.com/infiniti/qx55/2025/vin/"
+		"?intent=trade-in-sell&vin=TESTVIN",
+		wait_until="domcontentloaded",
+		timeout=10_000,
 	)
 
 
@@ -116,18 +106,9 @@ async def test_vin_lookup_stops_after_three_failed_vins(caplog):
 	caplog.set_level("INFO", logger="analysis.kbb")
 	page = MagicMock()
 	page.goto = AsyncMock()
-	page.wait_for_function = AsyncMock()
-	vin_mode = MagicMock()
-	vin_mode.check = AsyncMock()
-	vin_mode.evaluate = AsyncMock(return_value={"checked": True, "disabled": False})
-	vin_input = MagicMock()
-	vin_input.fill = AsyncMock(side_effect=TimeoutError("VIN input disabled"))
-	vin_input.evaluate = AsyncMock(return_value={"disabled": True, "readOnly": False})
+	page.wait_for_function = AsyncMock(side_effect=TimeoutError("style unavailable"))
+	page.url = "https://kbb.com/hyundai/ioniq-5/2024/vin/"
 	page.evaluate = AsyncMock(return_value={"vinInput": {"disabled": True}})
-	page.locator.side_effect = lambda selector: {
-		"input#vinButton": vin_mode,
-		'input[data-lean-auto="vinInput"]': vin_input,
-	}[selector]
 
 	result = await get_used_style_url_from_vins(
 		page,
@@ -138,14 +119,35 @@ async def test_vin_lookup_stops_after_three_failed_vins(caplog):
 	)
 
 	assert result is None
-	assert [call.args[0] for call in vin_input.fill.await_args_list] == [
-		"VIN1",
-		"VIN2",
-		"VIN3",
-	]
+	assert page.goto.await_count == 3
 	assert page.evaluate.await_count == 3
-	assert "during filling VIN input" in caplog.text
+	assert "during waiting for VIN style" in caplog.text
 	assert "KBB VIN diagnostic for VIN1" in caplog.text
+
+
+async def test_unhealthy_kbb_app_stops_after_first_vin():
+	page = MagicMock()
+	page.goto = AsyncMock()
+	page.url = "https://kbb.com/hyundai/ioniq-5/2024/vin/"
+	page.evaluate = AsyncMock(return_value={"challenge": False})
+	configure_kbb_page_diagnostics(page)
+	page_error = next(
+		call.args[1] for call in page.on.call_args_list
+		if call.args[0] == "pageerror"
+	)
+
+	async def fail_with_page_error(*_args, **_kwargs):
+		page_error(RuntimeError("Unexpected end of JSON input"))
+		raise TimeoutError("style unavailable")
+
+	page.wait_for_function = AsyncMock(side_effect=fail_with_page_error)
+
+	result = await get_used_style_url_from_vins(
+		page, "2024", "Hyundai", "ioniq-5", ["VIN1", "VIN2", "VIN3"]
+	)
+
+	assert result is None
+	page.goto.assert_awaited_once()
 
 
 async def test_each_vin_lookup_has_its_own_time_limit(monkeypatch):
