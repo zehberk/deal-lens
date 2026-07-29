@@ -65,15 +65,23 @@ that the report loaded, with a five-minute timeout, and parks Chrome off-screen 
 KBB browser navigation is bounded to 30 seconds across retries, while individual
 DOM locator waits are bounded to 10 seconds, with up to 30 seconds for KBB's
 dynamically rendered price advisor. Missing national fair-purchase prices remain
-unavailable; they do not prevent DealLens from checking local trim pricing. The
+unavailable. The
 KBB page and its embedded price advisor retain the browser context supplied by
 KBB; DealLens does not inject or cache a postal code for KBB pricing.
 
-For used and certified Level 2 listings, DealLens submits an already-collected
-listing VIN to KBB to resolve KBB's exact used style (for example, `LUXE Sport
-Utility 4D`). It validates that the resulting pricing page is a used-vehicle page
-and records the VIN-derived used local pricing separately from KBB's national
-Fair Purchase Price. This KBB lookup does not add a Visor API request.
+Level 1 retains its model/trim-table pricing workflow. For used and certified
+Level 2 and Level 3 listings, DealLens submits an already-collected listing VIN
+to KBB to resolve KBB's exact used style (for example, `LUXE Sport Utility 4D`).
+It validates that exact style page as a used-vehicle page and only accepts local
+FPP/FMV from that VIN-resolved URL. Compatible later listings may reuse the
+resolved configuration; optional body-style, fuel, and powertrain fields constrain
+reuse when both records provide them. After resolving listings, DealLens loads the
+national trim table and token-matches MSRP and national FPP to each canonical KBB
+style. A failed VIN lookup may still receive national pricing, but DealLens will
+not substitute local pricing from a guessed trim or model-page link. Level 2/3 VIN
+resolutions, canonical configurations, and national tables use separate cache
+namespaces so legacy Level 1 trim rows remain unchanged. These KBB lookups do not
+add Visor API requests.
 
 Each `deal-lens` invocation writes a timestamped DEBUG diagnostic log under
 `logs/`. The log records the command arguments and KBB national, trim, and

@@ -7,6 +7,7 @@ from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError
 
 from analysis.kbb import (
+	_configuration_matches_listing,
 	_previous_local_trim,
 	_used_listing_has_cached_pricing,
 	configure_kbb_page_diagnostics,
@@ -15,9 +16,124 @@ from analysis.kbb import (
 	get_or_fetch_local_pricing,
 	get_price_advisor_values,
 	get_used_style_url_from_vins,
+	get_vin_first_pricing_data,
 	goto_with_retry,
 	populate_pricing_for_year,
 )
+
+
+def _fake_kbb_browser():
+	request = MagicMock()
+	request.dispose = AsyncMock()
+	browser = MagicMock()
+	browser.close = AsyncMock()
+	context = MagicMock()
+	context.close = AsyncMock()
+	page = MagicMock()
+	page.close = AsyncMock()
+	return request, browser, context, page
+
+
+async def test_vin_first_pricing_reuses_configuration_and_enriches_national(
+	monkeypatch,
+):
+	first = {
+		"id": "one", "vin": "VIN1", "year": 2025, "condition": "Used",
+		"trim": "SE", "fuel_type": "plug-in hybrid", "powertrain_type": "phev",
+		"body_style": "hatchback",
+	}
+	second = {**first, "id": "two", "vin": "VIN2"}
+	resolve = AsyncMock(return_value=(
+		"SE Hatchback 4D",
+		"https://kbb.com/toyota/prius-plug-in-hybrid/2025/se-hatchback-4d/",
+	))
+	local = AsyncMock(return_value=(30_000, 34_000, 32_500, 31_000, (
+		"https://kbb.com/toyota/prius-plug-in-hybrid/2025/se-hatchback-4d/"
+	)))
+	national = AsyncMock(return_value=([(
+		"SE", "$34,510", "$32,100", "national", "/se/", "2026-01-01"
+	)], None))
+	monkeypatch.setattr("analysis.kbb.create_kbb_browser", AsyncMock(
+		return_value=_fake_kbb_browser()
+	))
+	monkeypatch.setattr("analysis.kbb.get_used_style_url_from_vins", resolve)
+	monkeypatch.setattr("analysis.kbb._get_local_pricing_with_progress", local)
+	monkeypatch.setattr("analysis.kbb.get_or_fetch_national_pricing", national)
+	monkeypatch.setattr("analysis.kbb.save_cache", lambda _cache: None)
+	cache = {}
+
+	valuations = await get_vin_first_pricing_data(
+		"Toyota", "Prius", [first, second],
+		{"2025 Toyota Prius Plug-in Hybrid": [first, second]}, cache,
+	)
+	await get_vin_first_pricing_data(
+		"Toyota", "Prius", [first, second],
+		{"2025 Toyota Prius Plug-in Hybrid": [first, second]}, cache,
+	)
+
+	resolve.assert_awaited_once()
+	local.assert_awaited_once()
+	national.assert_awaited_once()
+	assert first["kbb_cache_key"] == second["kbb_cache_key"]
+	assert list(cache["level23_entries"]) == [
+		"2025 Toyota Prius Plug-in Hybrid SE Hatchback 4D"
+	]
+	entry = cache["level23_entries"][first["kbb_cache_key"]]
+	assert entry["pricing_basis"] == "vin"
+	assert entry["fpp_local"] == 32_500
+	assert entry["fpp_natl"] == 32_100
+	assert valuations[0].kbb_trim == first["kbb_cache_key"]
+
+
+async def test_vin_first_does_not_fetch_local_price_without_vin_resolution(
+	monkeypatch,
+):
+	listing = {
+		"id": "one", "vin": "VIN1", "year": 2025,
+		"condition": "Used", "trim": "SE",
+		"trim_version": "SE Plug-in Hybrid",
+	}
+	local = AsyncMock()
+	monkeypatch.setattr("analysis.kbb.create_kbb_browser", AsyncMock(
+		return_value=_fake_kbb_browser()
+	))
+	monkeypatch.setattr(
+		"analysis.kbb.get_used_style_url_from_vins", AsyncMock(return_value=None)
+	)
+	monkeypatch.setattr("analysis.kbb._get_local_pricing_with_progress", local)
+	monkeypatch.setattr("analysis.kbb.get_or_fetch_national_pricing", AsyncMock(
+		return_value=([(
+			"SE", "$34,510", "$32,100", "national", "/se/", "2026-01-01"
+		)], None)
+	))
+	monkeypatch.setattr("analysis.kbb.save_cache", lambda _cache: None)
+	cache = {}
+
+	await get_vin_first_pricing_data(
+		"Toyota", "Prius", [listing],
+		{"2025 Toyota Prius Plug-in Hybrid": [listing]}, cache,
+	)
+
+	local.assert_not_awaited()
+	entry = cache["level23_entries"][listing["kbb_cache_key"]]
+	assert entry["pricing_basis"] == "national"
+	assert entry["fpp_local"] is None
+	assert entry["local_source"] is None
+
+
+def test_configuration_matching_treats_optional_evidence_as_constraints():
+	configuration = {
+		"style": "SE Hatchback 4D",
+		"fuel_type": "plug-in hybrid",
+		"body_style": "hatchback",
+	}
+
+	assert _configuration_matches_listing(configuration, {
+		"trim": "SE", "trim_version": "SE Plug-in Hybrid",
+	})
+	assert not _configuration_matches_listing(configuration, {
+		"trim": "SE", "fuel_type": "hybrid",
+	})
 
 
 async def test_kbb_browser_launches_headless(monkeypatch):

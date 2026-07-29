@@ -22,18 +22,22 @@ def build_analysis_context(metadata: dict) -> AnalysisContext:
     )
 
 
-def populate_cache(ctx: AnalysisContext):
+def populate_cache(ctx: AnalysisContext, *, vin_first: bool = False):
     ctx.cache = load_cache(PRICING_CACHE)
-    ctx.cache_entries = ctx.cache.setdefault("entries", {})
+    cache_name = "level23_entries" if vin_first else "entries"
+    ctx.cache_entries = ctx.cache.setdefault(cache_name, {})
 
 
 async def populate_variants(ctx: AnalysisContext, listings: list[dict]):
     ctx.variant_map = await get_variant_map(ctx.make, ctx.model, listings)
 
 
-async def populate_pricing_data(ctx: AnalysisContext, listings: list[dict]):
+async def populate_pricing_data(
+    ctx: AnalysisContext, listings: list[dict], *, vin_first: bool = False
+):
     ctx.trim_valuations = await get_pricing_data(
-        ctx.make, ctx.model, listings, ctx.variant_map, ctx.cache
+        ctx.make, ctx.model, listings, ctx.variant_map, ctx.cache,
+        vin_first=vin_first,
     )
 
 
@@ -123,9 +127,9 @@ async def prepare_level2_analysis(
     # Pricing is the primary eligibility input for Level 2. Resolve it before
     # slower dealer, supplementary-document, and vehicle-history enrichment so
     # cached KBB data remains usable even when those later services are degraded.
-    populate_cache(ctx)
+    populate_cache(ctx, vin_first=True)
     await populate_variants(ctx, norm_listings)
-    await populate_pricing_data(ctx, norm_listings)
+    await populate_pricing_data(ctx, norm_listings, vin_first=True)
 
     if not all(get_vehicle_dir(l) for l in listings):
         await download_files(listings, filename)

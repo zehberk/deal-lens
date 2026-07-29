@@ -10,13 +10,17 @@ async def test_level2_collects_kbb_before_dealer_and_document_data(monkeypatch):
 
 	monkeypatch.setattr(workflow, "build_analysis_context", lambda metadata: ctx)
 	monkeypatch.setattr(workflow, "normalize_listing", lambda value: value)
-	monkeypatch.setattr(workflow, "populate_cache", lambda value: events.append("cache"))
+	monkeypatch.setattr(
+		workflow,
+		"populate_cache",
+		lambda value, **kwargs: events.append(("cache", kwargs)),
+	)
 
 	async def populate_variants(_ctx, _listings):
 		events.append("variants")
 
-	async def populate_pricing(_ctx, _listings):
-		events.append("kbb")
+	async def populate_pricing(_ctx, _listings, **kwargs):
+		events.append(("kbb", kwargs))
 
 	async def download(_listings, _filename):
 		events.append("dealer_and_documents")
@@ -42,9 +46,9 @@ async def test_level2_collects_kbb_before_dealer_and_document_data(monkeypatch):
 
 	assert result is ctx
 	assert events == [
-		"cache",
+		("cache", {"vin_first": True}),
 		"variants",
-		"kbb",
+		("kbb", {"vin_first": True}),
 		"dealer_and_documents",
 		"filter",
 		"reports",

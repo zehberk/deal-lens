@@ -355,7 +355,12 @@ def filter_valid_listings(
             else model
         )
         entries = get_relevant_entries(cache_entries, make, variant_model, year)
-        cache_key = _best_usable_kbb_trim_match(base_trim, entries)
+        explicit_cache_key = l.get("kbb_cache_key")
+        cache_key = (
+            explicit_cache_key
+            if explicit_cache_key in cache_entries
+            else _best_usable_kbb_trim_match(base_trim, entries)
+        )
 
         if (
             not cache_key
