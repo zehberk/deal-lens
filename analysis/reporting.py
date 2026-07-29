@@ -10,6 +10,8 @@ from playwright.async_api import async_playwright
 from utils.constants import DOC_PATH
 from utils.models import CarListing, DealBin, TrimValuation
 
+LEVEL2_RATING_ORDER = ("Great", "Good", "Fair", "Poor", "Bad")
+
 
 def to_level1_json(
     make: str,
@@ -183,7 +185,7 @@ async def render_level1_pdf(
 
 
 def build_level2_bins(ratings: list) -> dict[str, list]:
-    bins = {name: [] for name in ("Great", "Good", "Fair", "Poor", "Bad")}
+    bins = {name: [] for name in LEVEL2_RATING_ORDER}
 
     # 0 - listing, 1 - deal, 2 - risk, 3 - narrative
     for rating in ratings:
@@ -195,11 +197,16 @@ def build_level2_bins(ratings: list) -> dict[str, list]:
             bins[name],
             key=lambda r: (
                 -(r[4].get("deal_score") or 0) if len(r) > 4 else 0,
-                r[2],
+                r[2] if r[2] is not None else 0,
                 r[0].get("price") or 0,
             ),
         )
     return bins
+
+
+def order_level2_ratings(ratings: list) -> list:
+    bins = build_level2_bins(ratings)
+    return [rating for name in LEVEL2_RATING_ORDER for rating in bins[name]]
 
 
 def summarize_level2_failures(price_only: list, information_only: list) -> list[tuple[str, int]]:
@@ -307,11 +314,8 @@ async def render_level2_pdf(
     generated_at = datetime.now().strftime("%B %d, %Y %I:%M %p")
 
     rating_bins = build_level2_bins(ratings)
-    all_ratings = [
-        rating
-        for name in ("Great", "Good", "Fair", "Poor", "Bad")
-        for rating in rating_bins[name]
-    ]
+    all_ratings = order_level2_ratings(ratings)
+    ordered_price_only = order_level2_ratings(price_only)
     all_images = collect_all_images({**rating_bins, "Price only": price_only})
     information_summary = summarize_level2_failures(price_only, information_only)
 
@@ -325,7 +329,7 @@ async def render_level2_pdf(
         summary=summary,
         total_count=total_count,
         full_count=len(ratings),
-        price_only=sorted(price_only, key=lambda item: item[0].get("price") or 0),
+        price_only=ordered_price_only,
         information_only=information_only,
         information_summary=information_summary,
         rating_bins=rating_bins,

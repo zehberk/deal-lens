@@ -7,6 +7,7 @@ from analysis.reporting import (
 	display_dealer_location,
 	display_listing_condition,
 	logo_data_uri,
+	order_level2_ratings,
 	summarize_level2_failures,
 )
 from jinja2 import Environment, FileSystemLoader
@@ -387,3 +388,19 @@ def test_level2_bins_sort_by_global_deal_score():
 	bins = build_level2_bins(ratings)
 
 	assert [rating[4]["deal_score"] for rating in bins["Fair"]] == [80, 50, 20]
+
+
+def test_price_only_ratings_are_ordered_by_descending_bin():
+	ratings = [
+		({"id": "bad", "price": 10_000}, "Bad", None, [], {}),
+		({"id": "fair", "price": 30_000}, "Fair", None, [], {}),
+		({"id": "great", "price": 40_000}, "Great", None, [], {}),
+		({"id": "poor", "price": 20_000}, "Poor", None, [], {}),
+		({"id": "good", "price": 50_000}, "Good", None, [], {}),
+	]
+
+	ordered = order_level2_ratings(ratings)
+
+	assert [rating[1] for rating in ordered] == [
+		"Great", "Good", "Fair", "Poor", "Bad",
+	]
