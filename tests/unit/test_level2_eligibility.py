@@ -31,7 +31,7 @@ def test_level2_uses_one_local_report_image(monkeypatch):
 			{"title": "2026 Toyota 4Runner", "vin": "TESTVIN"}
 		)
 
-		assert images == [reporting.to_file_url(str(image_dir / "report.jpg"))]
+		assert images == ["data:image/jpeg;base64,cmVwb3J0IGltYWdl"]
 	finally:
 		shutil.rmtree(test_root)
 

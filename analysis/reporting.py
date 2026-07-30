@@ -1,4 +1,4 @@
-import base64, logging, re, sys, time, urllib.parse
+import base64, logging, re, sys, time
 
 from collections import Counter
 from datetime import datetime
@@ -235,16 +235,14 @@ def logo_data_uri(path: Path) -> str | None:
     return f"data:image/svg+xml;base64,{encoded}"
 
 
-def to_file_url(path: str) -> str:
-    p = Path(path).resolve()
-    as_posix = str(p).replace("\\", "/")
-
-    # Split "C:/path/to/file" into ("C:", "/path/to/file")
-    drive, rest = as_posix.split(":", 1)
-
-    rest_encoded = urllib.parse.quote(rest)
-
-    return f"file:///{drive}:{rest_encoded}"
+def image_data_uri(path: Path) -> str:
+    media_type = {
+        ".gif": "image/gif",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }.get(path.suffix.casefold(), "image/jpeg")
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{media_type};base64,{encoded}"
 
 
 def get_images_for_listing(listing: dict) -> list[str]:
@@ -259,10 +257,10 @@ def get_images_for_listing(listing: dict) -> list[str]:
 
     report_image = img_dir / "report.jpg"
     if report_image.is_file():
-        return [to_file_url(str(report_image))]
+        return [image_data_uri(report_image)]
 
     paths = sorted(path for path in img_dir.glob("*") if path.is_file())
-    return [to_file_url(str(paths[0]))] if paths else []
+    return [image_data_uri(paths[0])] if paths else []
 
 
 def collect_all_images(rating_bins: dict[str, list]) -> dict:
@@ -397,6 +395,16 @@ async def render_level2_pdf(
                     image.addEventListener('error', resolve, {once: true});
                 });
             }))"""
+        )
+        image_status = await page.evaluate(
+            """() => ({
+                loaded: Array.from(document.images).filter(image => image.naturalWidth > 0).length,
+                failed: Array.from(document.images).filter(image => image.naturalWidth === 0).length,
+            })"""
+        )
+        logger.info(
+            "Level 2 browser images loaded: %d; failed: %d",
+            image_status["loaded"], image_status["failed"],
         )
         logger.info(
             "Level 2 browser content loading completed in %.2fs",
