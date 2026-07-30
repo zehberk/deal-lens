@@ -1423,6 +1423,17 @@ async def get_vin_first_pricing_data(
                 ymm, model_slug, year, model_name, variant_listings
             ))
 
+        national_jobs = [
+            (ymm, model_slug, year, model_name, variant_listings, {})
+            for ymm, model_slug, year, model_name, variant_listings
+            in pending_jobs
+        ]
+        national_task = asyncio.create_task(
+            _prefetch_vin_first_national_tables(
+                context, make, national_jobs, national_tables
+            )
+        )
+
         vin_semaphore = asyncio.Semaphore(KBB_NATIONAL_WORKERS)
         vin_started = time.perf_counter()
 
@@ -1448,18 +1459,21 @@ async def get_vin_first_pricing_data(
                 finally:
                     await worker_page.close()
 
-        variant_jobs = list(await asyncio.gather(*(
-            resolve_job(job) for job in pending_jobs
-        )))
+        try:
+            variant_jobs = list(await asyncio.gather(*(
+                resolve_job(job) for job in pending_jobs
+            )))
+        except BaseException:
+            national_task.cancel()
+            await asyncio.gather(national_task, return_exceptions=True)
+            raise
         logger.info(
             "KBB VIN/local groups completed in %.2fs with %d worker(s)",
             time.perf_counter() - vin_started,
             min(KBB_NATIONAL_WORKERS, len(pending_jobs)),
         )
 
-        await _prefetch_vin_first_national_tables(
-            context, make, variant_jobs, national_tables
-        )
+        await national_task
 
         for (
             ymm, _, year, model_name, variant_listings, model_configurations
