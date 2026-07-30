@@ -13,6 +13,7 @@ from analysis.normalization import (
 
 from utils.cache import load_cache
 from utils.constants import *
+from utils.download import needs_supplementary_info
 from utils.models import AnalysisContext, ListingContext, PricingAnchors
 
 
@@ -131,7 +132,10 @@ async def prepare_level2_analysis(
     await populate_variants(ctx, norm_listings)
     await populate_pricing_data(ctx, norm_listings, vin_first=True)
 
-    if not all(get_vehicle_dir(l) for l in listings):
+    if (
+        not all(get_vehicle_dir(l) for l in listings)
+        or any(needs_supplementary_info(l) for l in listings)
+    ):
         await download_files(listings, filename)
 
     # Keep every listing in the Level 2 workflow. Report availability determines

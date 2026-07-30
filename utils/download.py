@@ -1,4 +1,4 @@
-import asyncio, base64, ctypes, glob, hashlib, io, json, os, platform, re, requests, shutil, subprocess, time, urllib.parse
+import asyncio, base64, ctypes, glob, hashlib, io, json, logging, os, platform, re, requests, shutil, subprocess, time, urllib.parse
 
 from bs4 import BeautifulSoup
 from datetime import timedelta
@@ -27,6 +27,10 @@ from utils.common import (
 )
 from utils.constants import *
 from utils.fees import parse_fee_snippets
+
+
+logger = logging.getLogger(__name__)
+SUPPLEMENTARY_WORKERS = 5
 
 
 class FetchStatus(Enum):
@@ -339,6 +343,85 @@ async def download_sticker(req: APIRequestContext, listing: dict, folder: str) -
     with open(path, "wb") as f:
         f.write(await resp.body())
     return True
+
+
+async def _download_supplementary_listing(
+    semaphore: asyncio.Semaphore,
+    req: APIRequestContext,
+    listing: dict,
+) -> tuple[int, bool]:
+    title = listing.get("title")
+    vin = listing.get("vin")
+    listing_id = listing.get("id")
+    if not title or not vin:
+        logger.warning(
+            "Supplementary download skipped for listing %s: title or VIN missing",
+            listing_id,
+        )
+        return 0, False
+
+    async with semaphore:
+        started = time.monotonic()
+        logger.info(
+            "Supplementary download started for listing %s (VIN %s)",
+            listing_id, vin,
+        )
+        folder = os.path.join(DOC_PATH, title, vin)
+        try:
+            os.makedirs(folder, exist_ok=True)
+            save_listing_json(listing, folder)
+            image_count = await download_images(req, listing, folder)
+            sticker_saved = await download_sticker(req, listing, folder)
+        except Exception:
+            logger.exception(
+                "Supplementary download failed for listing %s (VIN %s) after %.2fs",
+                listing_id, vin, time.monotonic() - started,
+            )
+            return 0, False
+
+        logger.info(
+            "Supplementary download completed for listing %s (VIN %s) in %.2fs: "
+            "%d image(s), sticker=%s",
+            listing_id, vin, time.monotonic() - started, image_count, sticker_saved,
+        )
+        return image_count, sticker_saved
+
+
+async def download_supplementary_files(
+    req: APIRequestContext,
+    listings: list[dict],
+    *,
+    workers: int = SUPPLEMENTARY_WORKERS,
+) -> tuple[int, int]:
+    if workers < 1:
+        raise ValueError("supplementary workers must be at least 1")
+
+    started = time.monotonic()
+    semaphore = asyncio.Semaphore(workers)
+    tasks = [
+        _download_supplementary_listing(semaphore, req, listing)
+        for listing in listings
+    ]
+    image_count = 0
+    sticker_count = 0
+    progress = cli_progress()
+    for future in progress.track(
+        asyncio.as_completed(tasks),
+        total=len(tasks),
+        description="Downloading supplementary info",
+        unit="listing",
+    ):
+        images, sticker_saved = await future
+        image_count += images
+        sticker_count += int(sticker_saved)
+
+    elapsed = time.monotonic() - started
+    logger.info(
+        "Supplementary downloads completed in %.2fs for %d listing(s) with %d "
+        "worker(s): %d image(s), %d sticker(s)",
+        elapsed, len(listings), workers, image_count, sticker_count,
+    )
+    return image_count, sticker_count
 
 
 def bootstrap_profile(user_data_dir: str):
@@ -935,31 +1018,11 @@ async def download_files(
 
         req = await p.request.new_context(ignore_https_errors=True)
         try:
-            sticker_count = 0
             work = [l for l in listings if needs_supplementary_info(l)]
             if len(work) == 0:
                 print("All supplementary info current")
             else:
-                progress = cli_progress()
-                for l in progress.track(
-                    work,
-                    total=len(work),
-                    description="Downloading supplementary info",
-                    unit="listing",
-                ):
-                    title = l.get("title")
-                    vin = l.get("vin")
-                    if not title or not vin:
-                        continue
-
-                    folder = os.path.join(DOC_PATH, title, vin)
-                    os.makedirs(folder, exist_ok=True)
-
-                    save_listing_json(l, folder)
-                    _ = await download_images(req, l, folder)
-                    success = await download_sticker(req, l, folder)
-                    if success:
-                        sticker_count += 1
+                _, sticker_count = await download_supplementary_files(req, work)
 
                 if sticker_count:
                     print(f"{sticker_count} stickers saved")

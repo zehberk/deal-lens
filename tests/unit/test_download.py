@@ -1,3 +1,4 @@
+import asyncio
 import io
 import shutil
 import uuid
@@ -5,6 +6,7 @@ import uuid
 from collections.abc import Iterator
 from pathlib import Path
 from typing import cast
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -15,6 +17,7 @@ from websocket import WebSocket
 from utils.download import (
 	complete_carfax_challenge,
 	download_images,
+	download_supplementary_files,
 	is_chrome_browser_window,
 	launch_chrome,
 	needs_poll,
@@ -69,6 +72,74 @@ async def test_image_timeout_does_not_abort_remaining_downloads(output_dir):
 
 	assert count == 1
 	assert (output_dir / "images" / "2.jpg").is_file()
+
+
+async def test_supplementary_downloads_use_five_workers(
+	monkeypatch, output_dir, caplog
+):
+	active = 0
+	peak = 0
+	completed = []
+
+	async def download_images_stub(_request, listing, _folder):
+		nonlocal active, peak
+		active += 1
+		peak = max(peak, active)
+		await asyncio.sleep(0.02)
+		active -= 1
+		completed.append(listing["id"])
+		return 1
+
+	monkeypatch.setattr("utils.download.DOC_PATH", output_dir)
+	monkeypatch.setattr("utils.download.download_images", download_images_stub)
+	monkeypatch.setattr(
+		"utils.download.download_sticker",
+		AsyncMock(return_value=False),
+	)
+	listings = [
+		{"id": str(index), "vin": f"VIN{index}", "title": "Test vehicle"}
+		for index in range(12)
+	]
+	caplog.set_level("INFO", logger="utils.download")
+
+	images, stickers = await download_supplementary_files(
+		cast(APIRequestContext, object()), listings
+	)
+
+	assert peak == 5
+	assert len(completed) == 12
+	assert images == 12
+	assert stickers == 0
+	assert "with 5 worker(s): 12 image(s), 0 sticker(s)" in caplog.text
+
+
+async def test_supplementary_worker_failure_does_not_cancel_others(
+	monkeypatch, output_dir, caplog
+):
+	async def download_images_stub(_request, listing, _folder):
+		if listing["id"] == "bad":
+			raise RuntimeError("download failed")
+		return 1
+
+	monkeypatch.setattr("utils.download.DOC_PATH", output_dir)
+	monkeypatch.setattr("utils.download.download_images", download_images_stub)
+	monkeypatch.setattr(
+		"utils.download.download_sticker",
+		AsyncMock(return_value=False),
+	)
+	caplog.set_level("ERROR", logger="utils.download")
+	listings = [
+		{"id": listing_id, "vin": listing_id, "title": "Test vehicle"}
+		for listing_id in ("good-1", "bad", "good-2")
+	]
+
+	images, stickers = await download_supplementary_files(
+		cast(APIRequestContext, object()), listings
+	)
+
+	assert images == 2
+	assert stickers == 0
+	assert "Supplementary download failed for listing bad" in caplog.text
 
 
 def test_carfax_chrome_window_is_parked_offscreen_on_windows(monkeypatch):

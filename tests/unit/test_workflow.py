@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock
+
 from analysis import workflow
 
 
@@ -28,6 +30,7 @@ async def test_level2_collects_kbb_before_dealer_and_document_data(monkeypatch):
 	monkeypatch.setattr(workflow, "populate_variants", populate_variants)
 	monkeypatch.setattr(workflow, "populate_pricing_data", populate_pricing)
 	monkeypatch.setattr(workflow, "get_vehicle_dir", lambda value: None)
+	monkeypatch.setattr(workflow, "needs_supplementary_info", lambda value: False)
 	monkeypatch.setattr(workflow, "download_files", download)
 	monkeypatch.setattr(
 		workflow,
@@ -53,3 +56,36 @@ async def test_level2_collects_kbb_before_dealer_and_document_data(monkeypatch):
 		"filter",
 		"reports",
 	]
+
+
+async def test_level2_repairs_supplementary_files_in_existing_vehicle_dirs(
+	monkeypatch,
+):
+	events = []
+	listing = {"id": "listing-1", "vin": "VIN1", "title": "Test vehicle"}
+	ctx = workflow.build_analysis_context(
+		{"vehicle": {"make": "Test", "model": "Vehicle"}}
+	)
+
+	monkeypatch.setattr(workflow, "build_analysis_context", lambda metadata: ctx)
+	monkeypatch.setattr(workflow, "normalize_listing", lambda value: value)
+	monkeypatch.setattr(workflow, "populate_cache", lambda *_args, **_kwargs: None)
+	monkeypatch.setattr(workflow, "populate_variants", AsyncMock())
+	monkeypatch.setattr(workflow, "populate_pricing_data", AsyncMock())
+	monkeypatch.setattr(workflow, "get_vehicle_dir", lambda value: "existing")
+	monkeypatch.setattr(workflow, "needs_supplementary_info", lambda value: True)
+	download = AsyncMock(side_effect=lambda *_args, **_kwargs: events.append("download"))
+	monkeypatch.setattr(workflow, "download_files", download)
+	monkeypatch.setattr(
+		workflow, "populate_filtered_listings", lambda *_args, **_kwargs: None
+	)
+	monkeypatch.setattr(workflow, "check_missing_docs", lambda _listings: None)
+
+	await workflow.prepare_level2_analysis(
+		{"vehicle": {"make": "Test", "model": "Vehicle"}},
+		[listing],
+		"listings.json",
+	)
+
+	assert events == ["download"]
+	download.assert_awaited_once()
