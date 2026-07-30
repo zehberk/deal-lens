@@ -1274,6 +1274,123 @@ async def _prefetch_vin_first_national_tables(
     )
 
 
+async def _resolve_vin_first_variant(
+    page: Page,
+    progress,
+    make: str,
+    model_slug: str,
+    year: str,
+    model_name: str,
+    variant_listings: list[dict],
+    entries: dict[str, dict],
+    configurations: dict[str, dict],
+    vin_resolutions: dict[str, dict],
+) -> dict[str, dict]:
+    """Resolve VIN/local pricing sequentially within one year/model variant."""
+    model_configurations = {
+        fingerprint: configuration
+        for fingerprint, configuration in configurations.items()
+        if (
+            str(configuration.get("year")) == year
+            and str(configuration.get("make", "")).casefold() == make.casefold()
+            and str(configuration.get("model", "")).casefold()
+            == model_name.casefold()
+        )
+    }
+
+    for listing in variant_listings:
+        condition = str(listing.get("condition") or "").casefold()
+        if condition not in {"used", "certified", "cpo"}:
+            continue
+        vin = str(listing.get("vin") or "").strip()
+        if not vin:
+            logger.warning("KBB VIN lookup skipped for listing without VIN")
+            continue
+
+        fingerprint = str(
+            (vin_resolutions.get(vin) or {}).get("configuration") or ""
+        )
+        configuration = model_configurations.get(fingerprint)
+        if not configuration:
+            compatible = [
+                (key, candidate)
+                for key, candidate in model_configurations.items()
+                if _configuration_matches_listing(candidate, listing)
+            ]
+            if len(compatible) == 1:
+                fingerprint, configuration = compatible[0]
+                logger.info(
+                    "Reusing VIN-resolved KBB style %s for VIN %s",
+                    configuration.get("style"), vin,
+                )
+
+        if not configuration:
+            resolution = await get_used_style_url_from_vins(
+                page, year, make, model_slug, [vin]
+            )
+            if not resolution:
+                logger.warning(
+                    "KBB VIN did not resolve a used style for VIN %s", vin
+                )
+                continue
+            style, style_url = resolution
+            fingerprint = _configuration_fingerprint(
+                year, make, model_name, style_url
+            )
+            configuration = configurations.setdefault(fingerprint, {
+                "year": year,
+                "make": make,
+                "model": model_name,
+                "style": style,
+                "style_url": style_url,
+                "body_style": listing.get("body_style"),
+                "fuel_type": listing.get("fuel_type"),
+                "powertrain_type": listing.get("powertrain_type"),
+            })
+            model_configurations[fingerprint] = configuration
+
+        style = str(configuration["style"])
+        style_url = str(configuration["style_url"])
+        cache_key = f"{year} {make} {model_name} {style}"
+        configuration["cache_key"] = cache_key
+        entry = _complete_pricing_entry(
+            entries.setdefault(cache_key, {}),
+            model=model_name,
+            kbb_trim=cache_key,
+        )
+        if not is_local_fresh(entry):
+            fmr_low, fmr_high, fpp_local, fmv, local_source = (
+                await _get_local_pricing_with_progress(
+                    progress,
+                    page,
+                    year,
+                    make,
+                    model_slug,
+                    style,
+                    cache_key,
+                    entries,
+                    source_url=style_url,
+                    expect_used=True,
+                )
+            )
+            entry.update({
+                "fmr_low": fmr_low,
+                "fmr_high": fmr_high,
+                "fpp_local": fpp_local,
+                "fmv": fmv,
+                "local_source": local_source,
+                "local_timestamp": datetime.now().isoformat(),
+                "pricing_basis": "vin",
+            })
+        listing["kbb_cache_key"] = cache_key
+        vin_resolutions[vin] = {
+            "configuration": fingerprint,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    return model_configurations
+
+
 async def get_vin_first_pricing_data(
     make: str,
     model: str,
@@ -1297,121 +1414,48 @@ async def get_vin_first_pricing_data(
         tuple[str, str, str, str, list[dict], dict[str, dict]]
     ] = []
     try:
-        for ymm, model_slug in progress.track(
-            relevant_slugs.items(),
-            total=len(relevant_slugs),
-            description="Fetching VIN-first KBB pricing",
-            unit="year/make/model",
-        ):
+        pending_jobs = []
+        for ymm, model_slug in relevant_slugs.items():
             year = ymm[:4]
             model_name = ymm.replace(year, "").replace(make, "").strip()
             variant_listings = variant_map.get(ymm, [])
-            model_configurations = {
-                fingerprint: configuration
-                for fingerprint, configuration in configurations.items()
-                if (
-                    str(configuration.get("year")) == year
-                    and str(configuration.get("make", "")).casefold()
-                    == make.casefold()
-                    and str(configuration.get("model", "")).casefold()
-                    == model_name.casefold()
-                )
-            }
-
-            for listing in variant_listings:
-                condition = str(listing.get("condition") or "").casefold()
-                if condition not in {"used", "certified", "cpo"}:
-                    continue
-                vin = str(listing.get("vin") or "").strip()
-                if not vin:
-                    logger.warning("KBB VIN lookup skipped for listing without VIN")
-                    continue
-
-                fingerprint = str(
-                    (vin_resolutions.get(vin) or {}).get("configuration") or ""
-                )
-                configuration = model_configurations.get(fingerprint)
-                if not configuration:
-                    compatible = [
-                        (key, candidate)
-                        for key, candidate in model_configurations.items()
-                        if _configuration_matches_listing(candidate, listing)
-                    ]
-                    if len(compatible) == 1:
-                        fingerprint, configuration = compatible[0]
-                        logger.info(
-                            "Reusing VIN-resolved KBB style %s for VIN %s",
-                            configuration.get("style"), vin,
-                        )
-
-                if not configuration:
-                    resolution = await get_used_style_url_from_vins(
-                        page, year, make, model_slug, [vin]
-                    )
-                    if not resolution:
-                        logger.warning(
-                            "KBB VIN did not resolve a used style for VIN %s", vin
-                        )
-                        continue
-                    style, style_url = resolution
-                    fingerprint = _configuration_fingerprint(
-                        year, make, model_name, style_url
-                    )
-                    configuration = configurations.setdefault(fingerprint, {
-                        "year": year,
-                        "make": make,
-                        "model": model_name,
-                        "style": style,
-                        "style_url": style_url,
-                        "body_style": listing.get("body_style"),
-                        "fuel_type": listing.get("fuel_type"),
-                        "powertrain_type": listing.get("powertrain_type"),
-                    })
-                    model_configurations[fingerprint] = configuration
-
-                style = str(configuration["style"])
-                style_url = str(configuration["style_url"])
-                cache_key = f"{year} {make} {model_name} {style}"
-                configuration["cache_key"] = cache_key
-                entry = _complete_pricing_entry(
-                    entries.setdefault(cache_key, {}),
-                    model=model_name,
-                    kbb_trim=cache_key,
-                )
-                if not is_local_fresh(entry):
-                    fmr_low, fmr_high, fpp_local, fmv, local_source = (
-                        await _get_local_pricing_with_progress(
-                            progress,
-                            page,
-                            year,
-                            make,
-                            model_slug,
-                            style,
-                            cache_key,
-                            entries,
-                            source_url=style_url,
-                            expect_used=True,
-                        )
-                    )
-                    entry.update({
-                        "fmr_low": fmr_low,
-                        "fmr_high": fmr_high,
-                        "fpp_local": fpp_local,
-                        "fmv": fmv,
-                        "local_source": local_source,
-                        "local_timestamp": datetime.now().isoformat(),
-                        "pricing_basis": "vin",
-                    })
-                listing["kbb_cache_key"] = cache_key
-                vin_resolutions[vin] = {
-                    "configuration": fingerprint,
-                    "timestamp": datetime.now().isoformat(),
-                }
-
-            variant_jobs.append((
-                ymm, model_slug, year, model_name,
-                variant_listings, model_configurations,
+            pending_jobs.append((
+                ymm, model_slug, year, model_name, variant_listings
             ))
+
+        vin_semaphore = asyncio.Semaphore(KBB_NATIONAL_WORKERS)
+        vin_started = time.perf_counter()
+
+        async def resolve_job(job):
+            ymm, model_slug, year, model_name, variant_listings = job
+            async with vin_semaphore:
+                worker_page = await context.new_page()
+                configure_kbb_page_diagnostics(worker_page)
+                job_started = time.perf_counter()
+                try:
+                    model_configurations = await _resolve_vin_first_variant(
+                        worker_page, progress, make, model_slug, year, model_name,
+                        variant_listings, entries, configurations, vin_resolutions,
+                    )
+                    logger.info(
+                        "KBB VIN/local phase completed for %s in %.2fs",
+                        ymm, time.perf_counter() - job_started,
+                    )
+                    return (
+                        ymm, model_slug, year, model_name,
+                        variant_listings, model_configurations,
+                    )
+                finally:
+                    await worker_page.close()
+
+        variant_jobs = list(await asyncio.gather(*(
+            resolve_job(job) for job in pending_jobs
+        )))
+        logger.info(
+            "KBB VIN/local groups completed in %.2fs with %d worker(s)",
+            time.perf_counter() - vin_started,
+            min(KBB_NATIONAL_WORKERS, len(pending_jobs)),
+        )
 
         await _prefetch_vin_first_national_tables(
             context, make, variant_jobs, national_tables

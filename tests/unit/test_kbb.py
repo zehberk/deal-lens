@@ -78,6 +78,42 @@ async def test_national_tables_use_bounded_parallel_pages(monkeypatch):
 	assert all(page.close.await_count == 1 for page in pages)
 
 
+async def test_vin_variant_groups_use_bounded_parallel_pages(monkeypatch):
+	active = 0
+	peak = 0
+
+	async def resolve(*_args, **_kwargs):
+		nonlocal active, peak
+		active += 1
+		peak = max(peak, active)
+		await asyncio.sleep(0.01)
+		active -= 1
+		return {}
+
+	variants = {
+		f"202{year} Toyota 4Runner": []
+		for year in range(4, 7)
+	}
+	monkeypatch.setattr("analysis.kbb.KBB_NATIONAL_WORKERS", 2)
+	monkeypatch.setattr("analysis.kbb.create_kbb_browser", AsyncMock(
+		return_value=_fake_kbb_browser()
+	))
+	monkeypatch.setattr("analysis.kbb.get_model_slug_map", AsyncMock(
+		return_value={key: "4runner" for key in variants}
+	))
+	monkeypatch.setattr("analysis.kbb._resolve_vin_first_variant", resolve)
+	monkeypatch.setattr(
+		"analysis.kbb._prefetch_vin_first_national_tables", AsyncMock()
+	)
+	monkeypatch.setattr("analysis.kbb.save_cache", lambda _cache: None)
+
+	await get_vin_first_pricing_data(
+		"Toyota", "4Runner", [], variants, {}
+	)
+
+	assert peak == 2
+
+
 async def test_vin_first_pricing_reuses_configuration_and_enriches_national(
 	monkeypatch,
 ):
