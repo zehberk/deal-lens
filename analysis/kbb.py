@@ -48,6 +48,7 @@ KBB_NAVIGATION_ATTEMPT_TIMEOUT_MS = 10_000
 KBB_DYNAMIC_PRICING_TIMEOUT_MS = 30_000
 KBB_USED_VIN_MAX_ATTEMPTS = 3
 KBB_USED_VIN_ATTEMPT_TIMEOUT_SECONDS = 10
+KBB_NATIONAL_WORKERS = 3
 KBB_HEADLESS_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -1226,6 +1227,53 @@ def _fresh_vin_first_national_rows(table: dict | None) -> list[tuple] | None:
     return [tuple(row) for row in table["rows"]]
 
 
+async def _prefetch_vin_first_national_tables(
+    context: BrowserContext,
+    make: str,
+    jobs: list[tuple[str, str, str, str, list[dict], dict[str, dict]]],
+    national_tables: dict[str, dict],
+) -> None:
+    """Fetch independent year/model national tables with bounded concurrency."""
+    semaphore = asyncio.Semaphore(KBB_NATIONAL_WORKERS)
+    started = time.perf_counter()
+
+    async def fetch(job: tuple[str, str, str, str, list[dict], dict[str, dict]]):
+        ymm, model_slug, year, model_name, _, _ = job
+        if _fresh_vin_first_national_rows(national_tables.get(ymm)) is not None:
+            logger.debug("Using cached national KBB table for %s", ymm)
+            return
+
+        async with semaphore:
+            page = await context.new_page()
+            configure_kbb_page_diagnostics(page)
+            job_started = time.perf_counter()
+            try:
+                rows, _ = await get_or_fetch_national_pricing(
+                    page, make=make, model=model_name,
+                    model_slug=model_slug, year=year, cache_entries={},
+                )
+                national_tables[ymm] = {
+                    "timestamp": datetime.now().isoformat(),
+                    "rows": [list(row) for row in rows],
+                }
+                logger.info(
+                    "KBB national table completed for %s in %.2fs",
+                    ymm, time.perf_counter() - job_started,
+                )
+            finally:
+                await page.close()
+
+    if not jobs:
+        return
+
+    await asyncio.gather(*(fetch(job) for job in jobs))
+    logger.info(
+        "KBB national tables completed in %.2fs with %d worker(s)",
+        time.perf_counter() - started,
+        min(KBB_NATIONAL_WORKERS, len(jobs)),
+    )
+
+
 async def get_vin_first_pricing_data(
     make: str,
     model: str,
@@ -1245,6 +1293,9 @@ async def get_vin_first_pricing_data(
     with progress.status("Starting KBB browser"):
         request, browser, context, page = await create_kbb_browser()
 
+    variant_jobs: list[
+        tuple[str, str, str, str, list[dict], dict[str, dict]]
+    ] = []
     try:
         for ymm, model_slug in progress.track(
             relevant_slugs.items(),
@@ -1357,17 +1408,22 @@ async def get_vin_first_pricing_data(
                     "timestamp": datetime.now().isoformat(),
                 }
 
-            national_rows = _fresh_vin_first_national_rows(
-                national_tables.get(ymm)
-            )
+            variant_jobs.append((
+                ymm, model_slug, year, model_name,
+                variant_listings, model_configurations,
+            ))
+
+        await _prefetch_vin_first_national_tables(
+            context, make, variant_jobs, national_tables
+        )
+
+        for (
+            ymm, _, year, model_name, variant_listings, model_configurations
+        ) in variant_jobs:
+            national_rows = _fresh_vin_first_national_rows(national_tables.get(ymm))
             if national_rows is None:
-                national_rows, _ = await get_or_fetch_national_pricing(
-                    page, make, model_name, model_slug, year, {}
-                )
-                national_tables[ymm] = {
-                    "timestamp": datetime.now().isoformat(),
-                    "rows": [list(row) for row in national_rows],
-                }
+                logger.warning("No national KBB table was available for %s", ymm)
+                national_rows = []
             parsed_rows = [_national_row_values(row) for row in national_rows]
             national_trims = [row[0] for row in parsed_rows]
 

@@ -8,6 +8,7 @@ from playwright.async_api import TimeoutError
 
 from analysis.kbb import (
 	_configuration_matches_listing,
+	_prefetch_vin_first_national_tables,
 	_previous_local_trim,
 	_used_listing_has_cached_pricing,
 	configure_kbb_page_diagnostics,
@@ -31,7 +32,50 @@ def _fake_kbb_browser():
 	context.close = AsyncMock()
 	page = MagicMock()
 	page.close = AsyncMock()
+	context.new_page = AsyncMock(return_value=page)
 	return request, browser, context, page
+
+
+async def test_national_tables_use_bounded_parallel_pages(monkeypatch):
+	active = 0
+	peak = 0
+
+	async def fetch(*_args, **_kwargs):
+		nonlocal active, peak
+		active += 1
+		peak = max(peak, active)
+		await asyncio.sleep(0.01)
+		active -= 1
+		return [(
+			"SR5", "$50,000", "$48,000", "national", "/sr5/", "2026-01-01"
+		)], None
+
+	pages = []
+
+	async def new_page():
+		page = MagicMock()
+		page.close = AsyncMock()
+		pages.append(page)
+		return page
+
+	context = MagicMock()
+	context.new_page = new_page
+	monkeypatch.setattr("analysis.kbb.KBB_NATIONAL_WORKERS", 2)
+	monkeypatch.setattr("analysis.kbb.get_or_fetch_national_pricing", fetch)
+	jobs = [
+		(f"202{year} Toyota 4Runner", "4runner", f"202{year}", "4Runner", [], {})
+		for year in range(4, 7)
+	]
+	tables = {}
+
+	await _prefetch_vin_first_national_tables(
+		context, "Toyota", jobs, tables
+	)
+
+	assert peak == 2
+	assert len(tables) == 3
+	assert len(pages) == 3
+	assert all(page.close.await_count == 1 for page in pages)
 
 
 async def test_vin_first_pricing_reuses_configuration_and_enriches_national(
