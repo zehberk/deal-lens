@@ -107,14 +107,12 @@ def test_vin_lookahead_clusters_matching_source_configurations():
 	]
 
 
-async def test_national_phase_precedes_bounded_vin_clusters(monkeypatch):
+async def test_national_phase_overlaps_bounded_vin_clusters(monkeypatch):
 	active = 0
 	peak = 0
-	national_active = False
 
 	async def resolve(*_args, **_kwargs):
 		nonlocal active, peak
-		assert not national_active
 		active += 1
 		peak = max(peak, active)
 		await asyncio.sleep(0.01)
@@ -122,10 +120,11 @@ async def test_national_phase_precedes_bounded_vin_clusters(monkeypatch):
 		return {}
 
 	async def prefetch(*_args, **_kwargs):
-		nonlocal national_active
-		national_active = True
-		await asyncio.sleep(0.01)
-		national_active = False
+		nonlocal active, peak
+		active += 1
+		peak = max(peak, active)
+		await asyncio.sleep(0.02)
+		active -= 1
 
 	variants = {
 		f"202{year} Toyota 4Runner": [{
@@ -153,7 +152,7 @@ async def test_national_phase_precedes_bounded_vin_clusters(monkeypatch):
 		"Toyota", "4Runner", [], variants, {}
 	)
 
-	assert peak == 2
+	assert peak == 3
 
 
 async def test_vin_first_pricing_reuses_configuration_and_enriches_national(
