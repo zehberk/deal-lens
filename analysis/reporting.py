@@ -209,10 +209,8 @@ def order_level2_ratings(ratings: list) -> list:
     return [rating for name in LEVEL2_RATING_ORDER for rating in bins[name]]
 
 
-def summarize_level2_failures(price_only: list, information_only: list) -> list[tuple[str, int]]:
+def summarize_level2_failures(information_only: list) -> list[tuple[str, int]]:
     counts = Counter(reason for _, reason in information_only)
-    if price_only:
-        counts["Vehicle-history report unavailable."] += len(price_only)
     return sorted(counts.items())
 
 
@@ -317,7 +315,7 @@ async def render_level2_pdf(
     all_ratings = order_level2_ratings(ratings)
     ordered_price_only = order_level2_ratings(price_only)
     all_images = collect_all_images({**rating_bins, "Price only": price_only})
-    information_summary = summarize_level2_failures(price_only, information_only)
+    information_summary = summarize_level2_failures(information_only)
 
     summary = create_report_filter_summary(metadata)
     html_out = template.render(

@@ -223,6 +223,9 @@ def test_report_summarizes_unevaluated_reasons_without_listing_rows():
 	)
 
 	assert "KBB pricing unavailable <strong>(2)</strong>" in html
+	assert "Listings not evaluated" in html
+	assert "Unable to Evaluate" not in html
+	assert html.index("Listings not evaluated") < html.index("<main")
 	assert "HIDDENVIN" not in html
 
 
@@ -277,16 +280,12 @@ def test_report_renders_price_only_row_without_deal_score():
 	assert '<div class="deal-score">' not in html
 
 
-def test_price_only_listings_are_grouped_with_other_failure_reasons():
+def test_price_only_listings_are_not_repeated_as_failure_reasons():
 	summary = summarize_level2_failures(
-		[({"id": "one"}, "Good", []), ({"id": "two"}, "Fair", [])],
 		[({"id": "three"}, "Listing price is unavailable.")],
 	)
 
-	assert summary == [
-		("Listing price is unavailable.", 1),
-		("Vehicle-history report unavailable.", 2),
-	]
+	assert summary == [("Listing price is unavailable.", 1)]
 
 
 def test_price_assessment_provides_visual_range_without_redundant_bullets():
