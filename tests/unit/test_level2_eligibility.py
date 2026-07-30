@@ -1,16 +1,39 @@
+import shutil
+import uuid
+
 from pathlib import Path
 
-from analysis import level2
+from analysis import level2, reporting
 from analysis.reporting import (
 	build_level2_bins,
 	create_report_filter_summary,
 	display_dealer_location,
 	display_listing_condition,
+	get_images_for_listing,
 	logo_data_uri,
+	order_level2_ratings,
 	summarize_level2_failures,
 )
 from jinja2 import Environment, FileSystemLoader
 from utils.models import AnalysisContext, ListingContext, PricingAnchors
+
+
+def test_level2_uses_one_local_report_image(monkeypatch):
+	test_root = Path("cache") / "test-report-images" / uuid.uuid4().hex
+	try:
+		monkeypatch.setattr(reporting, "DOC_PATH", test_root)
+		image_dir = test_root / "2026 Toyota 4Runner" / "TESTVIN" / "images"
+		image_dir.mkdir(parents=True)
+		(image_dir / "report.jpg").write_bytes(b"report image")
+		(image_dir / "unused.jpg").write_bytes(b"unused image")
+
+		images = get_images_for_listing(
+			{"title": "2026 Toyota 4Runner", "vin": "TESTVIN"}
+		)
+
+		assert images == ["data:image/jpeg;base64,cmVwb3J0IGltYWdl"]
+	finally:
+		shutil.rmtree(test_root)
 
 
 def test_level2_uses_msrp_only_for_new_vehicle_fallback():
@@ -61,7 +84,7 @@ async def test_level2_keeps_price_only_and_unmapped_listings(monkeypatch):
 		level2,
 		"_price_assessment",
 		lambda _lc, narrative: narrative.append("Price evidence available.")
-		or ("Good", 0, 0, 0.0),
+		or ("Good", 0, 0, 0.0, {"listing_price": 25_000}),
 	)
 	monkeypatch.setattr(level2, "render_level2_pdf", fake_render)
 
@@ -76,10 +99,12 @@ async def test_level2_keeps_price_only_and_unmapped_listings(monkeypatch):
 		(
 			price_only_listing,
 			"Good",
+			None,
 			[
 				"Price evidence available.",
 				"A vehicle-history report was not collected, so risk and the final Level 2 rating are unavailable.",
 			],
+			{"listing_price": 25_000},
 		)
 	]
 	assert render_args[5] == [
@@ -126,9 +151,11 @@ async def test_level2_uses_available_national_fpp_without_fmv(monkeypatch):
 
 	assert render_args[3] == []
 	assert len(render_args[4]) == 1
-	assessed_listing, _, narrative = render_args[4][0]
+	assessed_listing, _, risk, narrative, pricing = render_args[4][0]
 	assert assessed_listing == listing
+	assert risk is None
 	assert narrative[0].startswith("National FPP was used")
+	assert pricing["listing_price"] == listing["price"]
 	assert render_args[5] == []
 
 
@@ -218,19 +245,143 @@ def test_report_summarizes_unevaluated_reasons_without_listing_rows():
 	)
 
 	assert "KBB pricing unavailable <strong>(2)</strong>" in html
+	assert "The remaining <strong>2</strong> could not be evaluated" in html
+	assert "Listings not evaluated" in html
+	assert "Unable to Evaluate" not in html
+	assert html.index("Listings not evaluated") < html.index("<main")
 	assert "HIDDENVIN" not in html
 
 
-def test_price_only_listings_are_grouped_with_other_failure_reasons():
+def test_report_hides_zero_unevaluated_sentence():
+	template = Environment(loader=FileSystemLoader("templates")).get_template(
+		"level2.html"
+	)
+	empty_bins = {
+		name: [] for name in ("Great", "Good", "Fair", "Poor", "Bad")
+	}
+	html = template.render(
+		make="Toyota",
+		model="4Runner",
+		report_title="Level 2",
+		generated_at="today",
+		summary="New listings",
+		total_count=100,
+		full_count=100,
+		price_only=[],
+		information_only=[],
+		information_summary=[],
+		rating_bins=empty_bins,
+		great_bin=[],
+		good_bin=[],
+		fair_bin=[],
+		poor_count=0,
+		bad_count=0,
+		all_images={},
+	)
+
+	assert "The remaining" not in html
+	assert "could not be evaluated for the following reasons" not in html
+
+
+def test_report_renders_price_only_row_without_deal_score():
+	template = Environment(loader=FileSystemLoader("templates")).get_template(
+		"level2.html"
+	)
+	listing = {
+		"title": "2025 Toyota Prius LE",
+		"display_title": "2025 Toyota Prius Plug-in Hybrid LE",
+		"seller": {"name": "Test dealer", "location": "Denver, CO"},
+		"vin": "TESTVIN",
+		"mileage": 10_000,
+		"price": 25_000,
+		"condition": "Used",
+		"dealer_listing": "https://dealer.test/listing",
+		"visor_listing": "https://visor.test/listing",
+	}
+	pricing = {
+		"great_end_pct": 20,
+		"good_end_pct": 40,
+		"fair_end_pct": 60,
+		"poor_end_pct": 80,
+		"marker_pct": 50,
+		"great_high": 20_000,
+		"good_high": 23_000,
+		"fair_high": 26_000,
+		"poor_high": 29_000,
+	}
+	empty_bins = {
+		name: [] for name in ("Great", "Good", "Fair", "Poor", "Bad")
+	}
+
+	html = template.render(
+		make="Toyota",
+		model="Prius",
+		generated_at="today",
+		summary="Used listings",
+		total_count=1,
+		full_count=0,
+		price_only=[(listing, "Good", None, ["Price-only rating."], pricing)],
+		information_summary=[],
+		all_ratings=[],
+		all_images={},
+		display_dealer_location=display_dealer_location,
+		display_listing_condition=display_listing_condition,
+	)
+
+	assert "Price-only ratings" in html
+	assert "2025 Toyota Prius Plug-in Hybrid LE" in html
+	assert ">2025 Toyota Prius LE<" not in html
+	assert '<div class="deal-score">' not in html
+
+
+def test_report_renders_missing_mileage_as_zero():
+	template = Environment(loader=FileSystemLoader("templates")).get_template(
+		"level2.html"
+	)
+	listing = {
+		"title": "2026 Toyota 4Runner SR5",
+		"seller": {"name": "Test dealer", "location": "Denver, CO"},
+		"vin": "MISSINGMILEAGEVIN",
+		"mileage": None,
+		"price": 52_000,
+		"condition": "New",
+	}
+	pricing = {
+		"great_end_pct": 20,
+		"good_end_pct": 40,
+		"fair_end_pct": 60,
+		"poor_end_pct": 80,
+		"marker_pct": 50,
+		"great_high": 48_000,
+		"good_high": 50_000,
+		"fair_high": 54_000,
+		"poor_high": 56_000,
+	}
+
+	html = template.render(
+		make="Toyota",
+		model="4Runner",
+		generated_at="today",
+		summary="New listings",
+		total_count=1,
+		full_count=0,
+		price_only=[(listing, "Fair", None, ["Price-only rating."], pricing)],
+		information_summary=[],
+		all_ratings=[],
+		all_images={},
+		display_dealer_location=display_dealer_location,
+		display_listing_condition=display_listing_condition,
+	)
+
+	assert "Mileage: <strong>0</strong>" in html
+
+
+def test_price_only_listings_are_not_repeated_as_failure_reasons():
 	summary = summarize_level2_failures(
-		[({"id": "one"}, "Good", []), ({"id": "two"}, "Fair", [])],
 		[({"id": "three"}, "Listing price is unavailable.")],
 	)
 
-	assert summary == [
-		("Listing price is unavailable.", 1),
-		("Vehicle-history report unavailable.", 2),
-	]
+	assert summary == [("Listing price is unavailable.", 1)]
 
 
 def test_price_assessment_provides_visual_range_without_redundant_bullets():
@@ -324,6 +475,14 @@ def test_level2_template_keeps_jinja_out_of_inline_css():
 	assert "class=\"deal-score\"" in template
 
 
+def test_price_only_ratings_start_on_a_new_page():
+	stylesheet = Path("templates/level2.css").read_text(encoding="utf-8")
+
+	assert "main.deal-bin + section.deal-bin" in stylesheet
+	assert "break-before: page" in stylesheet
+	assert "page-break-before: always" in stylesheet
+
+
 def test_level2_bins_sort_by_global_deal_score():
 	ratings = [
 		({"price": 20000}, "Fair", 0, [], {"deal_score": 20}),
@@ -334,3 +493,19 @@ def test_level2_bins_sort_by_global_deal_score():
 	bins = build_level2_bins(ratings)
 
 	assert [rating[4]["deal_score"] for rating in bins["Fair"]] == [80, 50, 20]
+
+
+def test_price_only_ratings_are_ordered_by_descending_bin():
+	ratings = [
+		({"id": "bad", "price": 10_000}, "Bad", None, [], {}),
+		({"id": "fair", "price": 30_000}, "Fair", None, [], {}),
+		({"id": "great", "price": 40_000}, "Great", None, [], {}),
+		({"id": "poor", "price": 20_000}, "Poor", None, [], {}),
+		({"id": "good", "price": 50_000}, "Good", None, [], {}),
+	]
+
+	ordered = order_level2_ratings(ratings)
+
+	assert [rating[1] for rating in ordered] == [
+		"Great", "Good", "Fair", "Poor", "Bad",
+	]

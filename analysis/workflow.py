@@ -13,6 +13,7 @@ from analysis.normalization import (
 
 from utils.cache import load_cache
 from utils.constants import *
+from utils.download import needs_supplementary_info
 from utils.models import AnalysisContext, ListingContext, PricingAnchors
 
 
@@ -22,18 +23,22 @@ def build_analysis_context(metadata: dict) -> AnalysisContext:
     )
 
 
-def populate_cache(ctx: AnalysisContext):
+def populate_cache(ctx: AnalysisContext, *, vin_first: bool = False):
     ctx.cache = load_cache(PRICING_CACHE)
-    ctx.cache_entries = ctx.cache.setdefault("entries", {})
+    cache_name = "level23_entries" if vin_first else "entries"
+    ctx.cache_entries = ctx.cache.setdefault(cache_name, {})
 
 
 async def populate_variants(ctx: AnalysisContext, listings: list[dict]):
     ctx.variant_map = await get_variant_map(ctx.make, ctx.model, listings)
 
 
-async def populate_pricing_data(ctx: AnalysisContext, listings: list[dict]):
+async def populate_pricing_data(
+    ctx: AnalysisContext, listings: list[dict], *, vin_first: bool = False
+):
     ctx.trim_valuations = await get_pricing_data(
-        ctx.make, ctx.model, listings, ctx.variant_map, ctx.cache
+        ctx.make, ctx.model, listings, ctx.variant_map, ctx.cache,
+        vin_first=vin_first,
     )
 
 
@@ -117,16 +122,26 @@ async def prepare_level1_analysis(
 async def prepare_level2_analysis(
     metadata: dict, listings: list[dict], filename: str
 ) -> AnalysisContext:
-
-    if not all(get_vehicle_dir(l) for l in listings):
-        await download_files(listings, filename)
-
+    ctx = build_analysis_context(metadata)
     norm_listings = [normalize_listing(l) for l in listings]
+
+    # Pricing is the primary eligibility input for Level 2. Resolve it before
+    # slower dealer, supplementary-document, and vehicle-history enrichment so
+    # cached KBB data remains usable even when those later services are degraded.
+    populate_cache(ctx, vin_first=True)
+    await populate_variants(ctx, norm_listings)
+    await populate_pricing_data(ctx, norm_listings, vin_first=True)
+
+    if (
+        not all(get_vehicle_dir(l) for l in listings)
+        or any(needs_supplementary_info(l) for l in listings)
+    ):
+        await download_files(listings, filename)
 
     # Keep every listing in the Level 2 workflow. Report availability determines
     # whether a listing receives a full risk-adjusted rating later; it should not
     # determine whether the listing is represented in the report at all.
-    ctx = await prepare_level1_analysis(metadata, norm_listings, is_normalized=True)
+    populate_filtered_listings(ctx, norm_listings, full_listings=listings)
 
     check_missing_docs(listings)
 

@@ -61,10 +61,15 @@ h2 { margin: 13px 0 6px; color: #163a5f; font-size: 11pt; break-after: avoid; }
 .listing-notes ul { margin: 2px 0 0; padding-left: 14px; }
 .listing-notes li { margin-bottom: 1px; }
 
-.unable-summary { break-before: page; }
-.unable-summary p { margin: 0 0 4px; color: #586775; }
-.unable-summary ul { margin: 0; padding-left: 16px; }
-.unable-summary li { margin-bottom: 3px; }
+main.deal-bin + section.deal-bin {
+	break-before: page;
+	page-break-before: always;
+}
+
+.evaluation-reasons { margin: 0 0 10px; padding: 7px 9px; border: 1px solid #c6d2dc; background: #f5f8fa; }
+.evaluation-reasons h2 { margin: 0 0 4px; font-size: 9pt; }
+.evaluation-reasons ul { margin: 0; padding-left: 16px; }
+.evaluation-reasons li { margin-bottom: 2px; }
 
 footer { margin-top: 12px; padding-top: 7px; border-top: 1px solid #aebdca; color: #586775; font-size: 7pt; }
 footer h2 { margin-top: 0; }

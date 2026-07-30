@@ -89,11 +89,7 @@ def best_kbb_model_match(
 ) -> str | None:
 
     def tokenize(s: str) -> set[str]:
-        return {
-            t
-            for t in re.sub(r"[-_/]", " ", s.lower()).split()
-            if t not in {make.lower(), model.lower()}
-        }
+        return set(re.findall(r"[a-z0-9]+", s.casefold()))
 
     def after_com(url: str) -> str:
         if not url:
@@ -101,24 +97,69 @@ def best_kbb_model_match(
         _, _, tail = url.partition(".com")
         return tail
 
-    listing_tokens = set()
+    make_tokens = tokenize(make)
+    base_tokens = tokenize(model) | make_tokens
+    listing_tokens: set[str] = set()
     for v in (
         listing.get("trim", ""),
         listing.get("trim_version", ""),
+        listing.get("fuel_type", ""),
+        listing.get("powertrain_type", ""),
+        listing.get("body_style", ""),
         after_com(listing.get("dealer_listing", "")),
     ):
         listing_tokens |= tokenize(v)
+    if listing.get("is_plugin") is True:
+        listing_tokens |= {"plug", "in", "hybrid", "phev"}
+    elif listing.get("is_hybrid") is True:
+        listing_tokens |= {"hybrid", "hev"}
 
-    best_score = 0
-    best_model = ""
+    exact_base = next(
+        (candidate for candidate in kbb_models if candidate.casefold() == model.casefold()),
+        None,
+    )
+    specialized_matches: list[tuple[int, str]] = []
     for kbb_model in kbb_models:
-        model_tokens = tokenize(kbb_model)
-        score = len(listing_tokens & model_tokens)
-        if score > best_score:
-            best_score = score
-            best_model = kbb_model
+        if kbb_model == exact_base:
+            continue
+        unique_tokens = tokenize(kbb_model) - base_tokens
+        if unique_tokens and unique_tokens <= listing_tokens:
+            specialized_matches.append((len(unique_tokens), kbb_model))
 
-    return best_model if best_model else None
+    if specialized_matches:
+        best_score = max(score for score, _ in specialized_matches)
+        best_models = [
+            candidate
+            for score, candidate in specialized_matches
+            if score == best_score
+        ]
+        return best_models[0] if len(best_models) == 1 else None
+
+    if exact_base:
+        return exact_base
+
+    # When KBB has no exact base model, retain positive token matching but do not
+    # guess between equally supported candidates.
+    scored = [
+        (len(listing_tokens & (tokenize(candidate) - make_tokens)), candidate)
+        for candidate in kbb_models
+    ]
+    best_score = max((score for score, _ in scored), default=0)
+    best_models = [candidate for score, candidate in scored if score == best_score]
+    return best_models[0] if best_score > 0 and len(best_models) == 1 else None
+
+
+def model_variant_title(
+    title: str | None, base_model: str, selected_model: str
+) -> str | None:
+    """Correct a display title without changing the source listing title."""
+    if not title or selected_model.casefold() == base_model.casefold():
+        return title
+    if selected_model.casefold() in title.casefold():
+        return title
+    return re.sub(
+        re.escape(base_model), selected_model, title, count=1, flags=re.IGNORECASE
+    )
 
 
 def best_kbb_trim_match(visor_trim: str, kbb_trims: list[str]) -> str | None:
@@ -265,6 +306,8 @@ async def get_variant_map(
                 no_match.append(l)
                 continue
 
+        l["model_variant"] = selected
+        l["display_title"] = model_variant_title(l.get("title"), model, selected)
         ymm = f"{year} {make} {selected}"
         variant_map.setdefault(ymm, []).append(l)
 
@@ -312,7 +355,12 @@ def filter_valid_listings(
             else model
         )
         entries = get_relevant_entries(cache_entries, make, variant_model, year)
-        cache_key = _best_usable_kbb_trim_match(base_trim, entries)
+        explicit_cache_key = l.get("kbb_cache_key")
+        cache_key = (
+            explicit_cache_key
+            if explicit_cache_key in cache_entries
+            else _best_usable_kbb_trim_match(base_trim, entries)
+        )
 
         if (
             not cache_key
@@ -400,6 +448,9 @@ def normalize_listing(listing: dict) -> dict:
         "mileage": to_int(listing.get("mileage")),
         "is_hybrid": is_hybrid,
         "is_plugin": is_plugin,
+        "fuel_type": fuel_type,
+        "powertrain_type": powertrain_type,
+        "body_style": str(specs.get("Body Style") or "").strip().lower(),
         "report_present": carfax_present,  # or autocheck_present,
         "window_sticker_present": sticker_present,
         "warranty_info_present": warranty_present,

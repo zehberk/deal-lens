@@ -1,4 +1,4 @@
-import asyncio, json, logging, re
+import asyncio, json, logging, re, time
 import urllib.parse
 
 from datetime import datetime
@@ -16,6 +16,7 @@ from deal_lens.progress import cli_progress
 from utils.cache import (
     cache_covers_all,
     is_entry_fresh,
+    is_local_fresh,
     is_natl_fresh,
     save_cache,
 )
@@ -45,6 +46,108 @@ KBB_LOCATOR_TIMEOUT_MS = 10_000
 KBB_NAVIGATION_TIMEOUT_MS = 30_000
 KBB_NAVIGATION_ATTEMPT_TIMEOUT_MS = 10_000
 KBB_DYNAMIC_PRICING_TIMEOUT_MS = 30_000
+KBB_USED_VIN_MAX_ATTEMPTS = 3
+KBB_USED_VIN_ATTEMPT_TIMEOUT_SECONDS = 10
+KBB_NATIONAL_WORKERS = 3
+KBB_VIN_WORKERS = 5
+KBB_HEADLESS_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/138.0.0.0 Safari/537.36"
+)
+_KBB_PAGE_HEALTH: dict[int, list[str]] = {}
+
+
+def configure_kbb_page_diagnostics(page: Page) -> None:
+    """Record browser failures that can prevent KBB controls from initializing."""
+    health = _KBB_PAGE_HEALTH.setdefault(id(page), [])
+
+    def on_console(message) -> None:
+        text = message.text
+        if message.type in {"error", "warning"}:
+            logger.warning("KBB browser console %s: %s", message.type, text)
+        else:
+            logger.debug("KBB browser console %s: %s", message.type, text)
+
+    def on_page_error(error) -> None:
+        health.append(f"page error: {error}")
+        logger.warning("KBB browser page error: %s", error)
+
+    def on_request_failed(request) -> None:
+        message = f"{request.method} {request.url} ({request.failure})"
+        if request.resource_type == "script":
+            health.append(f"script request failed: {message}")
+            logger.warning("KBB script request failed: %s", message)
+        elif request.resource_type in {"image", "media", "font"}:
+            logger.debug("KBB optional request failed: %s", message)
+        else:
+            logger.warning("KBB request failed: %s", message)
+
+    def on_response(response) -> None:
+        if response.status < 400:
+            return
+        if response.request.resource_type == "script":
+            health.append(f"script HTTP {response.status}: {response.url}")
+        logger.warning("KBB HTTP %d: %s", response.status, response.url)
+
+    page.on(
+        "console",
+        on_console,
+    )
+    page.on("pageerror", on_page_error)
+    page.on("requestfailed", on_request_failed)
+    page.on("response", on_response)
+
+
+async def log_kbb_vin_diagnostic_state(
+    page: Page, vin: str, phase: str, elapsed: float
+) -> None:
+    """Log the KBB form state without allowing diagnostics to mask the failure."""
+    try:
+        state = await page.evaluate(
+            """() => {
+                const vinMode = document.querySelector('input#vinButton');
+                const vinInput = document.querySelector(
+                    'input[data-lean-auto="vinInput"]'
+                );
+                const style = vinInput ? getComputedStyle(vinInput) : null;
+                return {
+                    url: location.href,
+                    title: document.title,
+                    readyState: document.readyState,
+                    bodyText: (document.body?.innerText || '').slice(0, 500),
+                    vinMode: vinMode ? {
+                        checked: vinMode.checked,
+                        disabled: vinMode.disabled,
+                        visible: Boolean(vinMode.offsetWidth || vinMode.offsetHeight),
+                    } : null,
+                    vinInput: vinInput ? {
+                        disabled: vinInput.disabled,
+                        readOnly: vinInput.readOnly,
+                        visible: Boolean(vinInput.offsetWidth || vinInput.offsetHeight),
+                        display: style?.display,
+                        visibility: style?.visibility,
+                    } : null,
+                    challenge: Boolean(document.querySelector(
+                        'iframe[src*="captcha"], iframe[src*="datadome"], iframe[title*="challenge" i]'
+                    )),
+                };
+            }"""
+        )
+        logger.warning(
+            "KBB VIN diagnostic for %s after %.1fs during %s: %s",
+            vin,
+            elapsed,
+            phase,
+            json.dumps(state, ensure_ascii=False, default=str),
+        )
+    except Exception as error:
+        logger.warning(
+            "KBB VIN diagnostic capture failed for %s during %s: %s",
+            vin,
+            phase,
+            error,
+        )
 
 
 async def get_model_slug_map(
@@ -79,59 +182,112 @@ async def get_used_style_url_from_vins(
 ) -> tuple[str, str] | None:
     """Resolve KBB's canonical used style label and URL from an existing VIN."""
     expected_path = f"/{make_string_url_safe(make)}/{model_slug}/{year}/vin/"
-    for vin in vins:
-        if not vin:
-            continue
+    attempted_vins = [vin for vin in vins if vin][:KBB_USED_VIN_MAX_ATTEMPTS]
+    health = _KBB_PAGE_HEALTH.setdefault(id(page), [])
+    for attempt, vin in enumerate(attempted_vins, start=1):
+        health.clear()
+        started = time.monotonic()
+        phase = "direct VIN navigation"
+        base_url = KBB_LOOKUP_BASE_URL.format(
+            make=make_string_url_safe(make), model=model_slug, year=year
+        )
+        vin_url = urllib.parse.urljoin(base_url, "vin/") + "?" + urllib.parse.urlencode({
+            "intent": "trade-in-sell",
+            "vin": vin,
+        })
+        logger.info(
+            "KBB direct VIN attempt %d/%d for %s %s %s: %s",
+            attempt, len(attempted_vins), year, make, model_slug, vin_url,
+        )
         try:
-            await page.goto(
-                KBB_WHATS_MY_CAR_WORTH_URL,
-                wait_until="domcontentloaded",
-                timeout=KBB_NAVIGATION_TIMEOUT_MS,
+            async with asyncio.timeout(KBB_USED_VIN_ATTEMPT_TIMEOUT_SECONDS):
+                try:
+                    await page.goto(
+                        vin_url,
+                        wait_until="domcontentloaded",
+                        timeout=KBB_USED_VIN_ATTEMPT_TIMEOUT_SECONDS * 1000,
+                    )
+                    logger.info(
+                        "KBB direct VIN page loaded for %s in %.1fs: %s",
+                        vin, time.monotonic() - started, page.url,
+                    )
+                    parsed = urllib.parse.urlparse(page.url)
+                    if parsed.path.casefold() != expected_path.casefold():
+                        logger.warning(
+                            "KBB VIN resolved to unexpected vehicle path for %s %s %s: %s",
+                            year, make, model_slug, page.url,
+                        )
+                        continue
+                    phase = "waiting for VIN style"
+                    await page.wait_for_function(
+                        r"""() => /(?:^|\n)Style:\s*(?:\n\s*)?[^\n]+/i.test(
+                            document.body?.innerText || ""
+                        )""",
+                        timeout=KBB_USED_VIN_ATTEMPT_TIMEOUT_SECONDS * 1000,
+                    )
+                    body = await page.inner_text(
+                        "body", timeout=KBB_LOCATOR_TIMEOUT_MS
+                    )
+                    style_match = re.search(
+                        r"(?:^|\n)Style:\s*\n?\s*([^\n]+)", body, re.IGNORECASE
+                    )
+                    if not style_match:
+                        logger.warning(
+                            "KBB VIN result did not provide a style for %s", vin
+                        )
+                        continue
+                    style = style_match.group(1).strip()
+                    style_url = KBB_LOOKUP_TRIM_URL.format(
+                        make=make_string_url_safe(make),
+                        model=model_slug,
+                        year=year,
+                        trim=make_string_url_safe(style),
+                    )
+                    logger.debug(
+                        "KBB VIN resolved %s %s %s to used style %s: %s",
+                        year, make, model_slug, style, style_url,
+                    )
+                    return style, style_url
+                except (PlaywrightError, TimeoutError) as error:
+                    elapsed = time.monotonic() - started
+                    logger.warning(
+                        "KBB VIN lookup failed for %s after %.1fs during %s: %s",
+                        vin, elapsed, phase, error,
+                    )
+                    await log_kbb_vin_diagnostic_state(page, vin, phase, elapsed)
+                    if health:
+                        logger.warning(
+                            "KBB application is unhealthy after VIN %s; skipping "
+                            "remaining VINs and continuing with national-table links: %s",
+                            vin, "; ".join(health[:5]),
+                        )
+                        break
+        except asyncio.TimeoutError:
+            elapsed = time.monotonic() - started
+            logger.warning(
+                "KBB used-style VIN attempt %d/%d exceeded %d seconds for %s "
+                "during %s; trying the next VIN",
+                attempt,
+                len(attempted_vins),
+                KBB_USED_VIN_ATTEMPT_TIMEOUT_SECONDS,
+                vin,
+                phase,
             )
-            await page.locator("input#vinButton").check()
-            await page.locator('input[data-lean-auto="vinInput"]').fill(vin)
-            await page.locator('button[data-lean-auto="vinSubmitBtn"]').click(
-                force=True
-            )
-            await page.wait_for_url(
-                "**/vin/**",
-                wait_until="commit",
-                timeout=KBB_NAVIGATION_TIMEOUT_MS,
-            )
-            parsed = urllib.parse.urlparse(page.url)
-            if parsed.path.casefold() != expected_path.casefold():
+            await log_kbb_vin_diagnostic_state(page, vin, phase, elapsed)
+            if health:
                 logger.warning(
-                    "KBB VIN resolved to unexpected vehicle path for %s %s %s: %s",
-                    year, make, model_slug, page.url,
+                    "KBB application is unhealthy after VIN %s; skipping remaining "
+                    "VINs and continuing with national-table links: %s",
+                    vin, "; ".join(health[:5]),
                 )
-                continue
-            await page.wait_for_function(
-                r"""() => /(?:^|\n)Style:\s*(?:\n\s*)?[^\n]+/i.test(
-                    document.body?.innerText || ""
-                )""",
-                timeout=KBB_LOCATOR_TIMEOUT_MS,
-            )
-            body = await page.inner_text("body", timeout=KBB_LOCATOR_TIMEOUT_MS)
-            style_match = re.search(
-                r"(?:^|\n)Style:\s*\n?\s*([^\n]+)", body, re.IGNORECASE
-            )
-            if not style_match:
-                logger.warning("KBB VIN result did not provide a style for %s", vin)
-                continue
-            style = style_match.group(1).strip()
-            style_url = KBB_LOOKUP_TRIM_URL.format(
-                make=make_string_url_safe(make),
-                model=model_slug,
-                year=year,
-                trim=make_string_url_safe(style),
-            )
-            logger.debug(
-                "KBB VIN resolved %s %s %s to used style %s: %s",
-                year, make, model_slug, style, style_url,
-            )
-            return style, style_url
-        except (PlaywrightError, TimeoutError) as error:
-            logger.warning("KBB VIN lookup failed for %s: %s", vin, error)
+                break
+
+    if attempted_vins:
+        logger.warning(
+            "KBB used-style VIN resolution exhausted %d attempt(s) for %s %s %s; "
+            "continuing with national-table links",
+            len(attempted_vins), year, make, model_slug,
+        )
     return None
 
 
@@ -172,7 +328,8 @@ async def get_or_fetch_national_pricing(
     }
 
     all_fresh = bool(relevant_entries) and all(
-        is_natl_fresh(e) for e in relevant_entries.values()
+        is_natl_fresh(e) and (e.get("msrp") is not None or e.get("fpp_natl") is not None)
+        for e in relevant_entries.values()
     )
 
     if all_fresh:
@@ -404,8 +561,11 @@ async def populate_pricing_for_year(
             if used_resolution:
                 local_trim, resolved_trim_source = used_resolution
             elif is_used_pricing:
-                resolved_trim_source = None
-                fpp_source = None
+                logger.info(
+                    "KBB VIN style unavailable for %s; trying national-table "
+                    "trim link directly: %s",
+                    kbb_trim, resolved_trim_source,
+                )
             if make_string_url_safe(table_trim) == model_slug:
                 previous_trim = _previous_local_trim(
                     cache_entries, make, model, year, requested_trim
@@ -416,21 +576,20 @@ async def populate_pricing_for_year(
                         "Using prior-year KBB trim path %s for %s",
                         local_trim, kbb_trim,
                     )
-            if not is_used_pricing or used_resolution:
-                fmr_low, fmr_high, fpp_local, fmv, fpp_source = (
-                    await _get_local_pricing_with_progress(
-                        progress,
-                        page,
-                        year,
-                        make,
-                        model_slug,
-                        local_trim,
-                        kbb_trim,
-                        cache_entries,
-                        source_url=resolved_trim_source,
-                        expect_used=is_used_pricing,
-                    )
+            fmr_low, fmr_high, fpp_local, fmv, fpp_source = (
+                await _get_local_pricing_with_progress(
+                    progress,
+                    page,
+                    year,
+                    make,
+                    model_slug,
+                    local_trim,
+                    kbb_trim,
+                    cache_entries,
+                    source_url=resolved_trim_source,
+                    expect_used=is_used_pricing,
                 )
+            )
             local_ts = datetime.now().isoformat()
         else:
             if not natl_fpp or natl_fpp == "TBD":
@@ -451,7 +610,7 @@ async def populate_pricing_for_year(
             table_trim in best_matches
             and best_matches[table_trim] in used_style_urls
         )
-        entry["fpp_natl"] = None if is_used_pricing else natl_val
+        entry["fpp_natl"] = natl_val
 
         entry["fmr_low"] = fmr_low
         entry["fmr_high"] = fmr_high
@@ -460,9 +619,12 @@ async def populate_pricing_for_year(
         entry["natl_source"] = natl_source
         entry["local_source"] = fpp_source
         entry["pricing_basis"] = "used" if is_used_pricing else "new"
-        if is_used_pricing and not used_style_urls.get(best_matches[table_trim]):
-            entry["skip_reason"] = "KBB used style could not be resolved from VIN."
-        elif not any((entry["msrp"], entry["fpp_natl"], fpp_local, fmv)):
+        usable_prices = (
+            (entry["fpp_natl"], fpp_local, fmv)
+            if is_used_pricing
+            else (entry["msrp"], entry["fpp_natl"], fpp_local, fmv)
+        )
+        if not any(usable_prices):
             entry["skip_reason"] = "There is currently no pricing data for this trim."
         else:
             entry.pop("skip_reason", None)
@@ -495,7 +657,23 @@ async def populate_pricing_for_year(
         used_resolution = used_style_urls.get(requested_trim)
         is_used_pricing = requested_trim in used_style_urls
         if is_used_pricing and not used_resolution:
-            fmr_low = fmr_high = fpp_local = fmv = fpp_source = None
+            logger.info(
+                "KBB VIN style unavailable for %s; trying requested trim link directly",
+                kbb_trim,
+            )
+            fmr_low, fmr_high, fpp_local, fmv, fpp_source = (
+                await _get_local_pricing_with_progress(
+                    progress,
+                    page,
+                    year,
+                    make,
+                    model_slug,
+                    requested_trim,
+                    kbb_trim,
+                    cache_entries,
+                    expect_used=True,
+                )
+            )
         else:
             local_trim, source_url = (
                 used_resolution if used_resolution else (requested_trim, None)
@@ -519,7 +697,7 @@ async def populate_pricing_for_year(
             "model": model,
             "kbb_trim": kbb_trim,
             "msrp": entry.get("msrp"),
-            "fpp_natl": None if is_used_pricing else entry.get("fpp_natl"),
+            "fpp_natl": entry.get("fpp_natl"),
             "fmr_low": fmr_low,
             "fmr_high": fmr_high,
             "fpp_local": fpp_local,
@@ -536,9 +714,12 @@ async def populate_pricing_for_year(
             "natl_timestamp": entry.get("natl_timestamp"),
             "local_timestamp": datetime.now().isoformat(),
         })
-        if is_used_pricing and not used_resolution:
-            entry["skip_reason"] = "KBB used style could not be resolved from VIN."
-        elif any((entry["msrp"], entry["fpp_natl"], fpp_local, fmv)):
+        usable_prices = (
+            (entry["fpp_natl"], fpp_local, fmv)
+            if is_used_pricing
+            else (entry["msrp"], entry["fpp_natl"], fpp_local, fmv)
+        )
+        if any(usable_prices):
             entry.pop("skip_reason", None)
         else:
             entry["skip_reason"] = "There is currently no pricing data for this trim."
@@ -815,7 +996,8 @@ async def create_kbb_browser() -> (
     p = await async_playwright().start()
     request: APIRequestContext = await p.request.new_context()
     browser: Browser = await p.chromium.launch(
-        headless=False,
+        headless=True,
+        channel="chrome",
         args=[
             "--disable-blink-features=AutomationControlled",
             "--disable-gpu",
@@ -824,7 +1006,11 @@ async def create_kbb_browser() -> (
             "--disable-infobars",
         ],
     )
-    context: BrowserContext = await browser.new_context()
+    context: BrowserContext = await browser.new_context(
+        locale="en-US",
+        user_agent=KBB_HEADLESS_USER_AGENT,
+        viewport={"width": 1440, "height": 900},
+    )
     context.set_default_timeout(KBB_LOCATOR_TIMEOUT_MS)
     context.set_default_navigation_timeout(KBB_NAVIGATION_TIMEOUT_MS)
     await context.route(
@@ -836,6 +1022,7 @@ async def create_kbb_browser() -> (
         ),
     )
     page: Page = await context.new_page()
+    configure_kbb_page_diagnostics(page)
     return request, browser, context, page
 
 
@@ -957,16 +1144,515 @@ def find_styles_data(apollo: dict) -> dict | None:
     return None
 
 
+def _listing_trim(listing: dict) -> str:
+    trim_version = str(listing.get("trim_version") or "").strip()
+    return trim_version if is_trim_version_valid(trim_version) else str(
+        listing.get("trim") or ""
+    ).strip()
+
+
+def _listing_configuration_value(listing: dict, field: str) -> str:
+    aliases = {
+        "body_style": "Body Style",
+        "fuel_type": "Fuel Type",
+        "powertrain_type": "Powertrain Type",
+        "drivetrain": "Drivetrain",
+    }
+    value = listing.get(field)
+    if value is None:
+        value = (listing.get("specs") or {}).get(aliases[field])
+    return re.sub(r"\s+", " ", str(value or "")).strip().casefold()
+
+
+def _vin_lookahead_key(listing: dict) -> tuple[str, ...]:
+    """Build a conservative pre-KBB grouping key from available source facts."""
+    trim = re.sub(r"\s+", " ", _listing_trim(listing)).strip().casefold()
+    if not trim:
+        return ("vin", str(listing.get("vin") or listing.get("id") or ""))
+    return (
+        trim,
+        _listing_configuration_value(listing, "body_style"),
+        _listing_configuration_value(listing, "fuel_type"),
+        _listing_configuration_value(listing, "powertrain_type"),
+        _listing_configuration_value(listing, "drivetrain"),
+    )
+
+
+def _cluster_vin_lookahead_listings(listings: list[dict]) -> list[list[dict]]:
+    clusters: dict[tuple[str, ...], list[dict]] = {}
+    for listing in listings:
+        if str(listing.get("condition") or "").casefold() not in {
+            "used", "certified", "cpo",
+        }:
+            continue
+        clusters.setdefault(_vin_lookahead_key(listing), []).append(listing)
+    return list(clusters.values())
+
+
+def _configuration_fingerprint(
+    year: str, make: str, model: str, style_url: str
+) -> str:
+    path = urllib.parse.urlparse(style_url).path.rstrip("/").casefold()
+    return "|".join((year, make.casefold(), model.casefold(), path))
+
+
+def _configuration_matches_listing(configuration: dict, listing: dict) -> bool:
+    style = str(configuration.get("style") or "")
+    trim_candidates = {
+        _listing_trim(listing),
+        str(listing.get("trim") or "").strip(),
+    } - {""}
+    if not style or not any(
+        kbb_trim_identity_matches(trim, style) for trim in trim_candidates
+    ):
+        return False
+
+    for field in ("body_style", "fuel_type", "powertrain_type", "drivetrain"):
+        expected = str(configuration.get(field) or "").strip().casefold()
+        actual = _listing_configuration_value(listing, field)
+        if expected and actual and expected != actual:
+            return False
+    return True
+
+
+def _complete_pricing_entry(entry: dict, *, model: str, kbb_trim: str) -> dict:
+    defaults = {
+        "model": model,
+        "kbb_trim": kbb_trim,
+        "msrp": None,
+        "fpp_natl": None,
+        "fmr_low": None,
+        "fmr_high": None,
+        "fpp_local": None,
+        "fmv": None,
+        "natl_source": None,
+        "local_source": None,
+        "natl_timestamp": None,
+        "local_timestamp": None,
+    }
+    for field, value in defaults.items():
+        entry.setdefault(field, value)
+    return entry
+
+
+def _national_row_values(row: tuple) -> tuple[str, int | None, int | None, str, str]:
+    trim, msrp, national_fpp, source, _, timestamp = row
+    return (
+        str(trim),
+        to_int(msrp) if msrp and str(msrp).upper() != "TBD" else None,
+        to_int(national_fpp)
+        if national_fpp and str(national_fpp).upper() != "TBD"
+        else None,
+        str(source),
+        str(timestamp),
+    )
+
+
+def _listing_national_trim(listing: dict, national_trims: list[str]) -> str | None:
+    candidates = [_listing_trim(listing), str(listing.get("trim") or "").strip()]
+    for requested_trim in dict.fromkeys(trim for trim in candidates if trim):
+        national_trim = best_kbb_trim_match(requested_trim, national_trims)
+        if national_trim and kbb_trim_identity_matches(requested_trim, national_trim):
+            return national_trim
+    return None
+
+
+def _fresh_vin_first_national_rows(table: dict | None) -> list[tuple] | None:
+    if not table or not table.get("timestamp") or not table.get("rows"):
+        return None
+    timestamp = datetime.fromisoformat(str(table["timestamp"]))
+    if datetime.now() - timestamp >= KBB_CACHE_TTL:
+        return None
+    return [tuple(row) for row in table["rows"]]
+
+
+async def _prefetch_vin_first_national_tables(
+    context: BrowserContext,
+    make: str,
+    jobs: list[tuple[str, str, str, str, list[dict], dict[str, dict]]],
+    national_tables: dict[str, dict],
+) -> None:
+    """Fetch independent year/model national tables with bounded concurrency."""
+    semaphore = asyncio.Semaphore(KBB_NATIONAL_WORKERS)
+    started = time.perf_counter()
+
+    async def fetch(job: tuple[str, str, str, str, list[dict], dict[str, dict]]):
+        ymm, model_slug, year, model_name, _, _ = job
+        if _fresh_vin_first_national_rows(national_tables.get(ymm)) is not None:
+            logger.debug("Using cached national KBB table for %s", ymm)
+            return
+
+        async with semaphore:
+            page = await context.new_page()
+            configure_kbb_page_diagnostics(page)
+            job_started = time.perf_counter()
+            try:
+                rows, _ = await get_or_fetch_national_pricing(
+                    page, make=make, model=model_name,
+                    model_slug=model_slug, year=year, cache_entries={},
+                )
+                national_tables[ymm] = {
+                    "timestamp": datetime.now().isoformat(),
+                    "rows": [list(row) for row in rows],
+                }
+                logger.info(
+                    "KBB national table completed for %s in %.2fs",
+                    ymm, time.perf_counter() - job_started,
+                )
+            finally:
+                await page.close()
+
+    if not jobs:
+        return
+
+    await asyncio.gather(*(fetch(job) for job in jobs))
+    logger.info(
+        "KBB national tables completed in %.2fs with %d worker(s)",
+        time.perf_counter() - started,
+        min(KBB_NATIONAL_WORKERS, len(jobs)),
+    )
+
+
+async def _resolve_vin_first_variant(
+    page: Page,
+    progress,
+    make: str,
+    model_slug: str,
+    year: str,
+    model_name: str,
+    variant_listings: list[dict],
+    entries: dict[str, dict],
+    configurations: dict[str, dict],
+    vin_resolutions: dict[str, dict],
+) -> dict[str, dict]:
+    """Resolve VIN/local pricing sequentially within one year/model variant."""
+    model_configurations = {
+        fingerprint: configuration
+        for fingerprint, configuration in configurations.items()
+        if (
+            str(configuration.get("year")) == year
+            and str(configuration.get("make", "")).casefold() == make.casefold()
+            and str(configuration.get("model", "")).casefold()
+            == model_name.casefold()
+        )
+    }
+
+    for listing in variant_listings:
+        condition = str(listing.get("condition") or "").casefold()
+        if condition not in {"used", "certified", "cpo"}:
+            continue
+        vin = str(listing.get("vin") or "").strip()
+        if not vin:
+            logger.warning("KBB VIN lookup skipped for listing without VIN")
+            continue
+
+        fingerprint = str(
+            (vin_resolutions.get(vin) or {}).get("configuration") or ""
+        )
+        configuration = model_configurations.get(fingerprint)
+        if not configuration:
+            compatible = [
+                (key, candidate)
+                for key, candidate in model_configurations.items()
+                if _configuration_matches_listing(candidate, listing)
+            ]
+            if len(compatible) == 1:
+                fingerprint, configuration = compatible[0]
+                logger.info(
+                    "Reusing VIN-resolved KBB style %s for VIN %s",
+                    configuration.get("style"), vin,
+                )
+
+        if not configuration:
+            resolution = await get_used_style_url_from_vins(
+                page, year, make, model_slug, [vin]
+            )
+            if not resolution:
+                logger.warning(
+                    "KBB VIN did not resolve a used style for VIN %s", vin
+                )
+                continue
+            style, style_url = resolution
+            fingerprint = _configuration_fingerprint(
+                year, make, model_name, style_url
+            )
+            configuration = configurations.setdefault(fingerprint, {
+                "year": year,
+                "make": make,
+                "model": model_name,
+                "style": style,
+                "style_url": style_url,
+                "body_style": _listing_configuration_value(
+                    listing, "body_style"
+                ),
+                "fuel_type": _listing_configuration_value(
+                    listing, "fuel_type"
+                ),
+                "powertrain_type": _listing_configuration_value(
+                    listing, "powertrain_type"
+                ),
+                "drivetrain": _listing_configuration_value(
+                    listing, "drivetrain"
+                ),
+            })
+            model_configurations[fingerprint] = configuration
+
+        style = str(configuration["style"])
+        style_url = str(configuration["style_url"])
+        cache_key = f"{year} {make} {model_name} {style}"
+        configuration["cache_key"] = cache_key
+        entry = _complete_pricing_entry(
+            entries.setdefault(cache_key, {}),
+            model=model_name,
+            kbb_trim=cache_key,
+        )
+        if not is_local_fresh(entry):
+            fmr_low, fmr_high, fpp_local, fmv, local_source = (
+                await _get_local_pricing_with_progress(
+                    progress,
+                    page,
+                    year,
+                    make,
+                    model_slug,
+                    style,
+                    cache_key,
+                    entries,
+                    source_url=style_url,
+                    expect_used=True,
+                )
+            )
+            entry.update({
+                "fmr_low": fmr_low,
+                "fmr_high": fmr_high,
+                "fpp_local": fpp_local,
+                "fmv": fmv,
+                "local_source": local_source,
+                "local_timestamp": datetime.now().isoformat(),
+                "pricing_basis": "vin",
+            })
+        listing["kbb_cache_key"] = cache_key
+        vin_resolutions[vin] = {
+            "configuration": fingerprint,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    return model_configurations
+
+
+async def get_vin_first_pricing_data(
+    make: str,
+    model: str,
+    listings: list[dict],
+    variant_map: dict[str, list[dict]],
+    cache: dict,
+) -> list[TrimValuation]:
+    """Collect exact Level 2/3 local pricing before national-table enrichment."""
+    entries: dict[str, dict] = cache.setdefault("level23_entries", {})
+    configurations: dict[str, dict] = cache.setdefault("configurations", {})
+    vin_resolutions: dict[str, dict] = cache.setdefault("vin_resolutions", {})
+    national_tables: dict[str, dict] = cache.setdefault("level23_national_tables", {})
+    slugs = cache.setdefault("model_slugs", {})
+    relevant_slugs = await get_model_slug_map(slugs, make, variant_map)
+
+    progress = cli_progress()
+    with progress.status("Starting KBB browser"):
+        request, browser, context, page = await create_kbb_browser()
+
+    variant_jobs: list[
+        tuple[str, str, str, str, list[dict], dict[str, dict]]
+    ] = []
+    try:
+        pending_jobs = []
+        for ymm, model_slug in relevant_slugs.items():
+            year = ymm[:4]
+            model_name = ymm.replace(year, "").replace(make, "").strip()
+            variant_listings = variant_map.get(ymm, [])
+            pending_jobs.append((
+                ymm, model_slug, year, model_name, variant_listings
+            ))
+
+        national_jobs = [
+            (ymm, model_slug, year, model_name, variant_listings, {})
+            for ymm, model_slug, year, model_name, variant_listings
+            in pending_jobs
+        ]
+        national_task = asyncio.create_task(
+            _prefetch_vin_first_national_tables(
+                context, make, national_jobs, national_tables
+            )
+        )
+
+        cluster_jobs = [
+            (ymm, model_slug, year, model_name, cluster)
+            for ymm, model_slug, year, model_name, variant_listings
+            in pending_jobs
+            for cluster in _cluster_vin_lookahead_listings(variant_listings)
+        ]
+        represented_vins = sum(len(job[4]) for job in cluster_jobs)
+        logger.info(
+            "KBB VIN look-ahead produced %d cluster(s) for %d listing(s)",
+            len(cluster_jobs), represented_vins,
+        )
+        vin_semaphore = asyncio.Semaphore(KBB_VIN_WORKERS)
+        vin_started = time.perf_counter()
+
+        async def resolve_job(job):
+            ymm, model_slug, year, model_name, cluster = job
+            async with vin_semaphore:
+                worker_page = await context.new_page()
+                configure_kbb_page_diagnostics(worker_page)
+                job_started = time.perf_counter()
+                try:
+                    await _resolve_vin_first_variant(
+                        worker_page, progress, make, model_slug, year, model_name,
+                        cluster, entries, configurations, vin_resolutions,
+                    )
+                    logger.info(
+                        "KBB VIN/local cluster completed for %s (%d listing(s)) "
+                        "in %.2fs",
+                        ymm, len(cluster), time.perf_counter() - job_started,
+                    )
+                finally:
+                    await worker_page.close()
+
+        try:
+            await asyncio.gather(*(resolve_job(job) for job in cluster_jobs))
+        except BaseException:
+            national_task.cancel()
+            await asyncio.gather(national_task, return_exceptions=True)
+            raise
+        logger.info(
+            "KBB VIN/local clusters completed in %.2fs with %d worker(s)",
+            time.perf_counter() - vin_started,
+            min(KBB_VIN_WORKERS, len(cluster_jobs)),
+        )
+        await national_task
+
+        for ymm, model_slug, year, model_name, variant_listings in pending_jobs:
+            model_configurations = {
+                fingerprint: configuration
+                for fingerprint, configuration in configurations.items()
+                if (
+                    str(configuration.get("year")) == year
+                    and str(configuration.get("make", "")).casefold()
+                    == make.casefold()
+                    and str(configuration.get("model", "")).casefold()
+                    == model_name.casefold()
+                )
+            }
+            variant_jobs.append((
+                ymm, model_slug, year, model_name,
+                variant_listings, model_configurations,
+            ))
+
+        for (
+            ymm, _, year, model_name, variant_listings, model_configurations
+        ) in variant_jobs:
+            national_rows = _fresh_vin_first_national_rows(national_tables.get(ymm))
+            if national_rows is None:
+                logger.warning("No national KBB table was available for %s", ymm)
+                national_rows = []
+            parsed_rows = [_national_row_values(row) for row in national_rows]
+            national_trims = [row[0] for row in parsed_rows]
+
+            for configuration in model_configurations.values():
+                cache_key = configuration.get("cache_key")
+                if not cache_key or cache_key not in entries:
+                    continue
+                style = str(configuration.get("style") or "")
+                national_trim = best_kbb_trim_match(style, national_trims)
+                if not national_trim or not kbb_trim_identity_matches(
+                    national_trim, style
+                ):
+                    logger.warning(
+                        "No national KBB trim match for VIN-resolved style %s", style
+                    )
+                    continue
+                row = next(row for row in parsed_rows if row[0] == national_trim)
+                _, msrp, national_fpp, source, timestamp = row
+                entries[cache_key].update({
+                    "msrp": msrp,
+                    "fpp_natl": national_fpp,
+                    "natl_source": source,
+                    "natl_timestamp": timestamp,
+                })
+
+            for listing in variant_listings:
+                if listing.get("kbb_cache_key"):
+                    continue
+                national_trim = _listing_national_trim(listing, national_trims)
+                if not national_trim:
+                    continue
+                row = next(row for row in parsed_rows if row[0] == national_trim)
+                _, msrp, national_fpp, source, timestamp = row
+                cache_key = f"{year} {make} {model_name} {national_trim}"
+                entry = _complete_pricing_entry(
+                    entries.setdefault(cache_key, {}),
+                    model=model_name,
+                    kbb_trim=cache_key,
+                )
+                entry.update({
+                    "msrp": msrp,
+                    "fpp_natl": national_fpp,
+                    "natl_source": source,
+                    "natl_timestamp": timestamp,
+                    "pricing_basis": "national",
+                })
+                listing["kbb_cache_key"] = cache_key
+
+            for cache_key, entry in entries.items():
+                if not cache_key.casefold().startswith(
+                    f"{year} {make} {model_name} ".casefold()
+                ):
+                    continue
+                usable = any(
+                    entry.get(field) is not None
+                    for field in ("msrp", "fpp_natl", "fpp_local", "fmv")
+                )
+                if usable:
+                    entry.pop("skip_reason", None)
+                else:
+                    entry["skip_reason"] = (
+                        "There is currently no pricing data for this configuration."
+                    )
+    finally:
+        try:
+            await page.close()
+            await context.close()
+            await browser.close()
+            await request.dispose()
+        except Exception:
+            pass
+        save_cache(cache)
+
+    valuations = []
+    for entry in entries.values():
+        if str(entry.get("model", "")).casefold() not in {
+            key.replace(key[:4], "").replace(make, "").strip().casefold()
+            for key in variant_map
+        }:
+            continue
+        valuations.append(TrimValuation.from_dict(entry))
+    return valuations
+
+
 async def get_pricing_data(
     make: str,
     model: str,
     norm_listings: list[dict],
     variant_map: dict[str, list[dict]],
     cache: dict,
+    *,
+    vin_first: bool = False,
 ) -> list[TrimValuation]:
     """
     Get's the pricing data for the provided variants. Must use normalized listings, not the raw listings
     """
+    if vin_first:
+        return await get_vin_first_pricing_data(
+            make, model, norm_listings, variant_map, cache
+        )
+
     cache_entries = cache.setdefault("entries", {})
     slugs = cache.setdefault("model_slugs", {})
 
@@ -1008,7 +1694,15 @@ def _used_listing_has_cached_pricing(
     candidates = [
         key[len(prefix):] if key.casefold().startswith(prefix.casefold()) else key
         for key, entry in entries.items()
-        if entry.get("pricing_basis") == "used" and is_entry_fresh(entry)
+        if (
+            entry.get("pricing_basis") == "used"
+            and not entry.get("skip_reason")
+            and any(
+                entry.get(field) is not None
+                for field in ("msrp", "fpp_natl", "fpp_local", "fmv")
+            )
+            and is_entry_fresh(entry)
+        )
     ]
     trim = str(listing.get("trim_version") or listing.get("trim") or "")
     match = best_kbb_trim_match(trim, candidates)

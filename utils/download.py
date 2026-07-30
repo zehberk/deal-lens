@@ -1,4 +1,4 @@
-import asyncio, base64, glob, hashlib, io, json, os, platform, re, requests, shutil, subprocess, time, urllib.parse
+import asyncio, base64, ctypes, glob, hashlib, io, json, logging, os, platform, re, requests, shutil, subprocess, time, urllib.parse
 
 from bs4 import BeautifulSoup
 from datetime import timedelta
@@ -27,6 +27,10 @@ from utils.common import (
 )
 from utils.constants import *
 from utils.fees import parse_fee_snippets
+
+
+logger = logging.getLogger(__name__)
+SUPPLEMENTARY_WORKERS = 5
 
 
 class FetchStatus(Enum):
@@ -275,55 +279,40 @@ async def download_images(req: APIRequestContext, listing: dict, folder: str) ->
 
     img_dir = os.path.join(folder, "images")
     os.makedirs(img_dir, exist_ok=True)
+    final_path = os.path.join(img_dir, "report.jpg")
+    if os.path.exists(final_path) and os.path.getsize(final_path) > 0:
+        return 0
 
-    count = 0
-    for idx, url in enumerate(imgs, start=1):
-        # temporary name before detecting extension
-        tmp_path = os.path.join(img_dir, f"{idx}")
+    try:
+        resp = await req.get(imgs[0])
+    except Exception as error:
+        logger.warning(
+            "Skipped report image for listing %s: %s",
+            listing.get("id"), type(error).__name__,
+        )
+        return 0
+    if not resp.ok:
+        logger.warning(
+            "Skipped report image for listing %s: HTTP %s",
+            listing.get("id"), resp.status,
+        )
+        return 0
 
-        try:
-            resp = await req.get(url)
-        except Exception as error:
-            print(
-                f"Skipped image {idx} for listing {listing.get('id')}: "
-                f"{type(error).__name__}"
-            )
-            continue
-        if not resp.ok:
-            continue
+    try:
+        with Image.open(io.BytesIO(await resp.body())) as source:
+            image = source.convert("RGB")
+            if image.width > 500:
+                height = round(image.height * 500 / image.width)
+                image = image.resize((500, height), Image.Resampling.LANCZOS)
+            image.save(final_path, format="JPEG", quality=80, optimize=True)
+    except Exception as error:
+        logger.warning(
+            "Skipped invalid report image for listing %s: %s",
+            listing.get("id"), type(error).__name__,
+        )
+        return 0
 
-        # read raw bytes
-        data = await resp.body()
-
-        # Detect real format from bytes
-        try:
-            img = Image.open(io.BytesIO(data))
-            fmt = (img.format or "").lower()
-        except Exception:
-            # fallback if Pillow fails
-            fmt = "jpg"
-
-        ext = {
-            "jpeg": ".jpg",
-            "jpg": ".jpg",
-            "png": ".png",
-            "webp": ".webp",
-            "gif": ".gif",
-        }.get(fmt, ".jpg")
-
-        final_path = tmp_path + ext
-
-        # avoid re-download if exists
-        if os.path.exists(final_path) and os.path.getsize(final_path) > 0:
-            continue
-
-        # write bytes exactly as received
-        with open(final_path, "wb") as f:
-            f.write(data)
-
-        count += 1
-
-    return count
+    return 1
 
 
 async def download_sticker(req: APIRequestContext, listing: dict, folder: str) -> bool:
@@ -339,6 +328,85 @@ async def download_sticker(req: APIRequestContext, listing: dict, folder: str) -
     with open(path, "wb") as f:
         f.write(await resp.body())
     return True
+
+
+async def _download_supplementary_listing(
+    semaphore: asyncio.Semaphore,
+    req: APIRequestContext,
+    listing: dict,
+) -> tuple[int, bool]:
+    title = listing.get("title")
+    vin = listing.get("vin")
+    listing_id = listing.get("id")
+    if not title or not vin:
+        logger.warning(
+            "Supplementary download skipped for listing %s: title or VIN missing",
+            listing_id,
+        )
+        return 0, False
+
+    async with semaphore:
+        started = time.monotonic()
+        logger.info(
+            "Supplementary download started for listing %s (VIN %s)",
+            listing_id, vin,
+        )
+        folder = os.path.join(DOC_PATH, title, vin)
+        try:
+            os.makedirs(folder, exist_ok=True)
+            save_listing_json(listing, folder)
+            image_count = await download_images(req, listing, folder)
+            sticker_saved = await download_sticker(req, listing, folder)
+        except Exception:
+            logger.exception(
+                "Supplementary download failed for listing %s (VIN %s) after %.2fs",
+                listing_id, vin, time.monotonic() - started,
+            )
+            return 0, False
+
+        logger.info(
+            "Supplementary download completed for listing %s (VIN %s) in %.2fs: "
+            "%d image(s), sticker=%s",
+            listing_id, vin, time.monotonic() - started, image_count, sticker_saved,
+        )
+        return image_count, sticker_saved
+
+
+async def download_supplementary_files(
+    req: APIRequestContext,
+    listings: list[dict],
+    *,
+    workers: int = SUPPLEMENTARY_WORKERS,
+) -> tuple[int, int]:
+    if workers < 1:
+        raise ValueError("supplementary workers must be at least 1")
+
+    started = time.monotonic()
+    semaphore = asyncio.Semaphore(workers)
+    tasks = [
+        _download_supplementary_listing(semaphore, req, listing)
+        for listing in listings
+    ]
+    image_count = 0
+    sticker_count = 0
+    progress = cli_progress()
+    for future in progress.track(
+        asyncio.as_completed(tasks),
+        total=len(tasks),
+        description="Downloading supplementary info",
+        unit="listing",
+    ):
+        images, sticker_saved = await future
+        image_count += images
+        sticker_count += int(sticker_saved)
+
+    elapsed = time.monotonic() - started
+    logger.info(
+        "Supplementary downloads completed in %.2fs for %d listing(s) with %d "
+        "worker(s): %d image(s), %d sticker(s)",
+        elapsed, len(listings), workers, image_count, sticker_count,
+    )
+    return image_count, sticker_count
 
 
 def bootstrap_profile(user_data_dir: str):
@@ -372,11 +440,97 @@ def launch_chrome(port: int, user_data_dir: str):
         f"--user-data-dir={user_data_dir}",
         "--no-first-run",
         "--no-default-browser-check",
+        "--hide-crash-restore-bubble",
         "--disable-sync",
+        "--window-position=-32000,-32000",
+        "--window-size=1280,900",
         "--disable-features=SigninIntercept,SignInProfileCreation,AccountConsistency,ChromeWhatsNewUI",
         "about:blank",
     ]
+    if platform.system() == "Windows":
+        process = subprocess.Popen(args)
+        parked_windows = park_process_windows(process.pid)
+        if parked_windows == 0:
+            process.terminate()
+            raise RuntimeError("Chrome browser window could not be parked off-screen")
+        return process
     return subprocess.Popen(args)
+
+
+def park_process_windows(process_id: int, timeout: float = 5.0) -> int:
+    """Keep a process enabled but move its windows outside the visible desktop."""
+    if platform.system() != "Windows":
+        return 0
+
+    user32 = ctypes.windll.user32
+    callback_type = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    deadline = time.monotonic() + timeout
+    parked: set[int] = set()
+
+    while time.monotonic() < deadline:
+        def park_window(window, _parameter):
+            owner = ctypes.c_ulong()
+            user32.GetWindowThreadProcessId(window, ctypes.byref(owner))
+            if owner.value == process_id and is_chrome_browser_window(user32, window):
+                user32.EnableWindow(window, True)
+                user32.SetWindowPos(
+                    window, 0, -32000, -32000, 1280, 900, 0x0040 | 0x0010 | 0x0004
+                )
+                user32.ShowWindow(window, 4)  # SW_SHOWNOACTIVATE
+                if user32.IsWindowVisible(window):
+                    parked.add(int(window))
+            return True
+
+        user32.EnumWindows(callback_type(park_window), 0)
+        if parked:
+            return len(parked)
+        time.sleep(0.05)
+
+    return 0
+
+
+def is_chrome_browser_window(user32, window) -> bool:
+    """Return whether an HWND is Chrome's titled, interactive browser window."""
+    class_name = ctypes.create_unicode_buffer(256)
+    user32.GetClassNameW(window, class_name, len(class_name))
+    return (
+        class_name.value == "Chrome_WidgetWin_1"
+        and user32.GetWindowTextLengthW(window) > 0
+    )
+
+
+def show_process_windows(process_id: int, timeout: float = 5.0) -> int:
+    """Restore a process's top-level windows on-screen for user interaction."""
+    if platform.system() != "Windows":
+        return 0
+
+    user32 = ctypes.windll.user32
+    callback_type = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    deadline = time.monotonic() + timeout
+    shown: set[int] = set()
+
+    while time.monotonic() < deadline:
+        def show_window(window, _parameter):
+            owner = ctypes.c_ulong()
+            user32.GetWindowThreadProcessId(window, ctypes.byref(owner))
+            if owner.value == process_id and is_chrome_browser_window(user32, window):
+                # Chrome starts far off-screen so it cannot flash or take focus
+                # during normal report downloads. Move it back before restoring it.
+                user32.EnableWindow(window, True)
+                user32.ShowWindow(window, 9)  # SW_RESTORE
+                user32.SetWindowPos(window, 0, 100, 100, 1280, 900, 0x0040 | 0x0004)
+                user32.BringWindowToTop(window)
+                user32.SetForegroundWindow(window)
+                if user32.IsWindowVisible(window):
+                    shown.add(int(window))
+            return True
+
+        user32.EnumWindows(callback_type(show_window), 0)
+        if shown:
+            return len(shown)
+        time.sleep(0.05)
+
+    return 0
 
 
 def get_cdp_websocket_url(port: int) -> str:
@@ -478,7 +632,13 @@ def set_emulated_media(ws: WebSocket, sid: str, media: str = "screen"):
     send_cdp_command(ws, 150, "Emulation.setEmulatedMedia", {"media": media}, sid)
 
 
-def wait_for_carfax_report(ws: WebSocket, sid: str, timeout=90):
+def wait_for_carfax_report(
+    ws: WebSocket,
+    sid: str,
+    timeout: float = 90,
+    *,
+    allow_challenge: bool = False,
+):
     send_cdp_command(ws, 10, "Page.enable", sid=sid)
     send_cdp_command(ws, 11, "Runtime.enable", sid=sid)
     end = time.time() + timeout
@@ -486,22 +646,61 @@ def wait_for_carfax_report(ws: WebSocket, sid: str, timeout=90):
         info = evaluate_js(
             ws,
             sid,
-            "({t: document.title, href: location.href, ready: document.readyState})",
+            "({t: document.title, href: location.href, ready: document.readyState, "
+            "challenge: Boolean(document.querySelector("
+            "'iframe[src*=\"captcha\"], iframe[src*=\"datadome\"], "
+            "iframe[title*=\"challenge\" i]'"
+            "))})",
         )
         t = (info.get("t") or "").lower()
         href = (info.get("href") or "").lower()
         ready = (info.get("ready") or "").lower()
+        challenge = bool(info.get("challenge"))
 
         host = (urlparse(href).hostname or "").lower()
         if host == "secure.carfax.com":
             raise RuntimeError("secure.carfax.com redirect")
 
-        if "access blocked" in t or "/record-check" in href:
+        challenge_active = (
+            "access blocked" in t or "/record-check" in href or challenge
+        )
+        if not allow_challenge and challenge_active:
             raise RuntimeError("access blocked")
-        if "vehicle history report" in t and "carfax" in t and ready == "complete":
+        if (
+            not challenge_active
+            and "vehicle history report" in t
+            and "carfax" in t
+            and ready == "complete"
+        ):
             return
         time.sleep(0.5)
     raise TimeoutError("report not ready")
+
+
+def complete_carfax_challenge(
+    ws: WebSocket,
+    sid: str,
+    process_id: int,
+    timeout: float = 300,
+) -> None:
+    """Show Chrome for a human challenge, then hide it after completion."""
+    if show_process_windows(process_id) == 0:
+        raise RuntimeError("CARFAX challenge window could not be shown")
+
+    print(
+        "CARFAX verification required; complete any puzzle in the Chrome window. "
+        "The download will resume automatically."
+    )
+    try:
+        wait_for_carfax_report(
+            ws,
+            sid,
+            timeout=timeout,
+            allow_challenge=True,
+        )
+    finally:
+        if park_process_windows(process_id) == 0:
+            raise RuntimeError("Chrome challenge window could not be parked off-screen")
 
 
 def print_to_pdf(ws: WebSocket, sid: str, out_path: Path):
@@ -615,6 +814,11 @@ def download_report_pdfs(listings: list[dict]) -> None:
 
             try:
                 target_id = open_cdp_target(ws, url)
+                if (
+                    platform.system() == "Windows"
+                    and park_process_windows(proc.pid) == 0
+                ):
+                    raise RuntimeError("Chrome report window could not be parked off-screen")
                 sid = attach_cdp_session(ws, target_id)
 
                 if provider == "carfax":
@@ -623,10 +827,12 @@ def download_report_pdfs(listings: list[dict]) -> None:
                     except RuntimeError as e:
                         if "access blocked" not in str(e).lower():
                             raise
-                        send_cdp_command(ws, 12, "Page.reload", sid=sid)
-                        # tiny pause so the reload actually kicks in
-                        time.sleep(0.5)
-                        wait_for_carfax_report(ws, sid, timeout=60)
+                        if platform.system() == "Windows":
+                            complete_carfax_challenge(ws, sid, proc.pid)
+                        else:
+                            send_cdp_command(ws, 12, "Page.reload", sid=sid)
+                            time.sleep(0.5)
+                            wait_for_carfax_report(ws, sid, timeout=60)
 
                     set_emulated_media(
                         ws, sid, "screen"
@@ -693,14 +899,14 @@ def needs_poll(l: dict, cache: dict) -> bool:
 
     cached_url = cached_entry.get("carfax_url")
     # 3: If URL is missing/unavailable → poll
-    if not cached_url and current == "Unavailable":
+    if not cached_url and (not current or current == "Unavailable"):
         return True
 
     # 4: If URL exists but changed → poll again
     if cached_url and current != cached_url:
         return True
 
-    cached_fee = cached_entry.get("dealer_fee")
+    cached_fee = cached_entry.get("dealer_fees") or cached_entry.get("dealer_fee")
     # 5: If no cached fee exists → poll
     # The listing will not have the dealer fee included
     if not cached_fee:
@@ -767,11 +973,15 @@ async def download_files(
 
         if vin:
             cached_url = analysis_cache.get(vin, {}).get("carfax_url")
-            cached_fee = analysis_cache.get(vin, {}).get("dealer_fee")
-            cached_included = analysis_cache.get(vin, {}).get("dealer_fee_included")
+            cached_entry = analysis_cache.get(vin, {})
+            cached_fees = cached_entry.get("dealer_fees")
+            cached_fee = cached_entry.get("dealer_fee")
+            cached_included = cached_entry.get("dealer_fee_included")
             if cached_url and (not url or url == "Unavailable"):
                 l.setdefault("additional_docs", {})["carfax_url"] = cached_url
-            if cached_fee:
+            if cached_fees:
+                l.setdefault("seller", {})["dealer_fees"] = cached_fees
+            elif cached_fee:
                 l.setdefault("seller", {})["dealer_fee"] = cached_fee
             if cached_included:
                 l.setdefault("seller", {})["dealer_fee_included"] = cached_included
@@ -793,31 +1003,11 @@ async def download_files(
 
         req = await p.request.new_context(ignore_https_errors=True)
         try:
-            sticker_count = 0
             work = [l for l in listings if needs_supplementary_info(l)]
             if len(work) == 0:
                 print("All supplementary info current")
             else:
-                progress = cli_progress()
-                for l in progress.track(
-                    work,
-                    total=len(work),
-                    description="Downloading supplementary info",
-                    unit="listing",
-                ):
-                    title = l.get("title")
-                    vin = l.get("vin")
-                    if not title or not vin:
-                        continue
-
-                    folder = os.path.join(DOC_PATH, title, vin)
-                    os.makedirs(folder, exist_ok=True)
-
-                    save_listing_json(l, folder)
-                    _ = await download_images(req, l, folder)
-                    success = await download_sticker(req, l, folder)
-                    if success:
-                        sticker_count += 1
+                _, sticker_count = await download_supplementary_files(req, work)
 
                 if sticker_count:
                     print(f"{sticker_count} stickers saved")
@@ -859,7 +1049,7 @@ def needs_supplementary_info(
         return (
             d.get("price"),
             d.get("additional_docs", {}).get("carfax_url"),
-            d.get("seller", {}).get("dealer_fee"),
+            d.get("seller", {}).get("dealer_fees"),
         )
 
     if _key_fields(old) != _key_fields(listing):

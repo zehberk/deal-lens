@@ -53,18 +53,35 @@ playwright install
 
 Playwright is still required by KBB and approved supplemental dealer-document
 workflows; it is not used to authenticate to Visor or replace the Visor API.
+VIN resolution and KBB price gathering run installed Google Chrome in headless
+mode with a normal browser context; KBB rejects Playwright's bundled headless
+Chromium at its edge layer.
+CARFAX requires headed Chrome, so on Windows DealLens starts its browser off-screen,
+keeps it enabled without taking focus, and verifies its off-screen position before
+downloading reports.
+If CARFAX presents an interactive verification puzzle, DealLens restores and focuses
+the browser and waits for Enter after the user completes it. DealLens then verifies
+that the report loaded, with a five-minute timeout, and parks Chrome off-screen again.
 KBB browser navigation is bounded to 30 seconds across retries, while individual
 DOM locator waits are bounded to 10 seconds, with up to 30 seconds for KBB's
 dynamically rendered price advisor. Missing national fair-purchase prices remain
-unavailable; they do not prevent DealLens from checking local trim pricing. The
+unavailable. The
 KBB page and its embedded price advisor retain the browser context supplied by
 KBB; DealLens does not inject or cache a postal code for KBB pricing.
 
-For used and certified Level 2 listings, DealLens submits an already-collected
-listing VIN to KBB to resolve KBB's exact used style (for example, `LUXE Sport
-Utility 4D`). It validates that the resulting pricing page is a used-vehicle page
-and does not substitute KBB's new-car national Fair Purchase Price when style
-resolution fails. This KBB lookup does not add a Visor API request.
+Level 1 retains its model/trim-table pricing workflow. For used and certified
+Level 2 and Level 3 listings, DealLens submits an already-collected listing VIN
+to KBB to resolve KBB's exact used style (for example, `LUXE Sport Utility 4D`).
+It validates that exact style page as a used-vehicle page and only accepts local
+FPP/FMV from that VIN-resolved URL. Compatible later listings may reuse the
+resolved configuration; optional body-style, fuel, and powertrain fields constrain
+reuse when both records provide them. After resolving listings, DealLens loads the
+national trim table and token-matches MSRP and national FPP to each canonical KBB
+style. A failed VIN lookup may still receive national pricing, but DealLens will
+not substitute local pricing from a guessed trim or model-page link. Level 2/3 VIN
+resolutions, canonical configurations, and national tables use separate cache
+namespaces so legacy Level 1 trim rows remain unchanged. These KBB lookups do not
+add Visor API requests.
 
 Each `deal-lens` invocation writes a timestamped DEBUG diagnostic log under
 `logs/`. The log records the command arguments and KBB national, trim, and
@@ -130,6 +147,11 @@ count and ETA; operations whose size is not yet known use a spinner. Redirected
 and non-interactive output remains free of animated progress displays. When a
 configured Visor rolling-window limit is reached, the active display identifies
 the rate-limit wait and its duration before requests resume.
+Dealer-page discovery runs before supplementary files and CARFAX reports are
+downloaded, allowing a CARFAX link discovered from a dealer page to be used in
+the same invocation. Its progress total includes only listings due for polling;
+recent cached dealer results are not requested again until their polling window
+expires.
 Every command prints its total wall-clock runtime when it finishes.
 
 The standalone `level1`, `level2`, and `level3` commands analyze the latest

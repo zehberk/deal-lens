@@ -1,14 +1,16 @@
-import base64, re, sys, urllib.parse
+import base64, logging, re, sys, time
 
 from collections import Counter
 from datetime import datetime
 from jinja2 import Environment, FileSystemLoader
 from pathlib import Path
-from PIL import Image
 from playwright.async_api import async_playwright
 
 from utils.constants import DOC_PATH
 from utils.models import CarListing, DealBin, TrimValuation
+
+LEVEL2_RATING_ORDER = ("Great", "Good", "Fair", "Poor", "Bad")
+logger = logging.getLogger(__name__)
 
 
 def to_level1_json(
@@ -183,7 +185,7 @@ async def render_level1_pdf(
 
 
 def build_level2_bins(ratings: list) -> dict[str, list]:
-    bins = {name: [] for name in ("Great", "Good", "Fair", "Poor", "Bad")}
+    bins = {name: [] for name in LEVEL2_RATING_ORDER}
 
     # 0 - listing, 1 - deal, 2 - risk, 3 - narrative
     for rating in ratings:
@@ -195,17 +197,20 @@ def build_level2_bins(ratings: list) -> dict[str, list]:
             bins[name],
             key=lambda r: (
                 -(r[4].get("deal_score") or 0) if len(r) > 4 else 0,
-                r[2],
+                r[2] if r[2] is not None else 0,
                 r[0].get("price") or 0,
             ),
         )
     return bins
 
 
-def summarize_level2_failures(price_only: list, information_only: list) -> list[tuple[str, int]]:
+def order_level2_ratings(ratings: list) -> list:
+    bins = build_level2_bins(ratings)
+    return [rating for name in LEVEL2_RATING_ORDER for rating in bins[name]]
+
+
+def summarize_level2_failures(information_only: list) -> list[tuple[str, int]]:
     counts = Counter(reason for _, reason in information_only)
-    if price_only:
-        counts["Vehicle-history report unavailable."] += len(price_only)
     return sorted(counts.items())
 
 
@@ -230,36 +235,14 @@ def logo_data_uri(path: Path) -> str | None:
     return f"data:image/svg+xml;base64,{encoded}"
 
 
-def shrink_image(path: str, max_width=500):
-    img = Image.open(path)
-
-    if img.mode not in ("RGB", "L"):
-        img = img.convert("RGB")
-
-    w, h = img.size
-    if w > max_width:
-        ratio = max_width / w
-        img = img.resize((max_width, int(h * ratio)), Image.Resampling.LANCZOS)
-    img.save(path, quality=80)
-
-
-def encode_image_base64(path: str) -> str:
-    shrink_image(path)
-    with open(path, "rb") as f:
-        data = base64.b64encode(f.read()).decode("ascii")
-    return f"data:image/jpeg;base64,{data}"
-
-
-def to_file_url(path: str) -> str:
-    p = Path(path).resolve()
-    as_posix = str(p).replace("\\", "/")
-
-    # Split "C:/path/to/file" into ("C:", "/path/to/file")
-    drive, rest = as_posix.split(":", 1)
-
-    rest_encoded = urllib.parse.quote(rest)
-
-    return f"file:///{drive}:{rest_encoded}"
+def image_data_uri(path: Path) -> str:
+    media_type = {
+        ".gif": "image/gif",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }.get(path.suffix.casefold(), "image/jpeg")
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{media_type};base64,{encoded}"
 
 
 def get_images_for_listing(listing: dict) -> list[str]:
@@ -272,8 +255,12 @@ def get_images_for_listing(listing: dict) -> list[str]:
     if not img_dir.exists():
         return []
 
-    paths = sorted(img_dir.glob("*"))
-    return [encode_image_base64(str(p)) for p in paths[:3]]
+    report_image = img_dir / "report.jpg"
+    if report_image.is_file():
+        return [image_data_uri(report_image)]
+
+    paths = sorted(path for path in img_dir.glob("*") if path.is_file())
+    return [image_data_uri(paths[0])] if paths else []
 
 
 def collect_all_images(rating_bins: dict[str, list]) -> dict:
@@ -307,15 +294,20 @@ async def render_level2_pdf(
     generated_at = datetime.now().strftime("%B %d, %Y %I:%M %p")
 
     rating_bins = build_level2_bins(ratings)
-    all_ratings = [
-        rating
-        for name in ("Great", "Good", "Fair", "Poor", "Bad")
-        for rating in rating_bins[name]
-    ]
-    all_images = collect_all_images(rating_bins)
-    information_summary = summarize_level2_failures(price_only, information_only)
+    all_ratings = order_level2_ratings(ratings)
+    ordered_price_only = order_level2_ratings(price_only)
+    report_started = time.monotonic()
+    phase_started = time.monotonic()
+    all_images = collect_all_images({**rating_bins, "Price only": price_only})
+    image_count = sum(len(images) for images in all_images.values())
+    logger.info(
+        "Level 2 report image preparation completed in %.2fs: %d image(s)",
+        time.monotonic() - phase_started, image_count,
+    )
+    information_summary = summarize_level2_failures(information_only)
 
     summary = create_report_filter_summary(metadata)
+    phase_started = time.monotonic()
     html_out = template.render(
         make=make,
         model=model,
@@ -325,7 +317,7 @@ async def render_level2_pdf(
         summary=summary,
         total_count=total_count,
         full_count=len(ratings),
-        price_only=sorted(price_only, key=lambda item: item[0].get("price") or 0),
+        price_only=ordered_price_only,
         information_only=information_only,
         information_summary=information_summary,
         rating_bins=rating_bins,
@@ -339,12 +331,17 @@ async def render_level2_pdf(
         bad_count=len(rating_bins["Bad"]),
         all_images=all_images,
     )
+    logger.info(
+        "Level 2 template rendering completed in %.2fs",
+        time.monotonic() - phase_started,
+    )
 
     out_dir = Path("output") / "level2"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_file = out_dir / f"{make}_{model}_level2_analysis_report.pdf".replace(" ", "_")
 
     # Render PDF with Playwright
+    phase_started = time.monotonic()
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             args=[
@@ -356,7 +353,12 @@ async def render_level2_pdf(
             ]
         )
         page = await browser.new_page()
+        logger.info(
+            "Level 2 browser startup completed in %.2fs",
+            time.monotonic() - phase_started,
+        )
 
+        phase_started = time.monotonic()
         css_path = Path("templates/level2.css").resolve()
         await page.emulate_media(media="screen")
         await page.set_content(html_out, wait_until="load")
@@ -385,7 +387,39 @@ async def render_level2_pdf(
                 track.style.background = `linear-gradient(90deg, #2f855a 0%, #4d8fb8 ${great}%, #d9bd4a ${good}%, #d47736 ${fair}%, #c2413b ${poor}%, #c2413b 100%)`;
             })""",
         )
+        await page.evaluate(
+            """async () => Promise.all(Array.from(document.images).map(image => {
+                if (image.complete) return image.decode().catch(() => undefined);
+                return new Promise(resolve => {
+                    image.addEventListener('load', resolve, {once: true});
+                    image.addEventListener('error', resolve, {once: true});
+                });
+            }))"""
+        )
+        image_status = await page.evaluate(
+            """() => ({
+                loaded: Array.from(document.images).filter(image => image.naturalWidth > 0).length,
+                failed: Array.from(document.images).filter(image => image.naturalWidth === 0).length,
+            })"""
+        )
+        logger.info(
+            "Level 2 browser images loaded: %d; failed: %d",
+            image_status["loaded"], image_status["failed"],
+        )
+        logger.info(
+            "Level 2 browser content loading completed in %.2fs",
+            time.monotonic() - phase_started,
+        )
+        phase_started = time.monotonic()
         await page.pdf(path=str(out_file), format="A4", print_background=True)
+        logger.info(
+            "Level 2 PDF writing completed in %.2fs",
+            time.monotonic() - phase_started,
+        )
         await browser.close()
 
+    logger.info(
+        "Level 2 report generation completed in %.2fs: %s",
+        time.monotonic() - report_started, out_file.resolve(),
+    )
     print(f"PDF created at: {out_file.resolve()}")
