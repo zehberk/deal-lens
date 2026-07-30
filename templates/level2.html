@@ -23,7 +23,7 @@
 			<p class="footnote">A complete Level 2 rating requires both compatible KBB pricing and a vehicle-history report. Listings without that evidence receive a price assessment or are counted under an evaluation failure reason.</p>
 		</section>
 
-		<p class="report-counts">Of {{ total_count }} returned listings, <strong>{{ full_count }}</strong> received a complete risk-adjusted rating and <strong>{{ price_only|length }}</strong> received a price-only rating. The remaining <strong>{{ total_count - full_count - (price_only|length) }}</strong> could not be evaluated for the reasons below.</p>
+		<p class="report-counts">Of {{ total_count }} returned listings, <strong>{{ full_count }}</strong> received a complete risk-adjusted rating and <strong>{{ price_only|length }}</strong> received a price-only rating. The remaining <strong>{{ total_count - full_count - (price_only|length) }}</strong> could not be evaluated for the following reasons:</p>
 
 		{% if information_summary %}
 			<section class="evaluation-reasons">
