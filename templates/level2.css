@@ -61,6 +61,11 @@ h2 { margin: 13px 0 6px; color: #163a5f; font-size: 11pt; break-after: avoid; }
 .listing-notes ul { margin: 2px 0 0; padding-left: 14px; }
 .listing-notes li { margin-bottom: 1px; }
 
+main.deal-bin + section.deal-bin {
+	break-before: page;
+	page-break-before: always;
+}
+
 .unable-summary { break-before: page; }
 .unable-summary p { margin: 0 0 4px; color: #586775; }
 .unable-summary ul { margin: 0; padding-left: 16px; }

@@ -380,6 +380,14 @@ def test_level2_template_keeps_jinja_out_of_inline_css():
 	assert "class=\"deal-score\"" in template
 
 
+def test_price_only_ratings_start_on_a_new_page():
+	stylesheet = Path("templates/level2.css").read_text(encoding="utf-8")
+
+	assert "main.deal-bin + section.deal-bin" in stylesheet
+	assert "break-before: page" in stylesheet
+	assert "page-break-before: always" in stylesheet
+
+
 def test_level2_bins_sort_by_global_deal_score():
 	ratings = [
 		({"price": 20000}, "Fair", 0, [], {"deal_score": 20}),
