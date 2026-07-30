@@ -223,10 +223,42 @@ def test_report_summarizes_unevaluated_reasons_without_listing_rows():
 	)
 
 	assert "KBB pricing unavailable <strong>(2)</strong>" in html
+	assert "The remaining <strong>2</strong> could not be evaluated" in html
 	assert "Listings not evaluated" in html
 	assert "Unable to Evaluate" not in html
 	assert html.index("Listings not evaluated") < html.index("<main")
 	assert "HIDDENVIN" not in html
+
+
+def test_report_hides_zero_unevaluated_sentence():
+	template = Environment(loader=FileSystemLoader("templates")).get_template(
+		"level2.html"
+	)
+	empty_bins = {
+		name: [] for name in ("Great", "Good", "Fair", "Poor", "Bad")
+	}
+	html = template.render(
+		make="Toyota",
+		model="4Runner",
+		report_title="Level 2",
+		generated_at="today",
+		summary="New listings",
+		total_count=100,
+		full_count=100,
+		price_only=[],
+		information_only=[],
+		information_summary=[],
+		rating_bins=empty_bins,
+		great_bin=[],
+		good_bin=[],
+		fair_bin=[],
+		poor_count=0,
+		bad_count=0,
+		all_images={},
+	)
+
+	assert "The remaining" not in html
+	assert "could not be evaluated for the following reasons" not in html
 
 
 def test_report_renders_price_only_row_without_deal_score():
