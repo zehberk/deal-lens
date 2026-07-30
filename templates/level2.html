@@ -32,7 +32,7 @@
 			</section>
 		{% endif %}
 
-		{% macro miles(n) -%}{{ "{:,}".format(n) }}{%- endmacro %}
+		{% macro miles(n) -%}{{ "{:,}".format(n if n is not none else 0) }}{%- endmacro %}
 		{% macro money(n) -%}{{ "${:,.0f}".format(n) }}{%- endmacro %}
 		{% macro vehicle_row(rating) -%}
 			{% set listing = rating[0] %}

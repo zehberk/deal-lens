@@ -280,6 +280,48 @@ def test_report_renders_price_only_row_without_deal_score():
 	assert '<div class="deal-score">' not in html
 
 
+def test_report_renders_missing_mileage_as_zero():
+	template = Environment(loader=FileSystemLoader("templates")).get_template(
+		"level2.html"
+	)
+	listing = {
+		"title": "2026 Toyota 4Runner SR5",
+		"seller": {"name": "Test dealer", "location": "Denver, CO"},
+		"vin": "MISSINGMILEAGEVIN",
+		"mileage": None,
+		"price": 52_000,
+		"condition": "New",
+	}
+	pricing = {
+		"great_end_pct": 20,
+		"good_end_pct": 40,
+		"fair_end_pct": 60,
+		"poor_end_pct": 80,
+		"marker_pct": 50,
+		"great_high": 48_000,
+		"good_high": 50_000,
+		"fair_high": 54_000,
+		"poor_high": 56_000,
+	}
+
+	html = template.render(
+		make="Toyota",
+		model="4Runner",
+		generated_at="today",
+		summary="New listings",
+		total_count=1,
+		full_count=0,
+		price_only=[(listing, "Fair", None, ["Price-only rating."], pricing)],
+		information_summary=[],
+		all_ratings=[],
+		all_images={},
+		display_dealer_location=display_dealer_location,
+		display_listing_condition=display_listing_condition,
+	)
+
+	assert "Mileage: <strong>0</strong>" in html
+
+
 def test_price_only_listings_are_not_repeated_as_failure_reasons():
 	summary = summarize_level2_failures(
 		[({"id": "three"}, "Listing price is unavailable.")],
