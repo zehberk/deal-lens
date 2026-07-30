@@ -279,55 +279,40 @@ async def download_images(req: APIRequestContext, listing: dict, folder: str) ->
 
     img_dir = os.path.join(folder, "images")
     os.makedirs(img_dir, exist_ok=True)
+    final_path = os.path.join(img_dir, "report.jpg")
+    if os.path.exists(final_path) and os.path.getsize(final_path) > 0:
+        return 0
 
-    count = 0
-    for idx, url in enumerate(imgs, start=1):
-        # temporary name before detecting extension
-        tmp_path = os.path.join(img_dir, f"{idx}")
+    try:
+        resp = await req.get(imgs[0])
+    except Exception as error:
+        logger.warning(
+            "Skipped report image for listing %s: %s",
+            listing.get("id"), type(error).__name__,
+        )
+        return 0
+    if not resp.ok:
+        logger.warning(
+            "Skipped report image for listing %s: HTTP %s",
+            listing.get("id"), resp.status,
+        )
+        return 0
 
-        try:
-            resp = await req.get(url)
-        except Exception as error:
-            print(
-                f"Skipped image {idx} for listing {listing.get('id')}: "
-                f"{type(error).__name__}"
-            )
-            continue
-        if not resp.ok:
-            continue
+    try:
+        with Image.open(io.BytesIO(await resp.body())) as source:
+            image = source.convert("RGB")
+            if image.width > 500:
+                height = round(image.height * 500 / image.width)
+                image = image.resize((500, height), Image.Resampling.LANCZOS)
+            image.save(final_path, format="JPEG", quality=80, optimize=True)
+    except Exception as error:
+        logger.warning(
+            "Skipped invalid report image for listing %s: %s",
+            listing.get("id"), type(error).__name__,
+        )
+        return 0
 
-        # read raw bytes
-        data = await resp.body()
-
-        # Detect real format from bytes
-        try:
-            img = Image.open(io.BytesIO(data))
-            fmt = (img.format or "").lower()
-        except Exception:
-            # fallback if Pillow fails
-            fmt = "jpg"
-
-        ext = {
-            "jpeg": ".jpg",
-            "jpg": ".jpg",
-            "png": ".png",
-            "webp": ".webp",
-            "gif": ".gif",
-        }.get(fmt, ".jpg")
-
-        final_path = tmp_path + ext
-
-        # avoid re-download if exists
-        if os.path.exists(final_path) and os.path.getsize(final_path) > 0:
-            continue
-
-        # write bytes exactly as received
-        with open(final_path, "wb") as f:
-            f.write(data)
-
-        count += 1
-
-    return count
+    return 1
 
 
 async def download_sticker(req: APIRequestContext, listing: dict, folder: str) -> bool:

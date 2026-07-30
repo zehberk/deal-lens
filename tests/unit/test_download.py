@@ -57,21 +57,45 @@ def output_dir() -> Iterator[Path]:
 		shutil.rmtree(path)
 
 
-async def test_image_timeout_does_not_abort_remaining_downloads(output_dir):
+async def test_only_first_image_is_downloaded_and_normalized(output_dir):
 	buffer = io.BytesIO()
-	Image.new("RGB", (2, 2)).save(buffer, format="JPEG")
+	Image.new("RGB", (800, 400)).save(buffer, format="PNG")
 	request = Request(Response(buffer.getvalue()))
 	listing = {
 		"id": "listing-1",
-		"images": ["https://example.invalid/slow.jpg", "https://example.invalid/good.jpg"],
+		"images": ["https://example.invalid/first.png", "https://example.invalid/second.jpg"],
 	}
 
 	count = await download_images(
 		cast(APIRequestContext, request), listing, str(output_dir)
 	)
 
+	assert count == 0
+	assert request.calls == 1
+	assert not (output_dir / "images" / "report.jpg").exists()
+
+
+async def test_report_image_is_compact_jpeg(output_dir):
+	buffer = io.BytesIO()
+	Image.new("RGBA", (800, 400)).save(buffer, format="PNG")
+	request = Request(Response(buffer.getvalue()))
+	request.calls = 1
+	listing = {
+		"id": "listing-1",
+		"images": ["https://example.invalid/first.png", "https://example.invalid/second.jpg"],
+	}
+
+	count = await download_images(
+		cast(APIRequestContext, request), listing, str(output_dir)
+	)
+
+	path = output_dir / "images" / "report.jpg"
 	assert count == 1
-	assert (output_dir / "images" / "2.jpg").is_file()
+	assert request.calls == 2
+	with Image.open(path) as image:
+		assert image.format == "JPEG"
+		assert image.mode == "RGB"
+		assert image.size == (500, 250)
 
 
 async def test_supplementary_downloads_use_five_workers(

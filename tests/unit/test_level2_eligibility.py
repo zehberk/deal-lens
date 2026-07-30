@@ -1,17 +1,39 @@
+import shutil
+import uuid
+
 from pathlib import Path
 
-from analysis import level2
+from analysis import level2, reporting
 from analysis.reporting import (
 	build_level2_bins,
 	create_report_filter_summary,
 	display_dealer_location,
 	display_listing_condition,
+	get_images_for_listing,
 	logo_data_uri,
 	order_level2_ratings,
 	summarize_level2_failures,
 )
 from jinja2 import Environment, FileSystemLoader
 from utils.models import AnalysisContext, ListingContext, PricingAnchors
+
+
+def test_level2_uses_one_local_report_image(monkeypatch):
+	test_root = Path("cache") / "test-report-images" / uuid.uuid4().hex
+	try:
+		monkeypatch.setattr(reporting, "DOC_PATH", test_root)
+		image_dir = test_root / "2026 Toyota 4Runner" / "TESTVIN" / "images"
+		image_dir.mkdir(parents=True)
+		(image_dir / "report.jpg").write_bytes(b"report image")
+		(image_dir / "unused.jpg").write_bytes(b"unused image")
+
+		images = get_images_for_listing(
+			{"title": "2026 Toyota 4Runner", "vin": "TESTVIN"}
+		)
+
+		assert images == [reporting.to_file_url(str(image_dir / "report.jpg"))]
+	finally:
+		shutil.rmtree(test_root)
 
 
 def test_level2_uses_msrp_only_for_new_vehicle_fallback():
