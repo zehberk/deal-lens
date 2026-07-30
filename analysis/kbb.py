@@ -49,6 +49,7 @@ KBB_DYNAMIC_PRICING_TIMEOUT_MS = 30_000
 KBB_USED_VIN_MAX_ATTEMPTS = 3
 KBB_USED_VIN_ATTEMPT_TIMEOUT_SECONDS = 10
 KBB_NATIONAL_WORKERS = 3
+KBB_VIN_WORKERS = 5
 KBB_HEADLESS_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -1150,6 +1151,44 @@ def _listing_trim(listing: dict) -> str:
     ).strip()
 
 
+def _listing_configuration_value(listing: dict, field: str) -> str:
+    aliases = {
+        "body_style": "Body Style",
+        "fuel_type": "Fuel Type",
+        "powertrain_type": "Powertrain Type",
+        "drivetrain": "Drivetrain",
+    }
+    value = listing.get(field)
+    if value is None:
+        value = (listing.get("specs") or {}).get(aliases[field])
+    return re.sub(r"\s+", " ", str(value or "")).strip().casefold()
+
+
+def _vin_lookahead_key(listing: dict) -> tuple[str, ...]:
+    """Build a conservative pre-KBB grouping key from available source facts."""
+    trim = re.sub(r"\s+", " ", _listing_trim(listing)).strip().casefold()
+    if not trim:
+        return ("vin", str(listing.get("vin") or listing.get("id") or ""))
+    return (
+        trim,
+        _listing_configuration_value(listing, "body_style"),
+        _listing_configuration_value(listing, "fuel_type"),
+        _listing_configuration_value(listing, "powertrain_type"),
+        _listing_configuration_value(listing, "drivetrain"),
+    )
+
+
+def _cluster_vin_lookahead_listings(listings: list[dict]) -> list[list[dict]]:
+    clusters: dict[tuple[str, ...], list[dict]] = {}
+    for listing in listings:
+        if str(listing.get("condition") or "").casefold() not in {
+            "used", "certified", "cpo",
+        }:
+            continue
+        clusters.setdefault(_vin_lookahead_key(listing), []).append(listing)
+    return list(clusters.values())
+
+
 def _configuration_fingerprint(
     year: str, make: str, model: str, style_url: str
 ) -> str:
@@ -1168,9 +1207,9 @@ def _configuration_matches_listing(configuration: dict, listing: dict) -> bool:
     ):
         return False
 
-    for field in ("body_style", "fuel_type", "powertrain_type"):
+    for field in ("body_style", "fuel_type", "powertrain_type", "drivetrain"):
         expected = str(configuration.get(field) or "").strip().casefold()
-        actual = str(listing.get(field) or "").strip().casefold()
+        actual = _listing_configuration_value(listing, field)
         if expected and actual and expected != actual:
             return False
     return True
@@ -1343,9 +1382,18 @@ async def _resolve_vin_first_variant(
                 "model": model_name,
                 "style": style,
                 "style_url": style_url,
-                "body_style": listing.get("body_style"),
-                "fuel_type": listing.get("fuel_type"),
-                "powertrain_type": listing.get("powertrain_type"),
+                "body_style": _listing_configuration_value(
+                    listing, "body_style"
+                ),
+                "fuel_type": _listing_configuration_value(
+                    listing, "fuel_type"
+                ),
+                "powertrain_type": _listing_configuration_value(
+                    listing, "powertrain_type"
+                ),
+                "drivetrain": _listing_configuration_value(
+                    listing, "drivetrain"
+                ),
             })
             model_configurations[fingerprint] = configuration
 
@@ -1428,52 +1476,66 @@ async def get_vin_first_pricing_data(
             for ymm, model_slug, year, model_name, variant_listings
             in pending_jobs
         ]
-        national_task = asyncio.create_task(
-            _prefetch_vin_first_national_tables(
-                context, make, national_jobs, national_tables
-            )
+        await _prefetch_vin_first_national_tables(
+            context, make, national_jobs, national_tables
         )
 
-        vin_semaphore = asyncio.Semaphore(KBB_NATIONAL_WORKERS)
+        cluster_jobs = [
+            (ymm, model_slug, year, model_name, cluster)
+            for ymm, model_slug, year, model_name, variant_listings
+            in pending_jobs
+            for cluster in _cluster_vin_lookahead_listings(variant_listings)
+        ]
+        represented_vins = sum(len(job[4]) for job in cluster_jobs)
+        logger.info(
+            "KBB VIN look-ahead produced %d cluster(s) for %d listing(s)",
+            len(cluster_jobs), represented_vins,
+        )
+        vin_semaphore = asyncio.Semaphore(KBB_VIN_WORKERS)
         vin_started = time.perf_counter()
 
         async def resolve_job(job):
-            ymm, model_slug, year, model_name, variant_listings = job
+            ymm, model_slug, year, model_name, cluster = job
             async with vin_semaphore:
                 worker_page = await context.new_page()
                 configure_kbb_page_diagnostics(worker_page)
                 job_started = time.perf_counter()
                 try:
-                    model_configurations = await _resolve_vin_first_variant(
+                    await _resolve_vin_first_variant(
                         worker_page, progress, make, model_slug, year, model_name,
-                        variant_listings, entries, configurations, vin_resolutions,
+                        cluster, entries, configurations, vin_resolutions,
                     )
                     logger.info(
-                        "KBB VIN/local phase completed for %s in %.2fs",
-                        ymm, time.perf_counter() - job_started,
-                    )
-                    return (
-                        ymm, model_slug, year, model_name,
-                        variant_listings, model_configurations,
+                        "KBB VIN/local cluster completed for %s (%d listing(s)) "
+                        "in %.2fs",
+                        ymm, len(cluster), time.perf_counter() - job_started,
                     )
                 finally:
                     await worker_page.close()
 
-        try:
-            variant_jobs = list(await asyncio.gather(*(
-                resolve_job(job) for job in pending_jobs
-            )))
-        except BaseException:
-            national_task.cancel()
-            await asyncio.gather(national_task, return_exceptions=True)
-            raise
+        await asyncio.gather(*(resolve_job(job) for job in cluster_jobs))
         logger.info(
-            "KBB VIN/local groups completed in %.2fs with %d worker(s)",
+            "KBB VIN/local clusters completed in %.2fs with %d worker(s)",
             time.perf_counter() - vin_started,
-            min(KBB_NATIONAL_WORKERS, len(pending_jobs)),
+            min(KBB_VIN_WORKERS, len(cluster_jobs)),
         )
 
-        await national_task
+        for ymm, model_slug, year, model_name, variant_listings in pending_jobs:
+            model_configurations = {
+                fingerprint: configuration
+                for fingerprint, configuration in configurations.items()
+                if (
+                    str(configuration.get("year")) == year
+                    and str(configuration.get("make", "")).casefold()
+                    == make.casefold()
+                    and str(configuration.get("model", "")).casefold()
+                    == model_name.casefold()
+                )
+            }
+            variant_jobs.append((
+                ymm, model_slug, year, model_name,
+                variant_listings, model_configurations,
+            ))
 
         for (
             ymm, _, year, model_name, variant_listings, model_configurations

@@ -7,6 +7,7 @@ from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError
 
 from analysis.kbb import (
+	_cluster_vin_lookahead_listings,
 	_configuration_matches_listing,
 	_prefetch_vin_first_national_tables,
 	_previous_local_trim,
@@ -78,12 +79,42 @@ async def test_national_tables_use_bounded_parallel_pages(monkeypatch):
 	assert all(page.close.await_count == 1 for page in pages)
 
 
-async def test_vin_variant_groups_use_bounded_parallel_pages(monkeypatch):
+def test_vin_lookahead_clusters_matching_source_configurations():
+	base = {
+		"year": 2025,
+		"condition": "Used",
+		"trim": "TRD Off-Road Premium",
+		"specs": {
+			"Body Style": "SUV",
+			"Fuel Type": "Gas only",
+			"Powertrain Type": "Combustion",
+			"Drivetrain": "4WD",
+		},
+	}
+	clusters = _cluster_vin_lookahead_listings([
+		{**base, "vin": "VIN1"},
+		{**base, "vin": "VIN2"},
+		{
+			**base,
+			"vin": "VIN3",
+			"specs": {**base["specs"], "Fuel Type": "Hybrid"},
+		},
+		{**base, "vin": "NEWVIN", "condition": "New"},
+	])
+
+	assert [[listing["vin"] for listing in cluster] for cluster in clusters] == [
+		["VIN1", "VIN2"], ["VIN3"],
+	]
+
+
+async def test_national_phase_precedes_bounded_vin_clusters(monkeypatch):
 	active = 0
 	peak = 0
+	national_active = False
 
 	async def resolve(*_args, **_kwargs):
 		nonlocal active, peak
+		assert not national_active
 		active += 1
 		peak = max(peak, active)
 		await asyncio.sleep(0.01)
@@ -91,17 +122,21 @@ async def test_vin_variant_groups_use_bounded_parallel_pages(monkeypatch):
 		return {}
 
 	async def prefetch(*_args, **_kwargs):
-		nonlocal active, peak
-		active += 1
-		peak = max(peak, active)
+		nonlocal national_active
+		national_active = True
 		await asyncio.sleep(0.01)
-		active -= 1
+		national_active = False
 
 	variants = {
-		f"202{year} Toyota 4Runner": []
+		f"202{year} Toyota 4Runner": [{
+			"year": 2020 + year,
+			"condition": "Used",
+			"trim": f"Trim {year}",
+			"vin": f"VIN{year}",
+		}]
 		for year in range(4, 7)
 	}
-	monkeypatch.setattr("analysis.kbb.KBB_NATIONAL_WORKERS", 2)
+	monkeypatch.setattr("analysis.kbb.KBB_VIN_WORKERS", 2)
 	monkeypatch.setattr("analysis.kbb.create_kbb_browser", AsyncMock(
 		return_value=_fake_kbb_browser()
 	))
@@ -118,7 +153,7 @@ async def test_vin_variant_groups_use_bounded_parallel_pages(monkeypatch):
 		"Toyota", "4Runner", [], variants, {}
 	)
 
-	assert peak == 3
+	assert peak == 2
 
 
 async def test_vin_first_pricing_reuses_configuration_and_enriches_national(
