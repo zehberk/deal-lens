@@ -9,22 +9,23 @@
 			<div class="title-row">
 				<div class="report-title">
 					<p class="eyebrow">Level 2</p>
-					<h1>{{ make }} {{ model }} Market Overview</h1>
+					<h1>{{ make }} {{ model }} Listing Analysis</h1>
 				</div>
 				{% if logo %}<img src="{{ logo }}" alt="DealLens">{% endif %}
 			</div>
-			<p class="scope">{{ summary }}</p>
+			<div class="report-meta"><span>{{ summary }}</span><span>Generated {{ generated_at }}</span></div>
 		</header>
 
-		<section class="intro">
-			<p class="generated">Generated: {{ generated_at }}</p>
-			<p>This report compares each listing with compatible KBB pricing. When a vehicle-history report is available, it also evaluates title, accident, mileage, service, and warranty evidence to produce a complete rating.</p>
-			<div class="rating-guide"><strong>Reading each rating:</strong> The white triangle shows the listing price across the colored price scale; the prices below it are rating cutoffs. Deal Score starts with that full 0–100 price scale, subtracts an accelerating penalty for actual risk, and adds modest low-mileage and warranty bonuses. It is not a confidence score.</div>
-			<p class="footnote">A complete Level 2 rating requires both compatible KBB pricing and a vehicle-history report. Listings without that evidence receive a price assessment or are counted under an evaluation failure reason.</p>
-		</section>
+		<p class="report-summary"><strong>Deal Score</strong> combines price position with vehicle-history risk, mileage, and warranty evidence. Price-only ratings evaluate price without vehicle-history adjustments.</p>
 
 		{% set unevaluated_count = total_count - full_count - (price_only|length) %}
-		<p class="report-counts">Of {{ total_count }} returned listings, <strong>{{ full_count }}</strong> received a complete risk-adjusted rating and <strong>{{ price_only|length }}</strong> received a price-only rating.{% if unevaluated_count > 0 %} The remaining <strong>{{ unevaluated_count }}</strong> could not be evaluated for the following reasons:{% endif %}</p>
+		<h2 class="visually-hidden">Analysis snapshot</h2>
+		<section class="snapshot">
+			<div><span>Requested listings</span><strong>{{ total_count }}</strong></div>
+			<div><span>Risk-adjusted</span><strong>{{ full_count }}</strong></div>
+			<div><span>Price-only</span><strong>{{ price_only|length }}</strong></div>
+			<div><span>Unable to analyze</span><strong>{{ unevaluated_count }}</strong></div>
+		</section>
 
 		{% if information_summary %}
 			<section class="evaluation-reasons">
@@ -35,7 +36,27 @@
 
 		{% macro miles(n) -%}{{ "{:,}".format(n if n is not none else 0) }}{%- endmacro %}
 		{% macro money(n) -%}{{ "${:,.0f}".format(n) }}{%- endmacro %}
-		{% macro vehicle_row(rating) -%}
+		{% macro lucide_icon(name, fallback) -%}<span class="detail-icon {{ name }}-icon" aria-hidden="true">{% if level2_icons is defined and level2_icons.get(name) %}{{ level2_icons.get(name)|safe }}{% else %}{{ fallback }}{% endif %}</span>{%- endmacro %}
+		{% macro detail_icon(line) -%}
+			{% set detail = line|lower %}
+			{% if "price" in detail %}{{ lucide_icon("circle-dollar-sign", "$") }}
+			{% elif "warranty" in detail %}{{ lucide_icon("file-text", "◇") }}
+			{% elif "mile" in detail or "driven" in detail or "odometer" in detail %}{{ lucide_icon("circle-gauge", "◴") }}
+			{% elif "deal score" in detail or "rating" in detail %}{{ lucide_icon("circle-gauge", "%") }}
+			{% elif "title" in detail or "damage" in detail or "accident" in detail %}{{ lucide_icon("triangle-alert", "!") }}
+			{% else %}{{ lucide_icon("circle-alert", "i") }}{% endif %}
+		{%- endmacro %}
+		{% macro detail_text(line) -%}
+			{% set words = line.split(" ") %}
+			{% if line.startswith("Listing price is ") and words|length > 5 %}Listing price is <strong>{{ words[3] }} {{ words[4] }}</strong> {{ words[5:]|join(" ") }}
+			{% elif line.startswith("Vehicle has been driven significantly less than expected") %}Vehicle has been driven <strong>significantly less</strong> than expected for its age <strong>{{ words[-1] }}</strong>
+			{% elif line.startswith("Vehicle has been driven less than expected") %}Vehicle has been driven <strong>less</strong> than expected for its age <strong>{{ words[-1] }}</strong>
+			{% elif line.startswith("Vehicle has been driven much more than expected") %}Vehicle has been driven <strong>much more</strong> than expected for its age <strong>{{ words[-1] }}</strong>
+			{% elif line.startswith("Vehicle has been driven more than expected") %}Vehicle has been driven <strong>more</strong> than expected for its age <strong>{{ words[-1] }}</strong>
+			{% elif line.startswith("Vehicle has been driven an expected amount") %}Vehicle has been driven an <strong>expected amount</strong> for its age.
+			{% else %}{{ line }}{% endif %}
+		{%- endmacro %}
+		{% macro vehicle_row(rating, is_price_only=false) -%}
 			{% set listing = rating[0] %}
 			{% set deal = rating[1] %}
 			{% set risk = rating[2] %}
@@ -48,27 +69,18 @@
 			{% set vin = listing.vin %}
 			{% set imgs = all_images.get(vin, []) %}
 
-			<div class="listing-layout{% if imgs %} has-images{% endif %}">
+			<div class="listing-layout{% if imgs %} has-images{% endif %}{% if is_price_only %} price-only-layout{% endif %}">
 			{% if imgs %}<div class="image-viewer">{% for img in imgs %}<img src="{{ img }}" alt="Vehicle image">{% endfor %}</div>{% endif %}
 			<div class="listing-content">
-			<div class="listing-title">
-				{{ listing.display_title or listing.title }}
-				<span class="condition-badge">{{ display_listing_condition(listing.get("condition")) }}</span>
-				<span class="deal-rating">{{ deal }}</span>
-				{% if is_downgraded %}<span class="downgrade-tag">Downgraded</span>{% endif %}
-				<a class="visor-link" href="{{ listing.visor_listing }}">View on Visor</a>
+			<div class="listing-summary">
+			<div class="listing-heading">
+				<div class="listing-title">
+					{{ listing.display_title or listing.title }}{% if is_price_only %} <span class="condition-badge">{{ display_listing_condition(listing.get("condition")) }}</span><span class="deal-rating">{{ deal }}</span>{% else %}<div class="listing-badges"><span class="condition-badge">{{ display_listing_condition(listing.get("condition")) }}</span>{% if is_downgraded %}<span class="downgrade-tag">Downgraded</span>{% endif %}</div>{% endif %}
+				</div>
+				{% if pricing.deal_score is defined and pricing.deal_score is not none %}<div class="deal-score"><strong>Deal Score</strong><span>{{ pricing.deal_score|round|int }}%</span></div>{% endif %}
 			</div>
 			<div class="listing-title-bar"></div>
-			<div class="listing-evaluation{% if pricing.deal_score is defined and pricing.deal_score is not none %} has-score{% endif %}">
-			<div class="listing-measures">
-			<div class="listing-specs compact-grid">
-				<div>VIN: <strong>{{ vin }}</strong></div>
-				<div>Mileage: <strong>{{ miles(listing.mileage) }}</strong></div>
-				<div>Listing Price: <strong>{{ money(listing.price) }}</strong></div>
-				<div>Risk Score: <strong>{{ risk if risk is not none else "Not available" }}</strong></div>
-				<div>Dealer: <strong>{{ seller_name }} - {{ seller_location }}</strong></div>
-				<div><a class="dealer-link" href="{{ listing.dealer_listing }}">View Dealer Listing</a></div>
-			</div>
+			{% if is_price_only %}<div class="listing-key-facts price-only-facts"><strong>{{ money(listing.price) }}</strong> • Miles: <strong>{{ miles(listing.mileage) }}</strong><nav class="listing-links inline-links" aria-label="Listing resources">{% if listing.dealer_listing %}<a href="{{ listing.dealer_listing }}">Dealer listing</a>{% endif %}{% if listing.visor_listing %}<a href="{{ listing.visor_listing }}">Visor listing</a>{% endif %}{% if pricing.kbb_url %}<a href="{{ pricing.kbb_url }}">KBB valuation</a>{% endif %}</nav></div>{% else %}<div class="listing-key-facts"><strong>{{ money(listing.price) }}</strong> • Miles: <strong>{{ miles(listing.mileage) }}</strong> • Risk Score: <strong>{{ risk if risk is not none else "Not available" }}</strong></div>{% endif %}
 			<div class="price-position">
 				<div class="price-track" data-great-end-pct="{{ pricing.great_end_pct }}" data-good-end-pct="{{ pricing.good_end_pct }}" data-fair-end-pct="{{ pricing.fair_end_pct }}" data-poor-end-pct="{{ pricing.poor_end_pct }}">
 					<div class="price-segment great" data-width-pct="{{ pricing.great_end_pct }}">Great</div>
@@ -86,22 +98,34 @@
 				</div>
 			</div>
 			</div>
-			{% if pricing.deal_score is defined and pricing.deal_score is not none %}<div class="deal-score"><strong>Deal Score</strong><span>{{ pricing.deal_score|round|int }}%</span></div>{% endif %}
+			{% if not is_price_only %}<div class="listing-meta">
+				<div><span class="meta-label">VIN:</span> {{ vin }}</div>
+				<div><span class="meta-label">Dealer:</span> {{ seller_name }} - {{ seller_location }}</div>
 			</div>
-			<div class="listing-notes"><strong>Notes:</strong><ul>{% for line in narrative %}<li>{{ line }}</li>{% endfor %}</ul></div>
+			<nav class="listing-links" aria-label="Listing resources">
+				{% if listing.dealer_listing %}<a href="{{ listing.dealer_listing }}">Dealer listing</a>{% endif %}
+				{% if listing.visor_listing %}<a href="{{ listing.visor_listing }}">Visor listing</a>{% endif %}
+				{% if pricing.kbb_url %}<a href="{{ pricing.kbb_url }}">KBB valuation</a>{% endif %}
+			</nav>
+			{% endif %}
 			</div>
+			{% if not is_price_only %}<aside class="listing-notes" aria-label="Rating details">
+				{% for line in narrative %}<div class="detail-row">{{ detail_icon(line) }}<span>{{ detail_text(line) }}{% if pricing.detail_scores is defined and pricing.detail_scores.get(line) %} <em class="score-effect">{{ pricing.detail_scores.get(line) }}</em>{% endif %}</span></div>{% endfor %}
+				{% if pricing.risk_summary %}<div class="detail-row risk-row">{% if pricing.risk_summary == "none identified" %}{{ lucide_icon("shield-check", "✓") }}{% else %}{{ lucide_icon("shield-alert", "!") }}{% endif %}<span>{% if pricing.risk_summary == "none identified" %}No risk{% else %}Risk: {{ pricing.risk_summary }}. <em class="score-effect">-{{ "{:.1f}".format(pricing.risk_score_subtracted) }}</em>{% endif %}{% if pricing.score_floor is defined %} <em class="score-effect floor-effect">Low-risk floor applied: {{ "{:.1f}".format(pricing.score_floor) }}%</em>{% endif %}</span></div>{% endif %}
+			</aside>{% endif %}
 			</div>
 		{%- endmacro %}
 
 		<main class="deal-bin">
+			{% if all_ratings %}<h2>Completed Risk-Adjusted Rating ({{ full_count }})</h2>{% endif %}
 			{% for rating in all_ratings %}<article class="listing {{ rating[1]|lower }}-listing">{{ vehicle_row(rating) }}</article>{% endfor %}
 		</main>
 
 		{% if price_only %}
 			<section class="deal-bin">
-				<h2>Price-only ratings</h2>
+				<h2>Price-Only Ratings</h2>
 				<p>These ratings use compatible KBB pricing but do not include vehicle-history risk.</p>
-				{% for rating in price_only %}<article class="listing {{ rating[1]|lower }}-listing">{{ vehicle_row(rating) }}</article>{% endfor %}
+				{% for rating in price_only %}<article class="listing price-only-listing {{ rating[1]|lower }}-listing">{{ vehicle_row(rating, true) }}</article>{% endfor %}
 			</section>
 		{% endif %}
 

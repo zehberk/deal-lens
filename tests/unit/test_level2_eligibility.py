@@ -50,7 +50,8 @@ def test_level2_uses_msrp_only_for_new_vehicle_fallback():
 	assert level2._price_assessment(used, []) is None
 	narrative = []
 	assert level2._price_assessment(new, narrative) is not None
-	assert any("worst-case fallback" in message for message in narrative)
+	assert any("fallback benchmark" in message for message in narrative)
+	assert not any("MSRP" in message for message in narrative)
 
 
 async def test_level2_keeps_price_only_and_unmapped_listings(monkeypatch):
@@ -154,7 +155,8 @@ async def test_level2_uses_available_national_fpp_without_fmv(monkeypatch):
 	assessed_listing, _, risk, narrative, pricing = render_args[4][0]
 	assert assessed_listing == listing
 	assert risk is None
-	assert narrative[0].startswith("National FPP was used")
+	assert not any("National FPP" in message for message in narrative)
+	assert narrative[0].startswith("Listing price is")
 	assert pricing["listing_price"] == listing["price"]
 	assert render_args[5] == []
 
@@ -245,7 +247,7 @@ def test_report_summarizes_unevaluated_reasons_without_listing_rows():
 	)
 
 	assert "KBB pricing unavailable <strong>(2)</strong>" in html
-	assert "The remaining <strong>2</strong> could not be evaluated" in html
+	assert '<span>Unable to analyze</span><strong>2</strong>' in html
 	assert "Listings not evaluated" in html
 	assert "Unable to Evaluate" not in html
 	assert html.index("Listings not evaluated") < html.index("<main")
@@ -308,6 +310,14 @@ def test_report_renders_price_only_row_without_deal_score():
 		"good_high": 23_000,
 		"fair_high": 26_000,
 		"poor_high": 29_000,
+		"kbb_url": "https://kbb.test/valuation",
+		"detail_scores": {
+			"Listing price is 22.8% above the fair-price midpoint.": "+0 score",
+			"Vehicle has been driven significantly less than expected for its age (-82.7%).": "+6 score",
+			"Warranty active: ~12 months, ~10,000 miles remaining.": "+4 score",
+		},
+		"risk_summary": "none identified",
+		"risk_penalty": 0.0,
 	}
 	empty_bins = {
 		name: [] for name in ("Great", "Good", "Fair", "Poor", "Bad")
@@ -320,7 +330,17 @@ def test_report_renders_price_only_row_without_deal_score():
 		summary="Used listings",
 		total_count=1,
 		full_count=0,
-		price_only=[(listing, "Good", None, ["Price-only rating."], pricing)],
+		price_only=[(
+			listing,
+			"Good",
+			None,
+			[
+				"Listing price is 22.8% above the fair-price midpoint.",
+				"Vehicle has been driven significantly less than expected for its age (-82.7%).",
+				"Warranty active: ~12 months, ~10,000 miles remaining.",
+			],
+			pricing,
+		)],
 		information_summary=[],
 		all_ratings=[],
 		all_images={},
@@ -332,6 +352,25 @@ def test_report_renders_price_only_row_without_deal_score():
 	assert "2025 Toyota Prius Plug-in Hybrid LE" in html
 	assert ">2025 Toyota Prius LE<" not in html
 	assert '<div class="deal-score">' not in html
+	assert '<span class="deal-rating">Good</span>' in html
+	assert '>Dealer listing</a>' in html
+	assert '>Visor listing</a>' in html
+	assert '>KBB valuation</a>' in html
+	assert '<section class="snapshot">' in html
+	assert '<span>Requested listings</span><strong>1</strong>' in html
+	assert '<span>Risk-adjusted</span><strong>0</strong>' in html
+	assert '<span>Price-only</span><strong>1</strong>' in html
+	assert '<span>Unable to analyze</span><strong>0</strong>' in html
+	assert '$25,000</strong> • Miles: <strong>10,000</strong>' in html
+	assert "Risk Score:" not in html
+	assert "VIN: <strong>TESTVIN" not in html
+	assert "Dealer: <strong>Test dealer" not in html
+	assert html.index("Miles:") < html.index("Dealer listing</a>") < html.index('class="price-position"')
+	assert '>Rating details<' not in html
+	assert 'class="listing-notes"' not in html
+	assert 'class="listing-layout price-only-layout"' in html
+	assert "22.8% above" not in html
+	assert "significantly less" not in html
 
 
 def test_report_renders_missing_mileage_as_zero():
@@ -373,7 +412,7 @@ def test_report_renders_missing_mileage_as_zero():
 		display_listing_condition=display_listing_condition,
 	)
 
-	assert "Mileage: <strong>0</strong>" in html
+	assert "Miles: <strong>0</strong>" in html
 
 
 def test_price_only_listings_are_not_repeated_as_failure_reasons():
@@ -412,6 +451,7 @@ def test_price_assessment_provides_visual_range_without_redundant_bullets():
 	assert not any("being listed at" in line for line in narrative)
 	assert not any("Deal bins are set" in line for line in narrative)
 	assert "Listing price is 7.4% below the fair-price midpoint." in narrative
+	assert not any("comparison value" in line for line in narrative)
 
 
 def test_price_assessment_explains_percent_from_fair_midpoint():
@@ -464,6 +504,8 @@ def test_level2_branding_and_dealer_location_helpers():
 	assert display_listing_condition("Certified") == "CPO"
 	assert display_listing_condition("Used") == "Used"
 	assert display_listing_condition(None) == "Unknown"
+	icons = reporting.load_level2_icons(Path("img/icons/lucide"))
+	assert {"circle-dollar-sign", "circle-gauge", "file-text", "shield-alert", "shield-check"} <= icons.keys()
 
 
 def test_level2_template_keeps_jinja_out_of_inline_css():
@@ -483,6 +525,13 @@ def test_price_only_ratings_start_on_a_new_page():
 	assert "page-break-before: always" in stylesheet
 
 
+def test_completed_ratings_have_counted_section_heading():
+	template = Path("templates/level2.html").read_text(encoding="utf-8")
+
+	assert "Completed Risk-Adjusted Rating ({{ full_count }})" in template
+	assert "{% if all_ratings %}" in template
+
+
 def test_level2_bins_sort_by_global_deal_score():
 	ratings = [
 		({"price": 20000}, "Fair", 0, [], {"deal_score": 20}),
@@ -495,17 +544,17 @@ def test_level2_bins_sort_by_global_deal_score():
 	assert [rating[4]["deal_score"] for rating in bins["Fair"]] == [80, 50, 20]
 
 
-def test_price_only_ratings_are_ordered_by_descending_bin():
+def test_price_only_ratings_are_ordered_by_gauge_position():
 	ratings = [
-		({"id": "bad", "price": 10_000}, "Bad", None, [], {}),
-		({"id": "fair", "price": 30_000}, "Fair", None, [], {}),
-		({"id": "great", "price": 40_000}, "Great", None, [], {}),
-		({"id": "poor", "price": 20_000}, "Poor", None, [], {}),
-		({"id": "good", "price": 50_000}, "Good", None, [], {}),
+		({"id": "bad"}, "Bad", None, [], {"marker_pct": 95.0}),
+		({"id": "fair"}, "Fair", None, [], {"marker_pct": 52.0}),
+		({"id": "great"}, "Great", None, [], {"marker_pct": 8.0}),
+		({"id": "poor"}, "Poor", None, [], {"marker_pct": 74.0}),
+		({"id": "good"}, "Good", None, [], {"marker_pct": 27.0}),
 	]
 
-	ordered = order_level2_ratings(ratings)
+	ordered = reporting.order_price_only_ratings(ratings)
 
-	assert [rating[1] for rating in ordered] == [
-		"Great", "Good", "Fair", "Poor", "Bad",
+	assert [rating[4]["marker_pct"] for rating in ordered] == [
+		8.0, 27.0, 52.0, 74.0, 95.0,
 	]

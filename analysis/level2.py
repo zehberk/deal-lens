@@ -1,21 +1,68 @@
 import asyncio, glob, json, os, time
 
 from pathlib import Path
+from typing import NotRequired, TypedDict
 
 from analysis.analysis_utils import get_report_dir
 from analysis.reporting import render_level2_pdf
 from analysis.scoring import (
     calculate_deal_score_result,
-    calculate_level2_evidence,
     classify_deal_rating,
     deal_score_from_position,
     determine_best_price,
-    format_deal_score_narrative,
+    favorable_evidence_bonus,
+    score_mileage_use,
+    score_title_status,
+    score_warranty_status,
 )
 from analysis.workflow import prepare_level2_analysis
 
 from utils.carfax_parser import get_carfax_data
 from utils.models import CarfaxData
+
+
+class PricingVisual(TypedDict):
+    listing_price: int
+    fair_low: int
+    fair_high: int
+    great_high: int
+    good_high: int
+    poor_high: int
+    marker_pct: float
+    great_end_pct: float
+    good_end_pct: float
+    fair_end_pct: float
+    poor_end_pct: float
+    scale_low: int
+    scale_high: int
+    deal_score: NotRequired[float]
+    kbb_url: NotRequired[str]
+    risk_summary: NotRequired[str]
+    risk_penalty: NotRequired[float]
+    risk_score_subtracted: NotRequired[float]
+    detail_scores: NotRequired[dict[str, str]]
+    score_floor: NotRequired[float]
+
+
+def _risk_summary(carfax: CarfaxData, mileage_risk: float) -> str:
+    factors = list(dict.fromkeys(
+        f"{severity.value} damage" for severity in carfax.damage_severities
+    ))
+    if carfax.is_branded:
+        factors.append("branded title")
+    if carfax.is_total_loss:
+        factors.append("total loss")
+    if carfax.structural_status.value == "confirmed":
+        factors.append("structural damage")
+    elif carfax.structural_status.value == "possible":
+        factors.append("possible structural damage")
+    if carfax.airbags_deployed:
+        factors.append("airbag deployment")
+    if carfax.has_odometer_problem:
+        factors.append("odometer inconsistency")
+    if mileage_risk > 0:
+        factors.append("above-expected mileage")
+    return ", ".join(factors) if factors else "none identified"
 
 
 def _listing_key(listing: dict) -> str:
@@ -24,7 +71,7 @@ def _listing_key(listing: dict) -> str:
 
 def _price_assessment(
     lc, narrative: list[str]
-) -> tuple[str, int, int, float, dict[str, int | float]] | None:
+) -> tuple[str, int, int, float, PricingVisual] | None:
     listing = lc.listing
     price_val = listing.get("price")
     if price_val is None:
@@ -45,10 +92,13 @@ def _price_assessment(
         fpp_local,
         fpp_natl,
         fmv,
-        narrative,
         msrp=msrp,
         is_new=is_new,
     )
+    if msrp and is_new and not any((fpp_local, fpp_natl, fmv)):
+        narrative.append(
+            "This price assessment uses a fallback benchmark and should not be treated as the expected purchase price."
+        )
     deal, midpoint, increment, percent = classify_deal_rating(
         price, best_comparison, fmv, fpp_local, fmr_high
     )
@@ -91,7 +141,12 @@ def _price_assessment(
     ]
     great_end_pct, good_end_pct, fair_end_pct, poor_end_pct = boundary_percentages
 
-    pricing_visual: dict[str, int | float] = {
+    kbb_url = (
+        lc.pricing.source_local or lc.pricing.source_natl
+        if fpp_local or fmv
+        else lc.pricing.source_natl or lc.pricing.source_local
+    )
+    pricing_visual: PricingVisual = {
         "listing_price": price,
         "fair_low": good_high,
         "fair_high": fair_high,
@@ -106,6 +161,8 @@ def _price_assessment(
         "scale_low": scale_low,
         "scale_high": scale_high,
     }
+    if kbb_url:
+        pricing_visual["kbb_url"] = kbb_url
     return deal, midpoint, increment, percent, pricing_visual
 
 
@@ -129,11 +186,11 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
 
     # listing, deal, risk, narrative
     ratings: list[
-        tuple[dict, str, int, list[str], dict[str, int | float]]
+        tuple[dict, str, int, list[str], PricingVisual]
     ] = []
     # listing, price assessment, unavailable risk, narrative, pricing visual
     price_only: list[
-        tuple[dict, str, None, list[str], dict[str, int | float]]
+        tuple[dict, str, None, list[str], PricingVisual]
     ] = []
     # listing, concrete reason
     information_only: list[tuple[dict, str]] = []
@@ -163,9 +220,11 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
         carfax: CarfaxData = get_carfax_data(report)
         lc.carfax = carfax
 
-        raw_risk, favorable_evidence = calculate_level2_evidence(
-            carfax, listing, narrative
-        )
+        title_risk = score_title_status(carfax)
+        mileage_risk = score_mileage_use(carfax, listing, narrative)
+        warranty_evidence = score_warranty_status(carfax, listing, narrative)
+        raw_risk = min(max(title_risk + max(mileage_risk, 0.0), 0.0), 10.0)
+        favorable_evidence = max(-mileage_risk, 0.0) + max(-warranty_evidence, 0.0)
         risk = round(raw_risk)
         lc.risk_score = risk
         price_score = deal_score_from_position(float(pricing_visual["marker_pct"]))
@@ -173,9 +232,25 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
             price_score, raw_risk, favorable_evidence
         )
         pricing_visual["deal_score"] = score_result.final_score
+        pricing_visual["risk_summary"] = _risk_summary(carfax, mileage_risk)
+        pricing_visual["risk_penalty"] = score_result.risk_penalty
+        pricing_visual["risk_score_subtracted"] = score_result.score_subtracted
+        if score_result.floor_applied:
+            pricing_visual["score_floor"] = score_result.low_risk_floor
+        detail_scores = {narrative[0]: f"+{round(price_score)} score"}
+        mileage_bonus = favorable_evidence_bonus(max(-mileage_risk, 0.0), raw_risk)
+        warranty_bonus = favorable_evidence_bonus(max(-warranty_evidence, 0.0), raw_risk)
+        for line in narrative:
+            if line.startswith("Vehicle has been driven"):
+                if mileage_risk > 0:
+                    detail_scores[line] = "(see risk)"
+                else:
+                    detail_scores[line] = f"+{round(mileage_bonus)} score"
+            elif "warranty" in line.casefold():
+                detail_scores[line] = f"+{round(warranty_bonus)} score"
+        pricing_visual["detail_scores"] = detail_scores
         price_deal = deal
         deal = score_result.rating
-        narrative.append(format_deal_score_narrative(score_result))
         if deal != price_deal:
             narrative.append(
                 f"The combined score changes the price-only rating from {price_deal} to {deal}."
