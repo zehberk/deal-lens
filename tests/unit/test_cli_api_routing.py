@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from deal_lens.cli import (
+	apply_url_to_args,
 	collect_and_run_level1_api,
 	collect_and_run_level2_api,
 	collect_and_run_level3_api,
@@ -14,6 +15,34 @@ from deal_lens.cli import (
 	run_with_runtime,
 	scrape,
 )
+
+
+def test_cli_ignores_unsupported_url_options_and_keeps_supported_filters(
+	monkeypatch,
+):
+	output = []
+	monkeypatch.setattr("deal_lens.cli.CLI_CONSOLE.print", output.append)
+	args = Namespace(
+		url=(
+			"https://visor.vin/search/filters?make=Toyota&model=4Runner"
+			"&agnostic=false&zipcode=80203&year=2026%2C2025"
+		)
+	)
+
+	result = apply_url_to_args(args)
+
+	assert result.make == "Toyota"
+	assert result.model == "4Runner"
+	assert result.year == ["2025", "2026"]
+	assert result._visor_query.filters == {
+		"make": ("Toyota",),
+		"model": ("4Runner",),
+		"year": ("2025", "2026"),
+	}
+	assert result._visor_query.unsupported == {}
+	assert output == [
+		"[yellow]Ignoring unsupported URL options:[/] agnostic, zipcode"
+	]
 
 
 def test_logging_records_exact_command_in_timestamped_file(monkeypatch):

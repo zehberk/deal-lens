@@ -175,7 +175,7 @@ DealLens translates these search URL parameters into the Visor API contract:
 | Presentation | `sort` | Controls listing order but is excluded from market-cohort identity. |
 
 Named locations that cannot be translated into a postal code and unknown browser
-parameters are reported as unsupported rather than silently approximated.
+parameters are reported and ignored rather than silently approximated.
 
 ### Sort values
 
