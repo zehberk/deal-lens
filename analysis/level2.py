@@ -294,7 +294,7 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
 
     for listing in ctx.skipped_listings:
         reason = (
-            "Listing price is unavailable."
+            "Dealer has not set a listing price."
             if not listing.get("price")
             else "The listing trim could not be mapped to compatible KBB pricing."
         )

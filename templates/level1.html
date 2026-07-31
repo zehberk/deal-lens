@@ -66,9 +66,7 @@
 		<p>{{ summary }}</p>
 		<main>
 			<!-- #region Current Resale Values -->
-			<h2>
-				Current Resale Values (MSRP / Fair Purchase Price / Fair Market Value)
-			</h2>
+			<h2>Current Resale Values (MSRP / Fair Purchase Price / Fair Market Value)</h2>
 			<ul>
 				{% for kbb_trim, trim_val in cache_entries.items() %}
 					{% set listings_count = count_for_trim(trim_val.kbb_trim, [great_bin, good_bin, fair_bin, poor_bin, bad_bin, no_price_bin]) | int %}
@@ -150,8 +148,8 @@
 					<li>
 						<span class="bold-highlight">{{ no_price_bin.category }}</span>:
 						{{ no_price_bin.count }}
-						({{ pct(no_price_bin.count / (grand_total if grand_total else 1)) }}),
-						avg n/a
+						({{ pct(no_price_bin.count / (grand_total if grand_total else 1)) }}), avg
+						n/a
 					</li>
 				{% endif %}
 			</ul>
@@ -165,8 +163,8 @@
 						<span class="bold-highlight">{{ bin.category }}: </span>
 						New: {{ bin.new_listings_count }} ({{ pct(bin.new_listings_pct) }}),
 						Certified: {{ bin.certified_listings_count }}
-						({{ pct(bin.certified_listings_pct) }}), Used:
-						{{ bin.used_listings_count }} ({{ pct(bin.used_listings_pct) }})
+						({{ pct(bin.certified_listings_pct) }}), Used: {{ bin.used_listings_count }}
+						({{ pct(bin.used_listings_pct) }})
 					</li>
 				{% endfor %}
 			</ul>
@@ -204,8 +202,7 @@
 			<ul>
 				<li>
 					<span class="bold-highlight">Good + Great:</span>
-					{{ analysis.good_great_count }}
-					({{ analysis.good_great_pct|round(0) }}%)
+					{{ analysis.good_great_count }} ({{ analysis.good_great_pct|round(0) }}%)
 				</li>
 				<li>
 					<span class="bold-highlight">Fair:</span> {{ analysis.fair_count }}
@@ -231,11 +228,10 @@
 					{{ pct((all_listings | selectattr("uncertainty", "equalto", level) | list | length) / (all_listings | length)) }}
 				{%- endmacro %}
 				<li>
-					<span class="bold-highlight">Risk</span> → {{ risk_count("High") }}
-					High ({{ risk_pct("High") }}), {{ risk_count("Some") }} Some
-					({{ risk_pct("Some") }}), {{ risk_count("Low") }} Low
-					({{ risk_pct("Low") }}), {{ risk_count("Unknown") }} Unknown
-					({{ risk_pct("Unknown") }})
+					<span class="bold-highlight">Risk</span> → {{ risk_count("High") }} High
+					({{ risk_pct("High") }}), {{ risk_count("Some") }} Some
+					({{ risk_pct("Some") }}), {{ risk_count("Low") }} Low ({{ risk_pct("Low") }}),
+					{{ risk_count("Unknown") }} Unknown ({{ risk_pct("Unknown") }})
 				</li>
 				<li>
 					<span class="bold-highlight">Uncertainty</span> →
@@ -249,15 +245,14 @@
 			<!-- #region Anomalies / Outliers -->
 			<h3>Anomalies / Outlier Signals</h3>
 			<p>
-				These flags highlight unusually cheap opportunities, unstable pricing,
-				and condition/price mismatches worth a second look.
+				These flags highlight unusually cheap opportunities, unstable pricing, and
+				condition/price mismatches worth a second look.
 			</p>
 			{% set t = outliers.thresholds %}
 			{% if outliers.strong_underpriced.count > 0 %}
 				<p>
 					<span class="bold-highlight">Strong Underpriced:</span>
-					{{ outliers.strong_underpriced.count }} (≤ {{ t.under_pct|abs }}% below
-					FMV/FPP)
+					{{ outliers.strong_underpriced.count }} (≤ {{ t.under_pct|abs }}% below FMV/FPP)
 					{% if outliers.strong_underpriced.examples %}
 						<div class="example-lines">
 							{% for ex in outliers.strong_underpriced.examples %}
@@ -267,12 +262,11 @@
 					{% endif %}
 				</p>
 			{% endif %}
-			
+
 			{% if outliers.strong_overpriced.count > 0 %}
 				<p>
 					<span class="bold-highlight">Strong Overpriced:</span>
-					{{ outliers.strong_overpriced.count }} (≥ {{ t.over_pct }}% above
-					FMV/FPP)
+					{{ outliers.strong_overpriced.count }} (≥ {{ t.over_pct }}% above FMV/FPP)
 					{% if outliers.strong_overpriced.examples %}
 						<div class="example-lines">
 							{% for ex in outliers.strong_overpriced.examples %}
@@ -297,7 +291,6 @@
 				</p>
 			{% endif %}
 
-
 			{% if outliers.miles_price_tension.count > 0 %}
 				<p>
 					<span class="bold-highlight">Mileage / Price Tension:</span>
@@ -311,7 +304,7 @@
 					{% endif %}
 				</p>
 			{% endif %}
-			
+
 			{% if outliers.price_whiplash.count > 0 %}
 				<p>
 					<span class="bold-highlight">Price Whiplash:</span>
@@ -325,7 +318,7 @@
 					{% endif %}
 				</p>
 			{% endif %}
-			
+
 			{% if outliers.highrisk_bargains.count > 0 %}
 				<p>
 					<span class="bold-highlight">High-Risk Bargains:</span>
@@ -342,7 +335,7 @@
 
 			<!-- #endregion -->
 			<br />
-			
+
 			<!-- #endregion -->
 		</main>
 
@@ -376,143 +369,122 @@
 		<h3>Resale Value Definitions</h3>
 		<ul>
 			<li>
-				<span class="bold-highlight">
-					MSRP (Manufacturer Suggested Retail Price):
-				</span>
-				This is the recommended price a manufacturer suggests for a retailer to
-				sell its product.
+				<span class="bold-highlight"> MSRP (Manufacturer Suggested Retail Price): </span>
+				This is the recommended price a manufacturer suggests for a retailer to sell its
+				product.
 			</li>
 			<li>
 				<span class="bold-highlight"> Fair Purchase Price (FPP): </span>
-				KBB's estimate of what people are currently paying for a brand-new
-				vehicle, based on recent transaction data and regional trends. KBB
-				tracks both national and local prices (based on zip code). If a local
-				value is unavailable, the national one will be provided and notated.
+				KBB's estimate of what people are currently paying for a brand-new vehicle, based on
+				recent transaction data and regional trends. KBB tracks both national and local
+				prices (based on zip code). If a local value is unavailable, the national one will
+				be provided and notated.
 			</li>
 			<li>
 				<span class="bold-highlight"> Fair Market Value (FMV): </span>
-				KBB's estimate of what a vehicle is worth on the resale/used market,
-				considering its age, mileage, condition, and demand.
+				KBB's estimate of what a vehicle is worth on the resale/used market, considering its
+				age, mileage, condition, and demand.
 			</li>
 		</ul>
-		<p>
-			A way you can think of the difference is 
-			<ul>
-				<li>MSRP = <i>what a company wants you to pay for a new car</i></li>
-				<li>FPP = <i>what buyers pay for a new car today</i></li>
-				<li>FMV = <i>what that same car is worth used</i></li>
-			</ul>
-		</p>
+		<p>A way you can think of the difference is:</p>
+		<ul>
+			<li>MSRP = <i>what a company wants you to pay for a new car</i></li>
+			<li>FPP = <i>what buyers pay for a new car today</i></li>
+			<li>FMV = <i>what that same car is worth used</i></li>
+		</ul>
 
 		<h3>Deal Rating</h3>
 		<p>
-			Car listings are grouped into Great, Good, Fair, Poor, or Bad deals (this
-			is called binning) based solely on price. We use a very basic formula:
+			Car listings are grouped into Great, Good, Fair, Poor, or Bad deals (this is called
+			binning) based solely on price. We use a very basic formula:
 		</p>
 		<ul>
 			<li>
-				<span class="bold-highlight">🟢 Great: </span>$2,000+ or 7%+ under
-				market value, whichever is larger
+				<span class="bold-highlight">🟢 Great: </span>$2,000+ or 7%+ under market value,
+				whichever is larger
 			</li>
 			<li>
-				<span class="bold-highlight">🔵 Good: </span>$1000–1999 or 3–7% under
-				market value
+				<span class="bold-highlight">🔵 Good: </span>$1000–1999 or 3–7% under market value
 			</li>
+			<li><span class="bold-highlight">🟡 Fair: </span>within $1000 or 3% of market value</li>
 			<li>
-				<span class="bold-highlight">🟡 Fair: </span>within $1000 or 3% of
-				market value
+				<span class="bold-highlight">🟠 Poor: </span>$1000–1999 or 3–7% over market value
 			</li>
-			<li>
-				<span class="bold-highlight">🟠 Poor: </span>$1000–1999 or 3–7% over
-				market value
-			</li>
-			<li>
-				<span class="bold-highlight">🔴 Bad: </span>$2,000+ or 7%+ over market
-				value
-			</li>
+			<li><span class="bold-highlight">🔴 Bad: </span>$2,000+ or 7%+ over market value</li>
 		</ul>
 		<p>
 			If a local FPP has been found, we use the Fair Market Range to group the bins.
 			<br />
 			<br />
-			Listings that are considered Poor or Bad deals are rarely worth looking
-			into because even with negotiation, they are unlikely to be more than a
-			Fair deal.
+			Listings that are considered Poor or Bad deals are rarely worth looking into because
+			even with negotiation, they are unlikely to be more than a Fair deal.
 			<br />
 			<br />
-			<span class="note">Note:</span> some listings do not have a price and so
-			are unable to be rated. It is possible that the car has just entered the
-			market and not been given a price, or that the dealer is waiting to see
-			the interest level of buyers before committing to a price.
+			<span class="note">Note:</span> some listings do not have a price and so are unable to
+			be rated. It is possible that the car has just entered the market and not been given a
+			price, or that the dealer is waiting to see the interest level of buyers before
+			committing to a price.
 		</p>
 		<h3>Uncertainty Rating:</h3>
 		<p>
-			Uncertainty is rated as Low, Some, or High, and is dependent on what
-			documentation is readily available outside of the listing. For a level 1
-			analysis, we look at whether a window sticker is available, if a CARFAX or
-			AutoCheck report can be accessed, and if there is a warranty still active.
-			Our formula for rating uncertainty is:
+			Uncertainty is rated as Low, Some, or High, and is dependent on what documentation is
+			readily available outside of the listing. For a level 1 analysis, we look at whether a
+			window sticker is available, if a CARFAX or AutoCheck report can be accessed, and if
+			there is a warranty still active. Our formula for rating uncertainty is:
 		</p>
 		<ul>
+			<li><span class="bold-highlight">High: </span>No documentation is available</li>
 			<li>
-				<span class="bold-highlight">High: </span>No documentation is available
+				<span class="bold-highlight">Some: </span>A window sticker is present and the
+				warranty is still active, but there is no auto report to review
 			</li>
 			<li>
-				<span class="bold-highlight">Some: </span>A window sticker is present
-				and the warranty is still active, but there is no auto report to review
-			</li>
-			<li>
-				<span class="bold-highlight">Low: </span>There is an auto report that
-				can be reviewed
+				<span class="bold-highlight">Low: </span>There is an auto report that can be
+				reviewed
 			</li>
 		</ul>
 		<p>
 			<br />
 			<span class="note">Why this is important:</span>
 			<br />
-			These documents provide valuable data on confirming details on a vehicle.
-			A window sticker can be used to cross-check specific add-ons that may be
-			included in the listing mistakenly. An active warranty means that the car
-			has likely not received any damage that could make the vehicle unsafe to
-			drive. An auto report can help verify the title status of a car, how many
-			owners it has had, and any reported damage.
+			These documents provide valuable data on confirming details on a vehicle. A window
+			sticker can be used to cross-check specific add-ons that may be included in the listing
+			mistakenly. An active warranty means that the car has likely not received any damage
+			that could make the vehicle unsafe to drive. An auto report can help verify the title
+			status of a car, how many owners it has had, and any reported damage.
 			<br />
 			<br />
-			<span class="note">Note:</span> this data has been gathered at a very high
-			level and may not reflect the full information for a vehicle. For example,
-			a warranty may have expired due to age or being over mileage. Some cars
-			are certified or have been repaired and may have extra warranties
-			available to them.
+			<span class="note">Note:</span> this data has been gathered at a very high level and may
+			not reflect the full information for a vehicle. For example, a warranty may have expired
+			due to age or being over mileage. Some cars are certified or have been repaired and may
+			have extra warranties available to them.
 		</p>
 		<h3>Risk Rating:</h3>
 		<p>
-			At level 1, we define risk as a vehicle that could have maintenance issues
-			or may be too good to be true. Risk is rated as Low, Some, or High, and is
-			dependent on the listing price and the mileage of the vehicle. We
-			calculate the "expected mileage" that this particular vehicle assuming
-			that it was available for purchase on the first year that it was produced
-			and that it would be driven 13,500 miles per year. The formula used for
+			At level 1, we define risk as a vehicle that could have maintenance issues or may be too
+			good to be true. Risk is rated as Low, Some, or High, and is dependent on the listing
+			price and the mileage of the vehicle. We calculate the "expected mileage" that this
+			particular vehicle assuming that it was available for purchase on the first year that it
+			was produced and that it would be driven 13,500 miles per year. The formula used for
 			risk is:
 		</p>
 		<ul>
 			<li>
-				<span class="bold-highlight">High: </span>the vehicle's mileage is more
-				than 35% of what is expected, OR it is 20% over expected and the list
-				price is 10%+ under current market value
+				<span class="bold-highlight">High: </span>the vehicle's mileage is more than 35% of
+				what is expected, OR it is 20% over expected and the list price is 10%+ under
+				current market value
 			</li>
 			<li>
-				<span class="bold-highlight">Some: </span>the vehicle's mileage is more
-				than 20% of what is expected OR the list price is 10%+ under current
-				market value
+				<span class="bold-highlight">Some: </span>the vehicle's mileage is more than 20% of
+				what is expected OR the list price is 10%+ under current market value
 			</li>
 			<li>
-				<span class="bold-highlight">Low: </span>price and mileage are within a
-				normal range
+				<span class="bold-highlight">Low: </span>price and mileage are within a normal range
 			</li>
 		</ul>
 		<p>
-			Deeper levels of analysis will change this basic rating from a 3-level
-			scale to a numerical scale for more fine-tuned grading.
+			Deeper levels of analysis will change this basic rating from a 3-level scale to a
+			numerical scale for more fine-tuned grading.
 		</p>
 		<h3>Anomalies and Outlier Signals</h3>
 		<p>
@@ -521,54 +493,50 @@
 		</p>
 		<ul>
 			<li>
-				<span class="bold-highlight">Strong Underpiced</span> — Listings priced
-				far below benchmark (FMV for used and certified, FPP for new). Default
-				deviation: ≤ {{ outliers.thresholds.under_pct }}%.
+				<span class="bold-highlight">Strong Underpiced</span> — Listings priced far below
+				benchmark (FMV for used and certified, FPP for new). Default deviation: ≤
+				{{ outliers.thresholds.under_pct }}%.
 				<br />
 				<span class="count">
 					<i>Why it matters:</i> potential fast wins; verify title/options.
 				</span>
 			</li>
 			<li>
-				<span class="bold-highlight">Strong Overpiced</span> — Listings priced
-				far above benchmark. Default deviation: ≥
-				{{ outliers.thresholds.over_pct }}%.
+				<span class="bold-highlight">Strong Overpiced</span> — Listings priced far above
+				benchmark. Default deviation: ≥ {{ outliers.thresholds.over_pct }}%.
 				<br />
 				<span class="count">
-					<i>Why it matters:</i> sets a “don't pay above this” ceiling; exposes
-					bad comps.
+					<i>Why it matters:</i> sets a “don't pay above this” ceiling; exposes bad comps.
 				</span>
 			</li>
 			<li>
-				<span class="bold-highlight">Condition / Price Mismatch</span> — Price
-				doesn't match condition expectations. Defaults: Certified with deviation
-				≤ -7%; or New priced < 95% of FPP; or Certified but rated Bad.
+				<span class="bold-highlight">Condition / Price Mismatch</span> — Price doesn't match
+				condition expectations. Defaults: Certified with deviation ≤ -7%; or New priced <
+				95% of FPP; or Certified but rated Bad.
 				<br />
 				<span class="count">
 					<i>Why it matters:</i> uncommon combo; opportunity or data issue.
 				</span>
 			</li>
 			<li>
-				<span class="bold-highlight">Mileage / Price Tension</span> — Mileage
-				signal conflicts with price signal. Defaults: Low miles (≤ 15th pct) yet
-				deviation ≤ 0%; or High miles (≥ 85th pct) yet deviation ≥ 0%.
+				<span class="bold-highlight">Mileage / Price Tension</span> — Mileage signal
+				conflicts with price signal. Defaults: Low miles (≤ 15th pct) yet deviation ≤ 0%; or
+				High miles (≥ 85th pct) yet deviation ≥ 0%.
 				<br />
 				<span class="count">
 					<i>Why it matters:</i> price ignores usage; re-check valuation.
 				</span>
 			</li>
 			<li>
-				<span class="bold-highlight">Price Whiplash</span> — Unusually large
-				recent price move. Default: |price_delta| ≥ 7.0% since last check.
+				<span class="bold-highlight">Price Whiplash</span> — Unusually large recent price
+				move. Default: |price_delta| ≥ 7.0% since last check.
 				<br />
-				<span class="count">
-					<i>Why it matters:</i> unstable listing.
-				</span>
+				<span class="count"> <i>Why it matters:</i> unstable listing. </span>
 			</li>
 			<li>
-				<span class="bold-highlight">High-Risk Bargains</span> — Cheap and
-				flagged risky/uncertain. Defaults: (risk == High or uncertainty == High)
-				and (deal = Great/Good or deviation ≤ -7%).
+				<span class="bold-highlight">High-Risk Bargains</span> — Cheap and flagged
+				risky/uncertain. Defaults: (risk == High or uncertainty == High) and (deal =
+				Great/Good or deviation ≤ -7%).
 				<br />
 				<span class="count">
 					<i>Why it matters:</i> “too good to be true”; due diligence needed.
@@ -579,10 +547,8 @@
 		<!-- #endregion -->
 
 		<p class="attribution">
-			Data for this report was retrieved from visor.vin and Kelley Blue Book
-			(KBB). Automated analysis and summarization were performed with the
-			assistance of ChatGPT (OpenAI).
+			Data for this report was retrieved from visor.vin and Kelley Blue Book (KBB). Automated
+			analysis and summarization were performed with the assistance of ChatGPT (OpenAI).
 		</p>
-
 	</footer>
 </html>
