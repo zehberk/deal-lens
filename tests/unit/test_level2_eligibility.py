@@ -352,22 +352,20 @@ def test_report_renders_price_only_row_without_deal_score():
 	assert "2025 Toyota Prius Plug-in Hybrid LE" in html
 	assert ">2025 Toyota Prius LE<" not in html
 	assert '<div class="deal-score">' not in html
-	assert '<span class="deal-rating">' not in html
+	assert '<span class="deal-rating">Good</span>' in html
 	assert '>Dealer listing</a>' in html
 	assert '>Visor listing</a>' in html
 	assert '>KBB valuation</a>' in html
-	assert '$25,000</strong> • Miles: <strong>10,000</strong> • Risk Score: <strong>Not available' in html
-	assert html.index('class="price-position"') < html.index('VIN: <strong>TESTVIN')
+	assert '$25,000</strong> • Miles: <strong>10,000</strong>' in html
+	assert "Risk Score:" not in html
+	assert "VIN: <strong>TESTVIN" not in html
+	assert "Dealer: <strong>Test dealer" not in html
+	assert html.index("Miles:") < html.index("Dealer listing</a>") < html.index('class="price-position"')
 	assert '>Rating details<' not in html
-	assert '<ul>' not in html[html.index('class="listing-notes"'):html.index('</aside>')]
-	assert 'class="detail-icon' in html
-	assert "<strong>22.8% above</strong>" in html
-	assert "<strong>significantly less</strong>" in html
-	assert "<strong>(-82.7%).</strong>" in html
-	assert '<em class="score-effect">+0 score</em>' in html
-	assert '<em class="score-effect">+6 score</em>' in html
-	assert ">No risk<" in html
-	assert 'class="detail-icon file-text-icon"' in html
+	assert 'class="listing-notes"' not in html
+	assert 'class="listing-layout price-only-layout"' in html
+	assert "22.8% above" not in html
+	assert "significantly less" not in html
 
 
 def test_report_renders_missing_mileage_as_zero():
@@ -534,17 +532,17 @@ def test_level2_bins_sort_by_global_deal_score():
 	assert [rating[4]["deal_score"] for rating in bins["Fair"]] == [80, 50, 20]
 
 
-def test_price_only_ratings_are_ordered_by_descending_bin():
+def test_price_only_ratings_are_ordered_by_gauge_position():
 	ratings = [
-		({"id": "bad", "price": 10_000}, "Bad", None, [], {}),
-		({"id": "fair", "price": 30_000}, "Fair", None, [], {}),
-		({"id": "great", "price": 40_000}, "Great", None, [], {}),
-		({"id": "poor", "price": 20_000}, "Poor", None, [], {}),
-		({"id": "good", "price": 50_000}, "Good", None, [], {}),
+		({"id": "bad"}, "Bad", None, [], {"marker_pct": 95.0}),
+		({"id": "fair"}, "Fair", None, [], {"marker_pct": 52.0}),
+		({"id": "great"}, "Great", None, [], {"marker_pct": 8.0}),
+		({"id": "poor"}, "Poor", None, [], {"marker_pct": 74.0}),
+		({"id": "good"}, "Good", None, [], {"marker_pct": 27.0}),
 	]
 
-	ordered = order_level2_ratings(ratings)
+	ordered = reporting.order_price_only_ratings(ratings)
 
-	assert [rating[1] for rating in ordered] == [
-		"Great", "Good", "Fair", "Poor", "Bad",
+	assert [rating[4]["marker_pct"] for rating in ordered] == [
+		8.0, 27.0, 52.0, 74.0, 95.0,
 	]

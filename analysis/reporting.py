@@ -209,6 +209,14 @@ def order_level2_ratings(ratings: list) -> list:
     return [rating for name in LEVEL2_RATING_ORDER for rating in bins[name]]
 
 
+def order_price_only_ratings(ratings: list) -> list:
+    """Order price-only ratings by their left-to-right gauge position."""
+    return sorted(
+        ratings,
+        key=lambda rating: rating[4].get("marker_pct", 100.0),
+    )
+
+
 def summarize_level2_failures(information_only: list) -> list[tuple[str, int]]:
     counts = Counter(reason for _, reason in information_only)
     return sorted(counts.items())
@@ -305,7 +313,7 @@ async def render_level2_pdf(
 
     rating_bins = build_level2_bins(ratings)
     all_ratings = order_level2_ratings(ratings)
-    ordered_price_only = order_level2_ratings(price_only)
+    ordered_price_only = order_price_only_ratings(price_only)
     report_started = time.monotonic()
     phase_started = time.monotonic()
     all_images = collect_all_images({**rating_bins, "Price only": price_only})
