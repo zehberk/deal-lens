@@ -9,6 +9,7 @@ from playwright.async_api import TimeoutError
 from analysis.kbb import (
 	_cluster_vin_lookahead_listings,
 	_configuration_matches_listing,
+	_fetch_new_local_pricing_jobs,
 	_prefetch_vin_first_national_tables,
 	_previous_local_trim,
 	_used_listing_has_cached_pricing,
@@ -35,6 +36,54 @@ def _fake_kbb_browser():
 	page.close = AsyncMock()
 	context.new_page = AsyncMock(return_value=page)
 	return request, browser, context, page
+
+
+async def test_new_local_pricing_uses_bounded_parallel_pages(monkeypatch):
+	active = 0
+	peak = 0
+
+	async def fetch(*args, **_kwargs):
+		nonlocal active, peak
+		active += 1
+		peak = max(peak, active)
+		await asyncio.sleep(0.01)
+		active -= 1
+		return 40_000, 46_000, 44_000, None, args[6]
+
+	pages = []
+
+	async def new_page():
+		page = MagicMock()
+		page.close = AsyncMock()
+		pages.append(page)
+		return page
+
+	context = MagicMock()
+	context.new_page = new_page
+	entries = {
+		f"2026 Toyota 4Runner {trim}": {}
+		for trim in ("SR5", "Limited", "TRD Pro")
+	}
+	jobs = [
+		(
+			"2026", "Toyota", "4runner", trim,
+			f"2026 Toyota 4Runner {trim}", f"https://kbb.test/{trim}/",
+		)
+		for trim in ("SR5", "Limited", "TRD Pro")
+	]
+	monkeypatch.setattr("analysis.kbb.KBB_NEW_LOCAL_WORKERS", 2)
+	monkeypatch.setattr(
+		"analysis.kbb._get_local_pricing_with_progress", fetch
+	)
+
+	await _fetch_new_local_pricing_jobs(
+		context, MagicMock(), entries, jobs
+	)
+
+	assert peak == 2
+	assert len(pages) == 3
+	assert all(page.close.await_count == 1 for page in pages)
+	assert all(entry["fpp_local"] == 44_000 for entry in entries.values())
 
 
 async def test_national_tables_use_bounded_parallel_pages(monkeypatch):

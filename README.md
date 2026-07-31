@@ -78,13 +78,13 @@ to the matching row on KBB's year/make/model pricing table, retain its MSRP and
 national FPP, and follow that row's trim link for local FPP. Compatible later
 listings may reuse the resolved configuration; optional body-style, fuel, and
 powertrain fields constrain reuse when both records provide them. After resolving
-listings, DealLens loads the
-national trim table and token-matches MSRP and national FPP to each canonical KBB
-style. A failed VIN lookup may still receive national pricing, but DealLens will
-not substitute local pricing from a guessed trim or model-page link. Level 2/3 VIN
-resolutions, canonical configurations, and national tables use separate cache
-namespaces so legacy Level 1 trim rows remain unchanged. These KBB lookups do not
-add Visor API requests.
+listings, DealLens loads the national trim table and token-matches MSRP and national
+FPP to each canonical KBB style. A failed VIN lookup may still receive national
+pricing, but DealLens will not substitute local pricing from a guessed trim or
+model-page link. Level 2/3 VIN resolutions, canonical configurations, and national
+tables use separate cache namespaces so legacy Level 1 trim rows remain unchanged.
+These KBB lookups do not add Visor API requests. National tables, used VIN/style
+clusters, and unique new trim local-price pages use separate bounded worker pools.
 
 Each `deal-lens` invocation writes a timestamped DEBUG diagnostic log under
 `logs/`. The log records the command arguments and KBB national, trim, and
