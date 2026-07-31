@@ -3,7 +3,15 @@ from analysis.normalization import (
 	filter_valid_listings,
 	get_variant_map,
 	model_variant_title,
+	normalize_listing,
 )
+
+
+def test_normalization_preserves_listing_age_for_warranty_calculation():
+	normalized = normalize_listing({"days_on_market": 45, "listed_at": "2026-06-16"})
+
+	assert normalized["days_on_market"] == 45
+	assert normalized["listed_at"] == "2026-06-16"
 
 
 def test_model_match_uses_exact_base_unless_specialized_tokens_are_present():

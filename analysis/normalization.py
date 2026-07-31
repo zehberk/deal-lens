@@ -446,6 +446,8 @@ def normalize_listing(listing: dict) -> dict:
         "condition": listing.get("condition"),
         "price": to_int(listing.get("price")),
         "mileage": to_int(listing.get("mileage")),
+        "days_on_market": to_int(listing.get("days_on_market")),
+        "listed_at": listing.get("listed_at"),
         "is_hybrid": is_hybrid,
         "is_plugin": is_plugin,
         "fuel_type": fuel_type,

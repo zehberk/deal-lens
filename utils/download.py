@@ -22,6 +22,7 @@ from utils.common import (
     current_timestamp,
     get_time_delta,
     normalize_url,
+    requires_vehicle_history_report,
     to_https,
     stopwatch,
 )
@@ -886,6 +887,7 @@ def needs_poll(l: dict, cache: dict) -> bool:
     current = docs.get("carfax_url")
 
     cached_entry = cache.get(vin, {})
+    report_required = requires_vehicle_history_report(l)
     # 1: No cached record → poll to establish baseline
     if not cached_entry:
         return True
@@ -899,11 +901,11 @@ def needs_poll(l: dict, cache: dict) -> bool:
 
     cached_url = cached_entry.get("carfax_url")
     # 3: If URL is missing/unavailable → poll
-    if not cached_url and (not current or current == "Unavailable"):
+    if report_required and not cached_url and (not current or current == "Unavailable"):
         return True
 
     # 4: If URL exists but changed → poll again
-    if cached_url and current != cached_url:
+    if report_required and cached_url and current != cached_url:
         return True
 
     cached_fee = cached_entry.get("dealer_fees") or cached_entry.get("dealer_fee")

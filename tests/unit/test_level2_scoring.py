@@ -9,6 +9,7 @@ from analysis.scoring import (
 	risk_penalty,
 	get_structure_score,
 	format_deal_score_narrative,
+	score_new_vehicle_warranty,
 	score_warranty_status,
 )
 from utils.models import CarfaxData, StructuralStatus
@@ -147,6 +148,19 @@ def test_warranty_bonus_uses_limiting_mileage_at_typical_use():
 
 	assert result == pytest.approx(-0.0916, abs=0.001)
 	assert narrative == ["Warranty active: ~5 months, ~687 miles remaining."]
+
+
+def test_new_vehicle_warranty_subtracts_listing_time_and_mileage():
+	narrative = []
+
+	result = score_new_vehicle_warranty(
+		{"days_on_market": 45, "mileage": 500}, narrative
+	)
+
+	assert result == -2.0
+	assert narrative == [
+		"Warranty active: ~35 months, ~35,500 miles remaining."
+	]
 
 
 def test_missing_warranty_information_is_neutral():

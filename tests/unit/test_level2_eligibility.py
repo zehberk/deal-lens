@@ -2,6 +2,7 @@ import shutil
 import uuid
 
 from pathlib import Path
+from unittest.mock import Mock
 
 from analysis import level2, reporting
 from analysis.reporting import (
@@ -111,6 +112,105 @@ async def test_level2_keeps_price_only_and_unmapped_listings(monkeypatch):
 	assert render_args[5] == [
 		(unmapped_listing, "The listing trim could not be mapped to compatible KBB pricing.")
 	]
+
+
+async def test_level2_rates_new_vehicle_without_history_report(monkeypatch):
+	listing = {
+		"id": "new-no-report",
+		"vin": "NEWVIN",
+		"title": "2026 Test Vehicle",
+		"condition": "New",
+		"price": 25_000,
+	}
+	ctx = AnalysisContext(make="Test", model="Vehicle")
+	context = ListingContext(listing_id="new-no-report", listing=listing)
+	ctx.listings = [context]
+
+	async def fake_prepare(*_args, **_kwargs):
+		return ctx
+
+	render_args: tuple = ()
+
+	async def fake_render(*args):
+		nonlocal render_args
+		render_args = args
+
+	monkeypatch.setattr(level2, "prepare_level2_analysis", fake_prepare)
+	monkeypatch.setattr(
+		level2,
+		"_price_assessment",
+		lambda _lc, narrative: narrative.append("Price evidence available.")
+		or ("Good", 0, 0, 0.0, {"marker_pct": 25.0}),
+	)
+	monkeypatch.setattr(level2, "render_level2_pdf", fake_render)
+
+	await level2.start_level2_analysis({}, [listing], "unused.json")
+
+	assert len(render_args[3]) == 1
+	assessed, _, risk, narrative, pricing = render_args[3][0]
+	assert assessed == listing
+	assert risk == 0
+	assert context.risk_score == 0
+	assert pricing["risk_summary"] == "none identified"
+	assert "New vehicles do not require a vehicle history report" in narrative
+	assert "Warranty active: ~36 months, ~36,000 miles remaining." in narrative
+	assert "New vehicles do not require a vehicle history report" not in pricing["detail_scores"]
+	assert not any("combined score changes" in line.casefold() for line in narrative)
+	assert render_args[4] == []
+
+
+async def test_level2_uses_existing_history_report_for_new_vehicle(monkeypatch):
+	report = Path("cache") / f"test-new-carfax-{uuid.uuid4().hex}.html"
+	report.parent.mkdir(parents=True, exist_ok=True)
+	report.write_text("saved report", encoding="utf-8")
+	listing = {
+		"id": "new-with-report",
+		"vin": "NEWVIN",
+		"title": "2026 Test Vehicle",
+		"condition": "New",
+		"price": 25_000,
+	}
+	ctx = AnalysisContext(make="Test", model="Vehicle")
+	ctx.listings = [ListingContext(
+		listing_id="new-with-report",
+		listing=listing,
+		report_path=str(report),
+	)]
+
+	async def fake_prepare(*_args, **_kwargs):
+		return ctx
+
+	render_args: tuple = ()
+
+	async def fake_render(*args):
+		nonlocal render_args
+		render_args = args
+
+	parser = Mock(return_value=object())
+	monkeypatch.setattr(level2, "prepare_level2_analysis", fake_prepare)
+	monkeypatch.setattr(
+		level2,
+		"_price_assessment",
+		lambda _lc, narrative: narrative.append("Price evidence available.")
+		or ("Good", 0, 0, 0.0, {"marker_pct": 25.0}),
+	)
+	monkeypatch.setattr(level2, "get_carfax_data", parser)
+	monkeypatch.setattr(level2, "score_title_status", lambda _carfax: 3.0)
+	monkeypatch.setattr(level2, "score_mileage_use", lambda *_args: 0.0)
+	monkeypatch.setattr(level2, "score_warranty_status", lambda *_args: 0.0)
+	monkeypatch.setattr(level2, "_risk_summary", lambda *_args: "reported history")
+	monkeypatch.setattr(level2, "render_level2_pdf", fake_render)
+
+	await level2.start_level2_analysis({}, [listing], "unused.json")
+
+	parser.assert_called_once_with(report)
+	assert render_args[3][0][2] == 3
+	assert render_args[3][0][4]["risk_summary"] == "reported history"
+	assert not any(
+		"New vehicles do not require a vehicle history report" in line
+		for line in render_args[3][0][3]
+	)
+	report.unlink()
 
 
 async def test_level2_uses_available_national_fpp_without_fmv(monkeypatch):

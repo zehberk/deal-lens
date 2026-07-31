@@ -12,6 +12,7 @@ from analysis.scoring import (
     determine_best_price,
     favorable_evidence_bonus,
     score_mileage_use,
+    score_new_vehicle_warranty,
     score_title_status,
     score_warranty_status,
 )
@@ -209,6 +210,35 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
 
         deal = assessment[0]
         pricing_visual = assessment[4]
+        is_new = str(listing.get("condition") or "").casefold() == "new"
+        if (report is None or not report.exists()) and is_new:
+            risk = 0
+            lc.risk_score = risk
+            price_score = deal_score_from_position(float(pricing_visual["marker_pct"]))
+            narrative.append("New vehicles do not require a vehicle history report.")
+            warranty_evidence = score_new_vehicle_warranty(listing, narrative)
+            favorable_evidence = max(-warranty_evidence, 0.0)
+            score_result = calculate_deal_score_result(
+                price_score, risk, favorable_evidence
+            )
+            pricing_visual["deal_score"] = score_result.final_score
+            pricing_visual["risk_summary"] = "none identified"
+            pricing_visual["risk_penalty"] = score_result.risk_penalty
+            pricing_visual["risk_score_subtracted"] = score_result.score_subtracted
+            if score_result.floor_applied:
+                pricing_visual["score_floor"] = score_result.low_risk_floor
+            pricing_visual["detail_scores"] = {
+                narrative[0]: f"+{round(price_score)} score",
+                narrative[-1]: (
+                    f"+{round(favorable_evidence_bonus(favorable_evidence, risk))} score"
+                ),
+            }
+            deal = score_result.rating
+            lc.deal_rating = deal
+            lc.narrative = narrative
+            ratings.append((listing, deal, risk, narrative, pricing_visual))
+            continue
+
         if report is None or not report.exists():
             narrative.append(
                 "A vehicle-history report was not collected, so risk and the final Level 2 rating are unavailable."
@@ -249,12 +279,7 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
             elif "warranty" in line.casefold():
                 detail_scores[line] = f"+{round(warranty_bonus)} score"
         pricing_visual["detail_scores"] = detail_scores
-        price_deal = deal
         deal = score_result.rating
-        if deal != price_deal:
-            narrative.append(
-                f"The combined score changes the price-only rating from {price_deal} to {deal}."
-            )
         lc.deal_rating = deal
         lc.narrative = narrative
 
