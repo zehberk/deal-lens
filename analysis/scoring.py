@@ -703,6 +703,29 @@ def score_warranty_status(
     return rating
 
 
+def score_new_vehicle_warranty(
+    listing: dict, narrative: Optional[list[str]] = None
+) -> float:
+    """Score and describe the remaining standard 3-year/36,000-mile warranty."""
+    days_on_market = max(to_int(listing.get("days_on_market")) or 0, 0)
+    mileage = max(to_int(listing.get("mileage")) or 0, 0)
+    warranty_days = max((3 * 365) - days_on_market, 0)
+    basic_months = round(warranty_days / (365 / 12))
+    basic_miles = max(36_000 - mileage, 0)
+
+    miles_per_month = 15_000 / 12
+    mileage_months = basic_miles / miles_per_month if basic_miles > 0 else 0.0
+    effective_months = min(float(basic_months), mileage_months)
+    rating = -min(effective_months / 6.0, 2.0) if effective_months > 0 else 0.0
+
+    if narrative is not None:
+        narrative.append(
+            f"Warranty active: ~{basic_months} months, ~{basic_miles:,} miles remaining."
+        )
+
+    return rating
+
+
 def score_mileage_use(
     carfax: CarfaxData, listing: dict, narrative: Optional[list[str]] = None
 ) -> float:

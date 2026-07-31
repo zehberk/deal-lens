@@ -16,6 +16,7 @@ from websocket import WebSocket
 
 from utils.download import (
 	complete_carfax_challenge,
+	collect_report_jobs,
 	download_images,
 	download_supplementary_files,
 	is_chrome_browser_window,
@@ -231,6 +232,45 @@ def test_missing_carfax_url_remains_due_after_poll_window():
 	cache = {"TESTVIN": {"dealer_fees": [["Unknown", -1, None]]}}
 
 	assert needs_poll(listing, cache)
+
+
+def test_new_vehicle_does_not_poll_only_for_missing_carfax():
+	listing = {
+		"vin": "NEWVIN",
+		"condition": "New",
+		"additional_docs": {"carfax_url": None},
+	}
+	cache = {"NEWVIN": {"dealer_fees": [["Unknown", -1, None]]}}
+
+	assert not needs_poll(listing, cache)
+
+
+@pytest.mark.parametrize("condition", ["Used", "Certified", None])
+def test_non_new_vehicle_still_polls_for_missing_carfax(condition):
+	listing = {
+		"vin": "TESTVIN",
+		"condition": condition,
+		"additional_docs": {"carfax_url": None},
+	}
+	cache = {"TESTVIN": {"dealer_fees": [["Unknown", -1, None]]}}
+
+	assert needs_poll(listing, cache)
+
+
+def test_new_vehicle_with_history_url_creates_download_job(output_dir, monkeypatch):
+	monkeypatch.setattr("utils.download.DOC_PATH", output_dir)
+	listing = {
+		"title": "2026 Test Vehicle",
+		"vin": "NEWVIN",
+		"condition": "new",
+		"additional_docs": {"carfax_url": "https://carfax.test/report"},
+	}
+
+	jobs = collect_report_jobs([listing])
+
+	assert len(jobs) == 1
+	assert jobs[0][0] == "carfax"
+	assert jobs[0][1] == "https://carfax.test/report"
 
 
 def test_carfax_challenge_wait_allows_user_to_complete_puzzle(monkeypatch):

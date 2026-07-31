@@ -42,7 +42,10 @@ async def start_level3_analysis(metadata: dict, listings: list[dict], filename: 
 
         full_listing = next(l for l in listings if l.get("id") == listing.get("id"))
         report = get_report_dir(full_listing)
-        if report is None or not report.exists() or listing.get("price") is None:
+        is_new = str(listing.get("condition") or "").casefold() == "new"
+        if listing.get("price") is None:
+            continue
+        if not is_new and (report is None or not report.exists()):
             continue
 
         narrative: list[str] = []
@@ -53,8 +56,6 @@ async def start_level3_analysis(metadata: dict, listings: list[dict], filename: 
         fmr_high = int(ctx.cache_entries[cache_key].get("fmr_high") or 0)
         fmv = int(ctx.cache_entries[cache_key].get("fmv") or 0)
         msrp = int(ctx.cache_entries[cache_key].get("msrp") or 0)
-        is_new = str(listing.get("condition", "")).casefold() == "new"
-
         if not any((fpp_natl, fpp_local, fmv, msrp if is_new else 0)):
             narrative.append(
                 "Unable to provide ratings for this vehicle: no pricing data is available for this vehicle."
@@ -79,8 +80,15 @@ async def start_level3_analysis(metadata: dict, listings: list[dict], filename: 
             f"Deal bins are set at ${increment * 2} ({percent * 200}%) in size, placing the Fair midpoint at ${midpoint}."
         )
         # Risk ratings and deal adjustment
-        carfax: CarfaxData = get_carfax_data(report)
-        risk = rate_risk_level2(carfax, listing, narrative)
+        if report is not None and report.exists():
+            assert report is not None
+            carfax: CarfaxData = get_carfax_data(report)
+            risk = rate_risk_level2(carfax, listing, narrative)
+        else:
+            risk = 0
+            narrative.append(
+                "New vehicles do not require a vehicle history report."
+            )
         deal = adjust_deal_for_risk(deal, risk, narrative)
         ratings.append((listing, deal, risk, narrative))
 
