@@ -152,7 +152,7 @@ def test_vin_lookahead_clusters_matching_source_configurations():
 	])
 
 	assert [[listing["vin"] for listing in cluster] for cluster in clusters] == [
-		["VIN1", "VIN2"], ["VIN3"],
+		["VIN1", "VIN2", "NEWVIN"], ["VIN3"],
 	]
 
 
@@ -236,6 +236,15 @@ async def test_vin_first_pricing_reuses_configuration_and_enriches_national(
 		"Toyota", "Prius", [first, second],
 		{"2025 Toyota Prius Plug-in Hybrid": [first, second]}, cache,
 	)
+	# Older caches recorded only KBB's bare VIN Style value. Ensure body-style
+	# completion repairs that cached configuration without another VIN request.
+	configuration = next(iter(cache["configurations"].values()))
+	configuration["style"] = "SE"
+	configuration["style_url"] = (
+		"https://kbb.com/toyota/prius-plug-in-hybrid/2025/se/"
+	)
+	first.pop("kbb_cache_key")
+	second.pop("kbb_cache_key")
 	await get_vin_first_pricing_data(
 		"Toyota", "Prius", [first, second],
 		{"2025 Toyota Prius Plug-in Hybrid": [first, second]}, cache,
@@ -253,6 +262,11 @@ async def test_vin_first_pricing_reuses_configuration_and_enriches_national(
 	assert entry["fpp_local"] == 32_500
 	assert entry["fpp_natl"] == 32_100
 	assert valuations[0].kbb_trim == first["kbb_cache_key"]
+	assert configuration["style"] == "SE Hatchback 4D"
+	assert configuration["style_url"] == (
+		"https://kbb.com/toyota/prius-plug-in-hybrid/2025/"
+		"se-hatchback-4d/"
+	)
 
 
 async def test_vin_first_does_not_fetch_local_price_without_vin_resolution(
@@ -304,6 +318,8 @@ async def test_vin_first_new_listing_uses_national_trim_link_for_local_fpp(
 	monkeypatch.setattr("analysis.kbb.create_kbb_browser", AsyncMock(
 		return_value=_fake_kbb_browser()
 	))
+	vin_lookup = AsyncMock(return_value=None)
+	monkeypatch.setattr("analysis.kbb.get_used_style_url_from_vins", vin_lookup)
 	monkeypatch.setattr("analysis.kbb._get_local_pricing_with_progress", local)
 	monkeypatch.setattr("analysis.kbb.get_or_fetch_national_pricing", AsyncMock(
 		return_value=([(
@@ -320,6 +336,7 @@ async def test_vin_first_new_listing_uses_national_trim_link_for_local_fpp(
 		{"2026 Hyundai IONIQ 5": [listing]}, cache,
 	)
 
+	vin_lookup.assert_awaited_once()
 	local.assert_awaited_once()
 	await_args = local.await_args
 	assert await_args is not None
@@ -336,6 +353,69 @@ async def test_vin_first_new_listing_uses_national_trim_link_for_local_fpp(
 	assert entry["local_source"] == (
 		"https://kbb.com/hyundai/ioniq-5/2026/se/"
 	)
+
+
+async def test_vin_first_new_listing_uses_resolved_body_specific_style(
+	monkeypatch,
+):
+	listing = {
+		"id": "new-civic",
+		"vin": "19XFL2H80SE034568",
+		"year": 2025,
+		"condition": "New",
+		"trim": "Sport",
+		"body_style": "hatchback",
+	}
+	vin_lookup = AsyncMock(return_value=(
+		"Sport Hatchback 4D",
+		"https://kbb.com/honda/civic/2025/sport-hatchback-4d/",
+	))
+	local = AsyncMock(return_value=(
+		23_000,
+		27_000,
+		25_640,
+		24_300,
+		"https://kbb.com/honda/civic/2025/sport-hatchback-4d/",
+	))
+	monkeypatch.setattr("analysis.kbb.create_kbb_browser", AsyncMock(
+		return_value=_fake_kbb_browser()
+	))
+	monkeypatch.setattr("analysis.kbb.get_used_style_url_from_vins", vin_lookup)
+	monkeypatch.setattr("analysis.kbb._get_local_pricing_with_progress", local)
+	monkeypatch.setattr("analysis.kbb.get_or_fetch_national_pricing", AsyncMock(
+		return_value=([(
+			"Sport", "$27,450", "$26,400",
+			"https://kbb.com/honda/civic/2025/",
+			"/honda/civic/2025/sport/", "2026-01-01",
+		)], None)
+	))
+	monkeypatch.setattr("analysis.kbb.save_cache", lambda _cache: None)
+	cache = {}
+
+	await get_vin_first_pricing_data(
+		"Honda",
+		"Civic",
+		[listing],
+		{"2025 Honda Civic": [listing]},
+		cache,
+	)
+
+	vin_lookup.assert_awaited_once()
+	await_args = vin_lookup.await_args
+	assert await_args is not None
+	assert await_args.args[4] == ["19XFL2H80SE034568"]
+	assert await_args.args[5] == "hatchback"
+	local.assert_awaited_once()
+	assert listing["kbb_cache_key"] == (
+		"2025 Honda Civic Sport Hatchback 4D"
+	)
+	entry = cache["level23_entries"][listing["kbb_cache_key"]]
+	assert entry["msrp"] == 27_450
+	assert entry["fpp_natl"] == 26_400
+	assert entry["local_source"] == (
+		"https://kbb.com/honda/civic/2025/sport-hatchback-4d/"
+	)
+	assert cache["vin_resolutions"]["19XFL2H80SE034568"]
 
 
 def test_configuration_matching_treats_optional_evidence_as_constraints():
@@ -432,6 +512,30 @@ async def test_vin_lookup_resolves_exact_used_style_url():
 		"?intent=trade-in-sell&vin=TESTVIN",
 		wait_until="domcontentloaded",
 		timeout=10_000,
+	)
+
+
+async def test_vin_lookup_adds_listing_body_style_to_incomplete_kbb_style():
+	page = MagicMock()
+	page.goto = AsyncMock()
+	page.wait_for_function = AsyncMock()
+	page.url = "https://kbb.com/honda/civic/2025/vin/"
+	page.inner_text = AsyncMock(return_value=(
+		"2025 Honda Civic\nStyle:\nSport\nEngine:\n2.0L"
+	))
+
+	result = await get_used_style_url_from_vins(
+		page,
+		"2025",
+		"Honda",
+		"civic",
+		["19XFL2H80SE034568"],
+		"hatchback",
+	)
+
+	assert result == (
+		"Sport Hatchback 4D",
+		"https://kbb.com/honda/civic/2025/sport-hatchback-4d/",
 	)
 
 

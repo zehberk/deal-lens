@@ -13,48 +13,35 @@
 		<section class="tactics">
 			<h2>Negotiation Tactics</h2>
 			<div class="disclaimer">
-				These strategies are not a guarantee for success. They are meant as a
-				useful tips on how to prepare you for negotiations. They will not all
-				apply in every situation.
+				These strategies are not a guarantee for success. They are meant as a useful tips on
+				how to prepare you for negotiations. They will not all apply in every situation.
 			</div>
 
 			<h4>Universal Strategies</h4>
 			<div class="agnostic">
 				<ul>
 					<li>
-						Lead with objective data instead of emotion to control the tone of
-						the negotiation.
+						Lead with objective data instead of emotion to control the tone of the
+						negotiation.
+					</li>
+					<li>Use the vehicle’s lowest recorded price as your primary anchor point.</li>
+					<li>
+						Make them justify <i>their</i> number rather than defending your own offer.
 					</li>
 					<li>
-						Use the vehicle’s lowest recorded price as your primary anchor
-						point.
+						Reference comparable vehicles to create subtle leverage without bluffing.
 					</li>
 					<li>
-						Make them justify <i>their</i> number rather than defending your own
-						offer.
+						Demand a fully itemized OTD quote before engaging in any deeper discussion.
 					</li>
 					<li>
-						Reference comparable vehicles to create subtle leverage without
-						bluffing.
-					</li>
-					<li>
-						Demand a fully itemized OTD quote before engaging in any deeper
-						discussion.
-					</li>
-					<li>
-						Keep negotiation categories separate so the dealer can’t hide
-						numbers in the mix.
+						Keep negotiation categories separate so the dealer can’t hide numbers in the
+						mix.
 					</li>
 					<li>Refuse to counter an offer until the dealer moves first.</li>
-					<li>
-						Use silence or slow replies to apply pressure and break their
-						momentum.
-					</li>
+					<li>Use silence or slow replies to apply pressure and break their momentum.</li>
 					<li>Get every commitment in writing to prevent backtracking.</li>
-					<li>
-						Walk away when progress stalls to reset leverage and signal
-						firmness.
-					</li>
+					<li>Walk away when progress stalls to reset leverage and signal firmness.</li>
 				</ul>
 				<div>
 					For a more thorough explanation of these strategies, see
@@ -65,42 +52,34 @@
 			<h4>In-Person Strategies</h4>
 			<div class="in-person">
 				<ul>
+					<li>Stand up or shift position to control pacing when they stall or delay.</li>
 					<li>
-						Stand up or shift position to control pacing when they stall or
-						delay.
-					</li>
-					<li>
-						Stay seated and don’t follow them to “manager rooms” to avoid their
-						control tactics.
+						Stay seated and don’t follow them to “manager rooms” to avoid their control
+						tactics.
 					</li>
 					<li>
 						Bring printed comparable listings to anchor your price with physical
 						evidence.
 					</li>
 					<li>
-						Use intentional silence after giving your number to create
-						discomfort and movement.
+						Use intentional silence after giving your number to create discomfort and
+						movement.
 					</li>
 					<li>
 						Stay in one place so the salesperson can't herd you through their
 						environment.
 					</li>
 					<li>
-						Maintain physical distance to avoid their proximity-based pressure
-						tactics.
+						Maintain physical distance to avoid their proximity-based pressure tactics.
 					</li>
 					<li>
-						Keep facial reactions neutral so you don’t reveal interest or
-						attachment.
+						Keep facial reactions neutral so you don’t reveal interest or attachment.
 					</li>
 					<li>
 						Delay the test drive until the numbers make sense to avoid emotional
 						commitment.
 					</li>
-					<li>
-						Bring a silent witness to disrupt their rhythm and reduce
-						manipulation.
-					</li>
+					<li>Bring a silent witness to disrupt their rhythm and reduce manipulation.</li>
 					<li>
 						Politely decline drinks or small-talk rapport to stay objective and
 						controlled.
@@ -116,42 +95,30 @@
 			<div class="remote">
 				<ul>
 					<li>
-						Delay responses strategically to create pressure and reduce their
-						leverage.
+						Delay responses strategically to create pressure and reduce their leverage.
 					</li>
 					<li>
 						Run conversations with multiple dealerships at once to increase your
 						alternatives.
 					</li>
 					<li>
-						Send screenshots instead of links so your evidence is harder for
-						them to dismiss.
+						Send screenshots instead of links so your evidence is harder for them to
+						dismiss.
+					</li>
+					<li>Use clean, prewritten scripts to stay concise and emotionless.</li>
+					<li>Never reveal your maximum budget so they can’t anchor you high.</li>
+					<li>
+						Use written confirmations to lock down specifics and prevent shifting terms.
 					</li>
 					<li>
-						Use clean, prewritten scripts to stay concise and emotionless.
+						Message early morning or near closing time when sales pressure is highest.
 					</li>
-					<li>
-						Never reveal your maximum budget so they can’t anchor you high.
-					</li>
-					<li>
-						Use written confirmations to lock down specifics and prevent
-						shifting terms.
-					</li>
-					<li>
-						Message early morning or near closing time when sales pressure is
-						highest.
-					</li>
-					<li>
-						Send a firm OTD offer when needed to quickly test their flexibility.
-					</li>
+					<li>Send a firm OTD offer when needed to quickly test their flexibility.</li>
 					<li>
 						Keep each negotiation thread focused on a single category to avoid
 						confusion.
 					</li>
-					<li>
-						End the conversation immediately when value stops to regain
-						leverage.
-					</li>
+					<li>End the conversation immediately when value stops to regain leverage.</li>
 				</ul>
 				<div>
 					For a more thorough explanation of these strategies, see
@@ -179,25 +146,19 @@
 				{% if is_downgraded %}
 					<span class="downgrade-tag">Downgraded</span>
 				{% endif %}
-				<a class="visor-link" href="{{ listing.visor_listing }}"
-					>View on Visor ↗</a
-				>
+				<a class="visor-link" href="{{ listing.visor_listing }}">View on Visor ↗</a>
 			</div>
 
 			<div class="listing-title-bar"></div>
 			<div class="listing-specs compact-grid">
-				<div class="listing-specs-item">
-					VIN: <strong>{{ listing.vin }}</strong>
-				</div>
+				<div class="listing-specs-item">VIN: <strong>{{ listing.vin }}</strong></div>
 				<div class="listing-specs-item">
 					Mileage: <strong>{{ miles(listing.mileage) }}</strong>
 				</div>
 				<div class="listing-specs-item">
 					Listing Price: <strong>{{ money(listing.price) }}</strong>
 				</div>
-				<div class="listing-specs-item">
-					Risk Score: <strong>{{ risk }}</strong>
-				</div>
+				<div class="listing-specs-item">Risk Score: <strong>{{ risk }}</strong></div>
 				<div class="listing-specs-item">
 					Dealer: <strong>{{ seller_name }} - {{ seller_location }}</strong>
 				</div>
@@ -246,9 +207,9 @@
 			<h2>Universal Strategies - Expanded</h2>
 			<div>
 				<p>
-					Here are the ones that actually work in both settings and don’t rely
-					on theatrics, geography, or “car-lot psychology.” These are universal
-					because they’re anchored in information leverage, timing, and framing.
+					Here are the ones that actually work in both settings and don’t rely on
+					theatrics, geography, or “car-lot psychology.” These are universal because
+					they’re anchored in information leverage, timing, and framing.
 				</p>
 				<h3>
 					<strong>Anchor the Conversation With Data, Not Emotion</strong>
@@ -264,21 +225,18 @@
 				<p>
 					Instead of “Can you do better?” you say:<br />
 					<strong
-						>“Based on the vehicle’s age, mileage, price history, and options,
-						its fair value sits closer to X.”</strong
+						>“Based on the vehicle’s age, mileage, price history, and options, its fair
+						value sits closer to X.”</strong
 					><br />
 					Works exactly the same whether typed or spoken.
 				</p>
 				<h3>
 					<strong>Use the Lowest Historical Price as Your Anchor</strong>
 				</h3>
+				<p>If the car ever dropped lower, that number becomes the real bargaining floor.</p>
 				<p>
-					If the car ever dropped lower, that number becomes the real bargaining
-					floor.
-				</p>
-				<p>
-					Dealers <em>hate</em> being reminded of their own history because it’s
-					hard to refute.<br />
+					Dealers <em>hate</em> being reminded of their own history because it’s hard to
+					refute.<br />
 					This line works in email, text, phone, or face-to-face:<br />
 					<strong
 						>“On [date], this vehicle was listed at $X. That’s the most reliable
@@ -288,40 +246,36 @@
 				<h3>
 					<strong>Make Them Justify the Price</strong>
 				</h3>
+				<p>Never justify <em>your</em> offer. Make <em>them</em> defend theirs.</p>
 				<p>
-					Never justify <em>your</em> offer. Make <em>them</em> defend theirs.
-				</p>
-				<p>
-					<strong>“Can you help me understand the basis for this price?”</strong
-					><br />
+					<strong>“Can you help me understand the basis for this price?”</strong><br />
 					It forces them off their script and often reveals weak points (market
-					adjustments, reconditioning fluff, “manager said so”). Equally
-					effective over email or live.
+					adjustments, reconditioning fluff, “manager said so”). Equally effective over
+					email or live.
 				</p>
 				<h3>
 					<strong>Create Alternatives (Leverage Through Options)</strong>
 				</h3>
 				<p>
-					Always reference other units you are considering. Not as a threat, but
-					as context.
+					Always reference other units you are considering. Not as a threat, but as
+					context.
 				</p>
 				<p>
 					<strong
-						>“I’m looking at a few comparable options, so I’m aiming for
-						whichever dealership gives the clearest, most straightforward
-						number.”</strong
+						>“I’m looking at a few comparable options, so I’m aiming for whichever
+						dealership gives the clearest, most straightforward number.”</strong
 					>
 				</p>
 				<p>
-					That line works identically in-person or remotely because it shifts
-					them out of high-pressure mode.
+					That line works identically in-person or remotely because it shifts them out of
+					high-pressure mode.
 				</p>
 				<h3>
 					<strong>Avoid Their Time-Pressure Tactics</strong>
 				</h3>
 				<p>
-					Deadlines like “the deal expires today” are fake. Respond the same way
-					every time:
+					Deadlines like “the deal expires today” are fake. Respond the same way every
+					time:
 				</p>
 				<p>
 					<strong
@@ -330,8 +284,8 @@
 					>
 				</p>
 				<p>
-					This shuts down one of their most common manipulation tools. Works in
-					any channel.
+					This shuts down one of their most common manipulation tools. Works in any
+					channel.
 				</p>
 				<h3>
 					<strong>Separate Negotiation Tracks</strong>
@@ -346,19 +300,14 @@
 				</ul>
 				<p>Never let them merge categories.</p>
 				<p>
-					When they try to lump things (“We can do $X but only if you finance”),
-					respond with the universal line:<br />
+					When they try to lump things (“We can do $X but only if you finance”), respond
+					with the universal line:<br />
 					<strong>“Let’s settle the vehicle price first.”</strong>
 				</p>
 				<h3>
-					<strong
-						>Commit to Numbers Only After They Commit to Transparency</strong
-					>
+					<strong>Commit to Numbers Only After They Commit to Transparency</strong>
 				</h3>
-				<p>
-					You never reveal your max until they reveal their real out-the-door
-					number.
-				</p>
+				<p>You never reveal your max until they reveal their real out-the-door number.</p>
 				<p>
 					The universal script:<br />
 					<strong
@@ -367,8 +316,8 @@
 					>
 				</p>
 				<p>
-					Doesn’t matter if it’s an email or a sales desk conversation; the
-					effect is the same.
+					Doesn’t matter if it’s an email or a sales desk conversation; the effect is the
+					same.
 				</p>
 				<h3>
 					<strong>Silence as a Tool</strong>
@@ -378,22 +327,20 @@
 					On email/text: send one message and don’t follow up immediately.<br />
 					In-person: sit quietly.
 				</p>
-				<p>
-					Salespeople fill silence by lowering numbers. This works everywhere.
-				</p>
+				<p>Salespeople fill silence by lowering numbers. This works everywhere.</p>
 				<h3>
 					<strong>Pre-Write Your Walk-Away Line</strong>
 				</h3>
 				<p>Have a default, emotion-free exit:</p>
 				<p>
 					<strong
-						>“I appreciate the effort, but these numbers don’t align with the
-						vehicle’s valuation. If things change, reach out.”</strong
+						>“I appreciate the effort, but these numbers don’t align with the vehicle’s
+						valuation. If things change, reach out.”</strong
 					>
 				</p>
 				<p>
-					Doesn’t burn the bridge and puts the ball in their court. Dealers
-					often call back with better numbers.
+					Doesn’t burn the bridge and puts the ball in their court. Dealers often call
+					back with better numbers.
 				</p>
 				<h3>
 					<strong>Never Negotiate Against Yourself</strong>
@@ -403,8 +350,7 @@
 					<strong>“I’m waiting for your updated offer.”</strong><br />
 					or<br />
 					<strong
-						>“I need to see movement on your side before adjusting
-						anything.”</strong
+						>“I need to see movement on your side before adjusting anything.”</strong
 					>
 				</p>
 				<p>Both function over email or spoken.</p>
@@ -416,13 +362,12 @@
 					<strong>“Email me the OTD so I can review it.”</strong>
 				</p>
 				<p>
-					Removes pressure, creates a paper trail, and prevents last-minute fee
-					changes.
+					Removes pressure, creates a paper trail, and prevents last-minute fee changes.
 				</p>
 				<p>
-					If you want, I can condense these into a one-page cheat sheet tailored
-					to your negotiation style (firm, data-driven, low-emotion) so you can
-					drop it into your Level 3 logic later.
+					If you want, I can condense these into a one-page cheat sheet tailored to your
+					negotiation style (firm, data-driven, low-emotion) so you can drop it into your
+					Level 3 logic later.
 				</p>
 			</div>
 		</div>
@@ -432,15 +377,15 @@
 			<div>
 				<p>
 					Here are the ones that matter
-					<strong>only in person</strong> and actually make a difference. No
-					fluff, no theatrics.
+					<strong>only in person</strong> and actually make a difference. No fluff, no
+					theatrics.
 				</p>
 				<h3>
 					<strong>Control the pacing by standing up</strong>
 				</h3>
 				<p>
-					If the conversation drags or they try to “go talk to the manager,”
-					stand up and gather your things a bit.
+					If the conversation drags or they try to “go talk to the manager,” stand up and
+					gather your things a bit.
 				</p>
 				<p>
 					You don’t leave. You just signal:<br />
@@ -455,8 +400,8 @@
 					If they want to “check,” let them walk back and forth.
 				</p>
 				<p>
-					This keeps <em>you</em> as the “customer in control,” not the
-					supplicant being walked around the dealership maze.
+					This keeps <em>you</em> as the “customer in control,” not the supplicant being
+					walked around the dealership maze.
 				</p>
 				<h3>
 					<strong>Bring your own printed comps</strong>
@@ -467,8 +412,8 @@
 				</p>
 				<p>
 					<strong
-						>“These are similarly equipped vehicles in the same market. I’m
-						aligning to these numbers.”</strong
+						>“These are similarly equipped vehicles in the same market. I’m aligning to
+						these numbers.”</strong
 					>
 				</p>
 				<p>Paper forces them to take it seriously.</p>
@@ -494,8 +439,8 @@
 				</ul>
 				<p>
 					Pick a spot you prefer and stay there.<br />
-					This stops the subtle psychological pressure of being moved through
-					“their” space.
+					This stops the subtle psychological pressure of being moved through “their”
+					space.
 				</p>
 				<h3>
 					<strong>Don’t let them sit on your side of the desk</strong>
@@ -511,33 +456,24 @@
 				</p>
 				<p>That physical distance keeps you objective and in control.</p>
 				<h3>
-					<strong
-						>Mirror their first offer with body language, not words</strong
-					>
+					<strong>Mirror their first offer with body language, not words</strong>
 				</h3>
 				<p>
-					When they hand you a high number, just lean back slightly and raise
-					eyebrows.<br />
+					When they hand you a high number, just lean back slightly and raise eyebrows.<br />
 					Don’t respond immediately.
 				</p>
-				<p>
-					This tells them the number is unrealistic without you having to say
-					anything.
-				</p>
+				<p>This tells them the number is unrealistic without you having to say anything.</p>
 				<h3>
 					<strong>Never accept “monthly payment conversations”</strong>
 				</h3>
 				<p>
-					If they pivot to payment amounts on a screen, physically gesture
-					toward the full price:
+					If they pivot to payment amounts on a screen, physically gesture toward the full
+					price:
 				</p>
 				<p>
 					<strong>“We’re talking about the OTD, not payments.”</strong>
 				</p>
-				<p>
-					Pointing physically redirects them and keeps the conversation on your
-					terms.
-				</p>
+				<p>Pointing physically redirects them and keeps the conversation on your terms.</p>
 				<h3>
 					<strong>Walk away once, calmly</strong>
 				</h3>
@@ -569,8 +505,8 @@
 				</h3>
 				<p>
 					They want you emotionally invested.<br />
-					If you already know the car is good and you’re just negotiating price,
-					skip the test drive until numbers are serious.
+					If you already know the car is good and you’re just negotiating price, skip the
+					test drive until numbers are serious.
 				</p>
 				<p>
 					Say:<br />
@@ -607,8 +543,8 @@
 					Maintains emotional distance and keeps you harder to manipulate.
 				</p>
 				<p>
-					If you want a trimmed, no-BS version in a single-page cheat sheet, I
-					can hand you that too.
+					If you want a trimmed, no-BS version in a single-page cheat sheet, I can hand
+					you that too.
 				</p>
 			</div>
 		</div>
@@ -639,13 +575,13 @@
 				<p>
 					You can literally send:<br />
 					<strong
-						>“Another dealer is closer to the price I’m targeting, but I like
-						your unit more. Can you sharpen the number?”</strong
+						>“Another dealer is closer to the price I’m targeting, but I like your unit
+						more. Can you sharpen the number?”</strong
 					>
 				</p>
 				<p>
-					This hits harder remotely because they know you’re typing the same
-					thing to someone else.
+					This hits harder remotely because they know you’re typing the same thing to
+					someone else.
 				</p>
 				<h3>
 					<strong>Use screenshot anchors</strong>
@@ -657,41 +593,36 @@
 					<li>valuation ranges</li>
 				</ul>
 				<p>
-					Screenshots beat links because they’re harder to dismiss or deny, and
-					they visually reinforce market reality.
+					Screenshots beat links because they’re harder to dismiss or deny, and they
+					visually reinforce market reality.
 				</p>
 				<h3>
 					<strong>Always force OTD numbers upfront</strong>
 				</h3>
 				<p>Dealers love hiding fees until the end.</p>
 				<p>
-					Remote negotiations allow you to demand complete transparency before
-					moving forward:
+					Remote negotiations allow you to demand complete transparency before moving
+					forward:
 				</p>
 				<p>
 					<strong
-						>“Please send the itemized out-the-door price so I can compare
-						apples to apples.”</strong
+						>“Please send the itemized out-the-door price so I can compare apples to
+						apples.”</strong
 					>
 				</p>
 				<p>
-					They hate this, but they usually comply because there’s no in-person
-					pressure advantage for them.
+					They hate this, but they usually comply because there’s no in-person pressure
+					advantage for them.
 				</p>
 				<h3>
 					<strong>Copy-paste micro scripts</strong>
 				</h3>
-				<p>
-					Remote means you can use pre-written exact responses without emotional
-					drift.
-				</p>
+				<p>Remote means you can use pre-written exact responses without emotional drift.</p>
 				<p>Examples:</p>
 				<ul>
 					<li>
 						<p>
-							<strong
-								>“That number doesn’t align with current market data.”</strong
-							>
+							<strong>“That number doesn’t align with current market data.”</strong>
 						</p>
 					</li>
 					<li>
@@ -730,9 +661,7 @@
 				</p>
 				<p>
 					Remote gives you a paper trail:<br />
-					<strong
-						>“Just to confirm, you’re offering X OTD with no add-ons?”</strong
-					>
+					<strong>“Just to confirm, you’re offering X OTD with no add-ons?”</strong>
 				</p>
 				<p>Dealers will avoid contradicting their own written words.</p>
 				<h3>
@@ -757,8 +686,8 @@
 				</p>
 				<p>
 					<strong
-						>“I’m ready to move forward today at $X OTD. If that works, send the
-						buyer’s order.”</strong
+						>“I’m ready to move forward today at $X OTD. If that works, send the buyer’s
+						order.”</strong
 					>
 				</p>
 				<p>Clear. Direct. Zero drama.</p>
@@ -771,8 +700,7 @@
 				</p>
 				<p>
 					A single message like:<br />
-					<strong>“Still letting me know if you can get closer to X.”</strong
-					><br />
+					<strong>“Still letting me know if you can get closer to X.”</strong><br />
 					…makes them re-engage.
 				</p>
 				<h3>
@@ -786,18 +714,13 @@
 					<li>warranties</li>
 					<li>
 						trade-in valuation<br />
-						…in separate message threads, without them trying to merge it into
-						one messy conversation.
+						…in separate message threads, without them trying to merge it into one messy
+						conversation.
 					</li>
 				</ul>
-				<p>
-					Remote gives you compartmentalization that’s nearly impossible
-					in-person.
-				</p>
+				<p>Remote gives you compartmentalization that’s nearly impossible in-person.</p>
 				<h3>
-					<strong
-						>End the conversation exactly when it stops providing value</strong
-					>
+					<strong>End the conversation exactly when it stops providing value</strong>
 				</h3>
 				<p>
 					This is the remote version of walking out.<br />
@@ -808,9 +731,8 @@
 					Either way, you lose nothing.
 				</p>
 				<p>
-					If you want this distilled into a ultra-compact checklist you can drop
-					into your scripts or Level 3 negotiation notes, I can give you that
-					too.
+					If you want this distilled into a ultra-compact checklist you can drop into your
+					scripts or Level 3 negotiation notes, I can give you that too.
 				</p>
 			</div>
 		</div>

@@ -340,7 +340,7 @@ def filter_valid_listings(
         if not l.get("price"):
             skipped_listings.append(l)
             title = l.get("title", "Unknown")
-            skip_summary[title]["Listing price is unavailable."] += 1
+            skip_summary[title]["Dealer has not set a listing price."] += 1
             continue
 
         year = str(l["year"])

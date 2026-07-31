@@ -73,9 +73,11 @@ Level 1 retains its model/trim-table pricing workflow. For used and certified
 Level 2 and Level 3 listings, DealLens submits an already-collected listing VIN
 to KBB to resolve KBB's exact used style (for example, `LUXE Sport Utility 4D`).
 It validates that exact style page as a used-vehicle page and only accepts local
-FPP/FMV from that VIN-resolved URL. New Level 2 and Level 3 listings instead map
-to the matching row on KBB's year/make/model pricing table, retain its MSRP and
-national FPP, and follow that row's trim link for local FPP. Compatible later
+FPP/FMV from that VIN-resolved URL. New Level 2 and Level 3 listings also attempt
+VIN resolution so body-specific styles can be retained. When KBB does not return
+a style for a new VIN, they gracefully fall back to the matching row on KBB's
+year/make/model pricing table, retain its MSRP and national FPP, and follow that
+row's trim link for local FPP. Compatible later
 listings may reuse the resolved configuration; optional body-style, fuel, and
 powertrain fields constrain reuse when both records provide them. After resolving
 listings, DealLens loads the national trim table and token-matches MSRP and national

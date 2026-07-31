@@ -181,6 +181,7 @@ async def get_used_style_url_from_vins(
     make: str,
     model_slug: str,
     vins: list[str],
+    body_style: str = "",
 ) -> tuple[str, str] | None:
     """Resolve KBB's canonical used style label and URL from an existing VIN."""
     expected_path = f"/{make_string_url_safe(make)}/{model_slug}/{year}/vin/"
@@ -238,7 +239,9 @@ async def get_used_style_url_from_vins(
                             "KBB VIN result did not provide a style for %s", vin
                         )
                         continue
-                    style = style_match.group(1).strip()
+                    style = _complete_kbb_style_with_body(
+                        style_match.group(1).strip(), body_style
+                    )
                     style_url = KBB_LOOKUP_TRIM_URL.format(
                         make=make_string_url_safe(make),
                         model=model_slug,
@@ -291,6 +294,32 @@ async def get_used_style_url_from_vins(
             len(attempted_vins), year, make, model_slug,
         )
     return None
+
+
+_KBB_BODY_STYLE_SUFFIXES = {
+    "convertible": "Convertible 2D",
+    "coupe": "Coupe 2D",
+    "hatchback": "Hatchback 4D",
+    "sedan": "Sedan 4D",
+    "sport utility": "Sport Utility 4D",
+    "sport utility vehicle": "Sport Utility 4D",
+    "suv": "Sport Utility 4D",
+    "wagon": "Wagon 4D",
+}
+
+
+def _complete_kbb_style_with_body(style: str, body_style: str) -> str:
+    """Add KBB's body suffix when its VIN result returns only the trim."""
+    normalized_body = re.sub(r"[^a-z0-9]+", " ", body_style.casefold()).strip()
+    suffix = _KBB_BODY_STYLE_SUFFIXES.get(normalized_body)
+    if not suffix:
+        return style
+
+    normalized_style = re.sub(r"[^a-z0-9]+", " ", style.casefold()).strip()
+    body_tokens = re.sub(r"\s+\d+d$", "", suffix.casefold()).split()
+    if all(token in normalized_style.split() for token in body_tokens):
+        return style
+    return f"{style} {suffix}"
 
 
 async def goto_with_retry(
@@ -1184,7 +1213,7 @@ def _cluster_vin_lookahead_listings(listings: list[dict]) -> list[list[dict]]:
     clusters: dict[tuple[str, ...], list[dict]] = {}
     for listing in listings:
         if str(listing.get("condition") or "").casefold() not in {
-            "used", "certified", "cpo",
+            "new", "used", "certified", "cpo",
         }:
             continue
         clusters.setdefault(_vin_lookahead_key(listing), []).append(listing)
@@ -1399,7 +1428,7 @@ async def _resolve_vin_first_variant(
 
     for listing in variant_listings:
         condition = str(listing.get("condition") or "").casefold()
-        if condition not in {"used", "certified", "cpo"}:
+        if condition not in {"new", "used", "certified", "cpo"}:
             continue
         vin = str(listing.get("vin") or "").strip()
         if not vin:
@@ -1425,7 +1454,12 @@ async def _resolve_vin_first_variant(
 
         if not configuration:
             resolution = await get_used_style_url_from_vins(
-                page, year, make, model_slug, [vin]
+                page,
+                year,
+                make,
+                model_slug,
+                [vin],
+                _listing_configuration_value(listing, "body_style"),
             )
             if not resolution:
                 logger.warning(
@@ -1458,6 +1492,20 @@ async def _resolve_vin_first_variant(
             model_configurations[fingerprint] = configuration
 
         style = str(configuration["style"])
+        body_style = (
+            _listing_configuration_value(listing, "body_style")
+            or str(configuration.get("body_style") or "")
+        )
+        completed_style = _complete_kbb_style_with_body(style, body_style)
+        if completed_style != style:
+            style = completed_style
+            configuration["style"] = style
+            configuration["style_url"] = KBB_LOOKUP_TRIM_URL.format(
+                make=make_string_url_safe(make),
+                model=model_slug,
+                year=year,
+                trim=make_string_url_safe(style),
+            )
         style_url = str(configuration["style_url"])
         cache_key = f"{year} {make} {model_name} {style}"
         configuration["cache_key"] = cache_key

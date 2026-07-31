@@ -201,6 +201,14 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
         listing = lc.listing
         report = Path(lc.report_path) if lc.report_path else None
         narrative: list[str] = []
+        condition = str(listing.get("condition") or "").casefold()
+        is_new = condition == "new"
+        if (
+            condition in {"used", "certified", "cpo"}
+            and listing.get("mileage") is None
+        ):
+            information_only.append((listing, "Mileage not available."))
+            continue
         assessment = _price_assessment(lc, narrative)
         if assessment is None:
             information_only.append(
@@ -210,7 +218,6 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
 
         deal = assessment[0]
         pricing_visual = assessment[4]
-        is_new = str(listing.get("condition") or "").casefold() == "new"
         if (report is None or not report.exists()) and is_new:
             risk = 0
             lc.risk_score = risk
@@ -287,7 +294,7 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
 
     for listing in ctx.skipped_listings:
         reason = (
-            "Listing price is unavailable."
+            "Dealer has not set a listing price."
             if not listing.get("price")
             else "The listing trim could not be mapped to compatible KBB pricing."
         )

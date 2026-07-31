@@ -1,4 +1,5 @@
 from dataclasses import replace
+import re
 
 from analysis.level1_kbb import Level1KBBMatch, Level1KBBResult
 from analysis.level1_models import (
@@ -15,6 +16,11 @@ from analysis.level1_models import (
 )
 from analysis.level1_report import _format_percent, render_level1_html
 from utils.models import TrimValuation
+
+
+def compact_rendered_html(html: str) -> str:
+	"""Ignore formatter-only whitespace while preserving rendered content."""
+	return re.sub(r">\s+<", "><", re.sub(r"\s+", " ", html)).strip()
 
 
 def metric(median, count, missing=0, stddev=1_000):
@@ -147,7 +153,7 @@ def report_data():
 
 def test_report_contains_required_aggregate_sections_only():
 	snapshot, kbb = report_data()
-	html = render_level1_html(snapshot, kbb)
+	html = compact_rendered_html(render_level1_html(snapshot, kbb))
 	assert "$25,200 FPP" in html
 
 	for text in (
@@ -195,7 +201,7 @@ def test_report_falls_back_to_annotated_msrp():
 		failures=(),
 	)
 
-	html = render_level1_html(snapshot, result)
+	html = compact_rendered_html(render_level1_html(snapshot, result))
 
 	assert "$27,000 (MSRP)" in html
 
@@ -214,7 +220,7 @@ def test_report_explains_confidence_in_plain_language():
 		),
 	)
 
-	html = render_level1_html(snapshot, kbb)
+	html = compact_rendered_html(render_level1_html(snapshot, kbb))
 
 	assert "some comparisons are based on limited or inconsistent data" in html
 	assert "too few priced vehicles" in html
@@ -226,7 +232,7 @@ def test_report_explains_confidence_in_plain_language():
 def test_report_groups_sources_instead_of_listing_each_request():
 	snapshot, kbb = report_data()
 
-	html = render_level1_html(snapshot, kbb)
+	html = compact_rendered_html(render_level1_html(snapshot, kbb))
 
 	assert html.count("https://api.visor.vin/v1/facets") == 1
 	assert "metric=price.median" not in html
@@ -259,7 +265,9 @@ def test_report_condenses_nonconsecutive_years_and_formats_kilometers():
 			"distance_unit": "km",
 		},
 	)
-	html = render_level1_html(replace(snapshot, scope=scope), kbb)
+	html = compact_rendered_html(
+		render_level1_html(replace(snapshot, scope=scope), kbb)
+	)
 
 	assert "used 2021, 2023-2024, 2026 Honda Civics" in html
 	assert "within 75 km radius of V6B 1A1" in html
@@ -272,7 +280,9 @@ def test_report_describes_blended_inventory_as_overall_market():
 		conditions=("new", "used", "certified"),
 	)
 
-	html = render_level1_html(replace(snapshot, scope=scope), kbb)
+	html = compact_rendered_html(
+		render_level1_html(replace(snapshot, scope=scope), kbb)
+	)
 
 	assert "This report covers the overall 2024 Honda Civics" in html
 	assert "$25,200 FPP" in html
