@@ -247,7 +247,7 @@ def test_report_summarizes_unevaluated_reasons_without_listing_rows():
 	)
 
 	assert "KBB pricing unavailable <strong>(2)</strong>" in html
-	assert "The remaining <strong>2</strong> could not be evaluated" in html
+	assert '<span>Unable to analyze</span><strong>2</strong>' in html
 	assert "Listings not evaluated" in html
 	assert "Unable to Evaluate" not in html
 	assert html.index("Listings not evaluated") < html.index("<main")
@@ -356,6 +356,11 @@ def test_report_renders_price_only_row_without_deal_score():
 	assert '>Dealer listing</a>' in html
 	assert '>Visor listing</a>' in html
 	assert '>KBB valuation</a>' in html
+	assert '<section class="snapshot">' in html
+	assert '<span>Requested listings</span><strong>1</strong>' in html
+	assert '<span>Risk-adjusted</span><strong>0</strong>' in html
+	assert '<span>Price-only</span><strong>1</strong>' in html
+	assert '<span>Unable to analyze</span><strong>0</strong>' in html
 	assert '$25,000</strong> • Miles: <strong>10,000</strong>' in html
 	assert "Risk Score:" not in html
 	assert "VIN: <strong>TESTVIN" not in html
@@ -518,6 +523,13 @@ def test_price_only_ratings_start_on_a_new_page():
 	assert "main.deal-bin + section.deal-bin" in stylesheet
 	assert "break-before: page" in stylesheet
 	assert "page-break-before: always" in stylesheet
+
+
+def test_completed_ratings_have_counted_section_heading():
+	template = Path("templates/level2.html").read_text(encoding="utf-8")
+
+	assert "Completed Risk-Adjusted Rating ({{ full_count }})" in template
+	assert "{% if all_ratings %}" in template
 
 
 def test_level2_bins_sort_by_global_deal_score():

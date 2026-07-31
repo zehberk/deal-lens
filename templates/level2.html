@@ -9,22 +9,23 @@
 			<div class="title-row">
 				<div class="report-title">
 					<p class="eyebrow">Level 2</p>
-					<h1>{{ make }} {{ model }} Market Overview</h1>
+					<h1>{{ make }} {{ model }} Listing Analysis</h1>
 				</div>
 				{% if logo %}<img src="{{ logo }}" alt="DealLens">{% endif %}
 			</div>
-			<p class="scope">{{ summary }}</p>
+			<div class="report-meta"><span>{{ summary }}</span><span>Generated {{ generated_at }}</span></div>
 		</header>
 
-		<section class="intro">
-			<p class="generated">Generated: {{ generated_at }}</p>
-			<p>This report compares each listing with compatible KBB pricing. When a vehicle-history report is available, it also evaluates title, accident, mileage, service, and warranty evidence to produce a complete rating.</p>
-			<div class="rating-guide"><strong>Reading each rating:</strong> The white triangle shows the listing price across the colored price scale; the prices below it are rating cutoffs. Deal Score starts with that full 0–100 price scale, subtracts an accelerating penalty for actual risk, and adds modest low-mileage and warranty bonuses. It is not a confidence score.</div>
-			<p class="footnote">A complete Level 2 rating requires both compatible KBB pricing and a vehicle-history report. Listings without that evidence receive a price assessment or are counted under an evaluation failure reason.</p>
-		</section>
+		<p class="report-summary"><strong>Deal Score</strong> combines price position with vehicle-history risk, mileage, and warranty evidence. Price-only ratings evaluate price without vehicle-history adjustments.</p>
 
 		{% set unevaluated_count = total_count - full_count - (price_only|length) %}
-		<p class="report-counts">Of {{ total_count }} returned listings, <strong>{{ full_count }}</strong> received a complete risk-adjusted rating and <strong>{{ price_only|length }}</strong> received a price-only rating.{% if unevaluated_count > 0 %} The remaining <strong>{{ unevaluated_count }}</strong> could not be evaluated for the following reasons:{% endif %}</p>
+		<h2 class="visually-hidden">Analysis snapshot</h2>
+		<section class="snapshot">
+			<div><span>Requested listings</span><strong>{{ total_count }}</strong></div>
+			<div><span>Risk-adjusted</span><strong>{{ full_count }}</strong></div>
+			<div><span>Price-only</span><strong>{{ price_only|length }}</strong></div>
+			<div><span>Unable to analyze</span><strong>{{ unevaluated_count }}</strong></div>
+		</section>
 
 		{% if information_summary %}
 			<section class="evaluation-reasons">
@@ -98,8 +99,8 @@
 			</div>
 			</div>
 			{% if not is_price_only %}<div class="listing-meta">
-				<div>VIN: <strong>{{ vin }}</strong></div>
-				<div>Dealer: <strong>{{ seller_name }} - {{ seller_location }}</strong></div>
+				<div><span class="meta-label">VIN:</span> {{ vin }}</div>
+				<div><span class="meta-label">Dealer:</span> {{ seller_name }} - {{ seller_location }}</div>
 			</div>
 			<nav class="listing-links" aria-label="Listing resources">
 				{% if listing.dealer_listing %}<a href="{{ listing.dealer_listing }}">Dealer listing</a>{% endif %}
@@ -116,12 +117,13 @@
 		{%- endmacro %}
 
 		<main class="deal-bin">
+			{% if all_ratings %}<h2>Completed Risk-Adjusted Rating ({{ full_count }})</h2>{% endif %}
 			{% for rating in all_ratings %}<article class="listing {{ rating[1]|lower }}-listing">{{ vehicle_row(rating) }}</article>{% endfor %}
 		</main>
 
 		{% if price_only %}
 			<section class="deal-bin">
-				<h2>Price-only ratings</h2>
+				<h2>Price-Only Ratings</h2>
 				<p>These ratings use compatible KBB pricing but do not include vehicle-history risk.</p>
 				{% for rating in price_only %}<article class="listing price-only-listing {{ rating[1]|lower }}-listing">{{ vehicle_row(rating, true) }}</article>{% endfor %}
 			</section>
