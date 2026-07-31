@@ -2,6 +2,7 @@ import asyncio, json, logging, re, time
 import urllib.parse
 
 from datetime import datetime
+from collections.abc import Sequence
 from playwright.async_api import (
     APIRequestContext,
     async_playwright,
@@ -50,6 +51,7 @@ KBB_USED_VIN_MAX_ATTEMPTS = 3
 KBB_USED_VIN_ATTEMPT_TIMEOUT_SECONDS = 10
 KBB_NATIONAL_WORKERS = 3
 KBB_VIN_WORKERS = 5
+KBB_NEW_LOCAL_WORKERS = 5
 KBB_HEADLESS_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -1316,6 +1318,61 @@ async def _prefetch_vin_first_national_tables(
     )
 
 
+async def _fetch_new_local_pricing_jobs(
+    context: BrowserContext,
+    progress: ProgressReporter,
+    entries: dict[str, dict],
+    jobs: Sequence[tuple[str, str, str, str, str, str | None]],
+) -> None:
+    """Fetch unique new-trim local prices with bounded page concurrency."""
+    if not jobs:
+        return
+
+    semaphore = asyncio.Semaphore(KBB_NEW_LOCAL_WORKERS)
+    started = time.perf_counter()
+
+    async def fetch(
+        job: tuple[str, str, str, str, str, str | None],
+    ) -> None:
+        year, make, model_slug, national_trim, cache_key, source_url = job
+        async with semaphore:
+            page = await context.new_page()
+            configure_kbb_page_diagnostics(page)
+            try:
+                fmr_low, fmr_high, fpp_local, fmv, local_source = (
+                    await _get_local_pricing_with_progress(
+                        progress,
+                        page,
+                        year,
+                        make,
+                        model_slug,
+                        national_trim,
+                        cache_key,
+                        entries,
+                        source_url=source_url,
+                        expect_used=False,
+                    )
+                )
+                entries[cache_key].update({
+                    "fmr_low": fmr_low,
+                    "fmr_high": fmr_high,
+                    "fpp_local": fpp_local,
+                    "fmv": fmv,
+                    "local_source": local_source,
+                    "local_timestamp": datetime.now().isoformat(),
+                    "pricing_basis": "new",
+                })
+            finally:
+                await page.close()
+
+    await asyncio.gather(*(fetch(job) for job in jobs))
+    logger.info(
+        "KBB new local pricing completed in %.2fs with %d worker(s)",
+        time.perf_counter() - started,
+        min(KBB_NEW_LOCAL_WORKERS, len(jobs)),
+    )
+
+
 async def _resolve_vin_first_variant(
     page: Page,
     progress,
@@ -1548,6 +1605,9 @@ async def get_vin_first_pricing_data(
                 variant_listings, model_configurations,
             ))
 
+        new_local_jobs: dict[
+            str, tuple[str, str, str, str, str, str | None]
+        ] = {}
         for (
             ymm, model_slug, year, model_name, variant_listings, model_configurations
         ) in variant_jobs:
@@ -1594,46 +1654,37 @@ async def get_vin_first_pricing_data(
                     model=model_name,
                     kbb_trim=cache_key,
                 )
+                is_new = str(listing.get("condition") or "").casefold() == "new"
                 entry.update({
                     "msrp": msrp,
                     "fpp_natl": national_fpp,
                     "natl_source": source,
                     "natl_timestamp": timestamp,
-                    "pricing_basis": "national",
+                    "pricing_basis": "new" if is_new else "national",
                 })
-                if (
-                    str(listing.get("condition") or "").casefold() == "new"
-                    and not is_local_fresh(entry)
-                ):
+                if is_new and not is_local_fresh(entry):
                     local_source = (
                         urllib.parse.urljoin(source, trim_source)
                         if trim_source else None
                     )
-                    fmr_low, fmr_high, fpp_local, fmv, local_source = (
-                        await _get_local_pricing_with_progress(
-                            progress,
-                            page,
+                    new_local_jobs.setdefault(
+                        cache_key,
+                        (
                             year,
                             make,
                             model_slug,
                             national_trim,
                             cache_key,
-                            entries,
-                            source_url=local_source,
-                            expect_used=False,
-                        )
+                            local_source,
+                        ),
                     )
-                    entry.update({
-                        "fmr_low": fmr_low,
-                        "fmr_high": fmr_high,
-                        "fpp_local": fpp_local,
-                        "fmv": fmv,
-                        "local_source": local_source,
-                        "local_timestamp": datetime.now().isoformat(),
-                        "pricing_basis": "new",
-                    })
                 listing["kbb_cache_key"] = cache_key
 
+        await _fetch_new_local_pricing_jobs(
+            context, progress, entries, list(new_local_jobs.values())
+        )
+
+        for _, _, year, model_name, _, _ in variant_jobs:
             for cache_key, entry in entries.items():
                 if not cache_key.casefold().startswith(
                     f"{year} {make} {model_name} ".casefold()
