@@ -771,7 +771,20 @@ def score_mileage_use(
         return 0.0
 
     expected = years_difference * 15000
-    actual = max(carfax.last_odometer_reading, int(listing["mileage"]))
+    available_readings = []
+    if carfax.last_odometer_reading > 0:
+        available_readings.append(carfax.last_odometer_reading)
+    listing_mileage = listing.get("mileage")
+    if listing_mileage is not None:
+        try:
+            available_readings.append(int(listing_mileage))
+        except (TypeError, ValueError):
+            pass
+    if not available_readings:
+        if narrative is not None:
+            narrative.append("Mileage is unavailable, so mileage risk was not scored.")
+        return 0.0
+    actual = max(available_readings)
     deviation = (actual - expected) / expected
     percent_diff = deviation * 100
 

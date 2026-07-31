@@ -152,11 +152,48 @@ async def test_level2_rates_new_vehicle_without_history_report(monkeypatch):
 	assert risk == 0
 	assert context.risk_score == 0
 	assert pricing["risk_summary"] == "none identified"
-	assert "New vehicles do not require a vehicle history report" in narrative
+	assert "New vehicles do not require a vehicle history report." in narrative
 	assert "Warranty active: ~36 months, ~36,000 miles remaining." in narrative
 	assert "New vehicles do not require a vehicle history report" not in pricing["detail_scores"]
 	assert not any("combined score changes" in line.casefold() for line in narrative)
 	assert render_args[4] == []
+
+
+async def test_level2_cannot_analyze_used_vehicle_without_mileage(monkeypatch):
+	listing = {
+		"id": "used-no-mileage",
+		"vin": "2HGFE4F8XSH354866",
+		"title": "2025 Honda Civic Sport",
+		"condition": "Used",
+		"mileage": None,
+		"price": 29_436,
+	}
+	ctx = AnalysisContext(make="Honda", model="Civic")
+	ctx.listings = [ListingContext(
+		listing_id="used-no-mileage",
+		listing=listing,
+	)]
+
+	async def fake_prepare(*_args, **_kwargs):
+		return ctx
+
+	render_args: tuple = ()
+
+	async def fake_render(*args):
+		nonlocal render_args
+		render_args = args
+
+	price_assessment = Mock()
+	monkeypatch.setattr(level2, "prepare_level2_analysis", fake_prepare)
+	monkeypatch.setattr(level2, "_price_assessment", price_assessment)
+	monkeypatch.setattr(level2, "render_level2_pdf", fake_render)
+
+	await level2.start_level2_analysis({}, [listing], "unused.json")
+
+	price_assessment.assert_not_called()
+	assert render_args[3] == []
+	assert render_args[4] == []
+	assert render_args[5] == [(listing, "Mileage not available.")]
 
 
 async def test_level2_uses_existing_history_report_for_new_vehicle(monkeypatch):

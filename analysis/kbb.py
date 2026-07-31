@@ -1213,7 +1213,7 @@ def _cluster_vin_lookahead_listings(listings: list[dict]) -> list[list[dict]]:
     clusters: dict[tuple[str, ...], list[dict]] = {}
     for listing in listings:
         if str(listing.get("condition") or "").casefold() not in {
-            "used", "certified", "cpo",
+            "new", "used", "certified", "cpo",
         }:
             continue
         clusters.setdefault(_vin_lookahead_key(listing), []).append(listing)
@@ -1428,7 +1428,7 @@ async def _resolve_vin_first_variant(
 
     for listing in variant_listings:
         condition = str(listing.get("condition") or "").casefold()
-        if condition not in {"used", "certified", "cpo"}:
+        if condition not in {"new", "used", "certified", "cpo"}:
             continue
         vin = str(listing.get("vin") or "").strip()
         if not vin:
