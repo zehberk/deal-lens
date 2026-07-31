@@ -309,6 +309,9 @@ class DealScoreResult:
     risk_score: float
     risk_penalty: float
     favorable_bonus: float
+    low_risk_floor: float
+    floor_applied: bool
+    score_subtracted: float
     final_score: int
     rating: str
 
@@ -337,12 +340,19 @@ def calculate_deal_score_result(
     price_risk_weight = 0.8 + 0.2 * (100.0 - price_score) / 100.0
     applied_penalty = risk_penalty(bounded_risk) * price_risk_weight
     bonus = favorable_evidence_bonus(favorable_evidence, bounded_risk)
-    final_score = int(calculate_deal_score(price_score, bounded_risk, favorable_evidence))
+    calculated_score = max(0.0, min(100.0, price_score - applied_penalty + bonus))
+    low_risk_floor = MINIMUM_LOW_RISK_SCORE * (1.0 - bounded_risk / 10.0)
+    final_value = calculate_deal_score(price_score, bounded_risk, favorable_evidence)
+    score_without_risk = calculate_deal_score(price_score, 0.0, favorable_evidence)
+    final_score = math.floor(final_value + 0.5)
     return DealScoreResult(
         price_score=price_score,
         risk_score=bounded_risk,
         risk_penalty=applied_penalty,
         favorable_bonus=bonus,
+        low_risk_floor=low_risk_floor,
+        floor_applied=low_risk_floor > calculated_score,
+        score_subtracted=max(0.0, score_without_risk - final_value),
         final_score=final_score,
         rating=deal_rating_from_score(final_score),
     )
@@ -687,8 +697,7 @@ def score_warranty_status(
 
     if rating and narrative is not None:
         narrative.append(
-            f"Basic warranty is active with {basic_months} months left and {basic_miles} miles left; "
-            f"at 15,000 miles per year, the limiting coverage is about {effective_months:.1f} months."
+            f"Warranty active: ~{basic_months} months, ~{basic_miles:,} miles remaining."
         )
 
     return rating

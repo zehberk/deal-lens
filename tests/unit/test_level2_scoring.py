@@ -99,9 +99,19 @@ def test_score_result_decouples_calculation_from_explanation():
 	assert result.risk_score == 1
 	assert result.risk_penalty > 0
 	assert result.favorable_bonus == 0
-	assert result.final_score == 59
-	assert result.rating == "Fair"
-	assert format_deal_score_narrative(result).startswith("Deal Score is 59%")
+	assert result.final_score == 60
+	assert result.rating == "Good"
+	assert not result.floor_applied
+	assert format_deal_score_narrative(result).startswith("Deal Score is 60%")
+
+
+def test_score_result_rounds_and_reports_applied_low_risk_floor():
+	result = calculate_deal_score_result(0, 1.2493, 0)
+
+	assert result.low_risk_floor == pytest.approx(8.7507)
+	assert result.floor_applied
+	assert result.score_subtracted == pytest.approx(1.2493)
+	assert result.final_score == 9
 
 
 def test_zero_score_components_use_plain_language():
@@ -136,7 +146,7 @@ def test_warranty_bonus_uses_limiting_mileage_at_typical_use():
 	result = score_warranty_status(carfax, {"coverages": []}, narrative)
 
 	assert result == pytest.approx(-0.0916, abs=0.001)
-	assert "about 0.5 months" in narrative[-1]
+	assert narrative == ["Warranty active: ~5 months, ~687 miles remaining."]
 
 
 def test_missing_warranty_information_is_neutral():

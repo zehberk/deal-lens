@@ -235,6 +235,16 @@ def logo_data_uri(path: Path) -> str | None:
     return f"data:image/svg+xml;base64,{encoded}"
 
 
+def load_level2_icons(path: Path) -> dict[str, str]:
+    """Load the trusted local Lucide SVG set used by the Level 2 template."""
+    if not path.is_dir():
+        return {}
+    return {
+        icon.stem: icon.read_text(encoding="utf-8")
+        for icon in sorted(path.glob("*.svg"))
+    }
+
+
 def image_data_uri(path: Path) -> str:
     media_type = {
         ".gif": "image/gif",
@@ -313,6 +323,7 @@ async def render_level2_pdf(
         model=model,
         report_title=report_title,
         logo=logo_data_uri(Path("img/deallens-logo.svg")),
+        level2_icons=load_level2_icons(Path("img/icons/lucide")),
         generated_at=generated_at,
         summary=summary,
         total_count=total_count,

@@ -35,6 +35,26 @@
 
 		{% macro miles(n) -%}{{ "{:,}".format(n if n is not none else 0) }}{%- endmacro %}
 		{% macro money(n) -%}{{ "${:,.0f}".format(n) }}{%- endmacro %}
+		{% macro lucide_icon(name, fallback) -%}<span class="detail-icon {{ name }}-icon" aria-hidden="true">{% if level2_icons is defined and level2_icons.get(name) %}{{ level2_icons.get(name)|safe }}{% else %}{{ fallback }}{% endif %}</span>{%- endmacro %}
+		{% macro detail_icon(line) -%}
+			{% set detail = line|lower %}
+			{% if "price" in detail %}{{ lucide_icon("circle-dollar-sign", "$") }}
+			{% elif "warranty" in detail %}{{ lucide_icon("file-text", "◇") }}
+			{% elif "mile" in detail or "driven" in detail or "odometer" in detail %}{{ lucide_icon("circle-gauge", "◴") }}
+			{% elif "deal score" in detail or "rating" in detail %}{{ lucide_icon("circle-gauge", "%") }}
+			{% elif "title" in detail or "damage" in detail or "accident" in detail %}{{ lucide_icon("triangle-alert", "!") }}
+			{% else %}{{ lucide_icon("circle-alert", "i") }}{% endif %}
+		{%- endmacro %}
+		{% macro detail_text(line) -%}
+			{% set words = line.split(" ") %}
+			{% if line.startswith("Listing price is ") and words|length > 5 %}Listing price is <strong>{{ words[3] }} {{ words[4] }}</strong> {{ words[5:]|join(" ") }}
+			{% elif line.startswith("Vehicle has been driven significantly less than expected") %}Vehicle has been driven <strong>significantly less</strong> than expected for its age <strong>{{ words[-1] }}</strong>
+			{% elif line.startswith("Vehicle has been driven less than expected") %}Vehicle has been driven <strong>less</strong> than expected for its age <strong>{{ words[-1] }}</strong>
+			{% elif line.startswith("Vehicle has been driven much more than expected") %}Vehicle has been driven <strong>much more</strong> than expected for its age <strong>{{ words[-1] }}</strong>
+			{% elif line.startswith("Vehicle has been driven more than expected") %}Vehicle has been driven <strong>more</strong> than expected for its age <strong>{{ words[-1] }}</strong>
+			{% elif line.startswith("Vehicle has been driven an expected amount") %}Vehicle has been driven an <strong>expected amount</strong> for its age.
+			{% else %}{{ line }}{% endif %}
+		{%- endmacro %}
 		{% macro vehicle_row(rating) -%}
 			{% set listing = rating[0] %}
 			{% set deal = rating[1] %}
@@ -51,24 +71,16 @@
 			<div class="listing-layout{% if imgs %} has-images{% endif %}">
 			{% if imgs %}<div class="image-viewer">{% for img in imgs %}<img src="{{ img }}" alt="Vehicle image">{% endfor %}</div>{% endif %}
 			<div class="listing-content">
-			<div class="listing-title">
-				{{ listing.display_title or listing.title }}
-				<span class="condition-badge">{{ display_listing_condition(listing.get("condition")) }}</span>
-				<span class="deal-rating">{{ deal }}</span>
-				{% if is_downgraded %}<span class="downgrade-tag">Downgraded</span>{% endif %}
-				<a class="visor-link" href="{{ listing.visor_listing }}">View on Visor</a>
+			<div class="listing-summary">
+			<div class="listing-heading">
+				<div class="listing-title">
+					{{ listing.display_title or listing.title }}
+					<div class="listing-badges"><span class="condition-badge">{{ display_listing_condition(listing.get("condition")) }}</span>{% if is_downgraded %}<span class="downgrade-tag">Downgraded</span>{% endif %}</div>
+				</div>
+				{% if pricing.deal_score is defined and pricing.deal_score is not none %}<div class="deal-score"><strong>Deal Score</strong><span>{{ pricing.deal_score|round|int }}%</span></div>{% endif %}
 			</div>
 			<div class="listing-title-bar"></div>
-			<div class="listing-evaluation{% if pricing.deal_score is defined and pricing.deal_score is not none %} has-score{% endif %}">
-			<div class="listing-measures">
-			<div class="listing-specs compact-grid">
-				<div>VIN: <strong>{{ vin }}</strong></div>
-				<div>Mileage: <strong>{{ miles(listing.mileage) }}</strong></div>
-				<div>Listing Price: <strong>{{ money(listing.price) }}</strong></div>
-				<div>Risk Score: <strong>{{ risk if risk is not none else "Not available" }}</strong></div>
-				<div>Dealer: <strong>{{ seller_name }} - {{ seller_location }}</strong></div>
-				<div><a class="dealer-link" href="{{ listing.dealer_listing }}">View Dealer Listing</a></div>
-			</div>
+			<div class="listing-key-facts"><strong>{{ money(listing.price) }}</strong> • Miles: <strong>{{ miles(listing.mileage) }}</strong> • Risk Score: <strong>{{ risk if risk is not none else "Not available" }}</strong></div>
 			<div class="price-position">
 				<div class="price-track" data-great-end-pct="{{ pricing.great_end_pct }}" data-good-end-pct="{{ pricing.good_end_pct }}" data-fair-end-pct="{{ pricing.fair_end_pct }}" data-poor-end-pct="{{ pricing.poor_end_pct }}">
 					<div class="price-segment great" data-width-pct="{{ pricing.great_end_pct }}">Great</div>
@@ -86,10 +98,20 @@
 				</div>
 			</div>
 			</div>
-			{% if pricing.deal_score is defined and pricing.deal_score is not none %}<div class="deal-score"><strong>Deal Score</strong><span>{{ pricing.deal_score|round|int }}%</span></div>{% endif %}
+			<div class="listing-meta">
+				<div>VIN: <strong>{{ vin }}</strong></div>
+				<div>Dealer: <strong>{{ seller_name }} - {{ seller_location }}</strong></div>
 			</div>
-			<div class="listing-notes"><strong>Notes:</strong><ul>{% for line in narrative %}<li>{{ line }}</li>{% endfor %}</ul></div>
+			<nav class="listing-links" aria-label="Listing resources">
+				{% if listing.dealer_listing %}<a href="{{ listing.dealer_listing }}">Dealer listing</a>{% endif %}
+				{% if listing.visor_listing %}<a href="{{ listing.visor_listing }}">Visor listing</a>{% endif %}
+				{% if pricing.kbb_url %}<a href="{{ pricing.kbb_url }}">KBB valuation</a>{% endif %}
+			</nav>
 			</div>
+			<aside class="listing-notes" aria-label="Rating details">
+				{% for line in narrative %}<div class="detail-row">{{ detail_icon(line) }}<span>{{ detail_text(line) }}{% if pricing.detail_scores is defined and pricing.detail_scores.get(line) %} <em class="score-effect">{{ pricing.detail_scores.get(line) }}</em>{% endif %}</span></div>{% endfor %}
+				{% if pricing.risk_summary %}<div class="detail-row risk-row">{% if pricing.risk_summary == "none identified" %}{{ lucide_icon("shield-check", "✓") }}{% else %}{{ lucide_icon("shield-alert", "!") }}{% endif %}<span>{% if pricing.risk_summary == "none identified" %}No risk{% else %}Risk: {{ pricing.risk_summary }}. <em class="score-effect">-{{ "{:.1f}".format(pricing.risk_score_subtracted) }}</em>{% endif %}{% if pricing.score_floor is defined %} <em class="score-effect floor-effect">Low-risk floor applied: {{ "{:.1f}".format(pricing.score_floor) }}%</em>{% endif %}</span></div>{% endif %}
+			</aside>
 			</div>
 		{%- endmacro %}
 
