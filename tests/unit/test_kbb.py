@@ -236,6 +236,15 @@ async def test_vin_first_pricing_reuses_configuration_and_enriches_national(
 		"Toyota", "Prius", [first, second],
 		{"2025 Toyota Prius Plug-in Hybrid": [first, second]}, cache,
 	)
+	# Older caches recorded only KBB's bare VIN Style value. Ensure body-style
+	# completion repairs that cached configuration without another VIN request.
+	configuration = next(iter(cache["configurations"].values()))
+	configuration["style"] = "SE"
+	configuration["style_url"] = (
+		"https://kbb.com/toyota/prius-plug-in-hybrid/2025/se/"
+	)
+	first.pop("kbb_cache_key")
+	second.pop("kbb_cache_key")
 	await get_vin_first_pricing_data(
 		"Toyota", "Prius", [first, second],
 		{"2025 Toyota Prius Plug-in Hybrid": [first, second]}, cache,
@@ -253,6 +262,11 @@ async def test_vin_first_pricing_reuses_configuration_and_enriches_national(
 	assert entry["fpp_local"] == 32_500
 	assert entry["fpp_natl"] == 32_100
 	assert valuations[0].kbb_trim == first["kbb_cache_key"]
+	assert configuration["style"] == "SE Hatchback 4D"
+	assert configuration["style_url"] == (
+		"https://kbb.com/toyota/prius-plug-in-hybrid/2025/"
+		"se-hatchback-4d/"
+	)
 
 
 async def test_vin_first_does_not_fetch_local_price_without_vin_resolution(
@@ -432,6 +446,30 @@ async def test_vin_lookup_resolves_exact_used_style_url():
 		"?intent=trade-in-sell&vin=TESTVIN",
 		wait_until="domcontentloaded",
 		timeout=10_000,
+	)
+
+
+async def test_vin_lookup_adds_listing_body_style_to_incomplete_kbb_style():
+	page = MagicMock()
+	page.goto = AsyncMock()
+	page.wait_for_function = AsyncMock()
+	page.url = "https://kbb.com/honda/civic/2025/vin/"
+	page.inner_text = AsyncMock(return_value=(
+		"2025 Honda Civic\nStyle:\nSport\nEngine:\n2.0L"
+	))
+
+	result = await get_used_style_url_from_vins(
+		page,
+		"2025",
+		"Honda",
+		"civic",
+		["19XFL2H80SE034568"],
+		"hatchback",
+	)
+
+	assert result == (
+		"Sport Hatchback 4D",
+		"https://kbb.com/honda/civic/2025/sport-hatchback-4d/",
 	)
 
 
