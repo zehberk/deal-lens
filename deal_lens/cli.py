@@ -27,6 +27,27 @@ from visor_api.level2_service import Level2Collection
 from visor_api.query import VisorListingQuery
 
 
+def _cli_query(args: Namespace) -> VisorListingQuery:
+    """Return the supported URL filters, warning once about ignored options."""
+    cached = getattr(args, "_visor_query", None)
+    if cached is not None:
+        return cached
+
+    parsed = VisorListingQuery.from_url(args.url)
+    unsupported = getattr(parsed, "unsupported", {})
+    if unsupported:
+        names = ", ".join(sorted(unsupported))
+        CLI_CONSOLE.print(
+            f"[yellow]Ignoring unsupported URL options:[/] {names}"
+        )
+        logging.getLogger(__name__).warning(
+            "Ignoring unsupported URL options: %s", names
+        )
+        parsed = VisorListingQuery(filters=parsed.filters)
+    args._visor_query = parsed
+    return parsed
+
+
 def configure_logging(
     argv: list[str] | None = None,
     *,
@@ -114,7 +135,7 @@ async def run_analysis(
 
 async def collect_and_run_level1_api(args: Namespace) -> None:
     """Collect facet-native Level 1 data and render its market report."""
-    query = VisorListingQuery.from_url(args.url)
+    query = _cli_query(args)
     progress = cli_progress()
     client = _visor_client(progress)
     result = await asyncio.to_thread(
@@ -191,7 +212,7 @@ def apply_level2_collection_metadata(
 
 async def collect_and_run_level2_api(args: Namespace) -> None:
     """Collect Level 2 API listings and pass them to the legacy analysis workflow."""
-    query = VisorListingQuery.from_url(args.url)
+    query = _cli_query(args)
     progress = cli_progress()
     client = _visor_client(progress)
     result = await asyncio.to_thread(
@@ -218,7 +239,7 @@ async def collect_and_run_level2_api(args: Namespace) -> None:
 
 async def collect_and_run_level3_api(args: Namespace) -> None:
     """Collect API listings before invoking the current Level 3 placeholder."""
-    query = VisorListingQuery.from_url(args.url)
+    query = _cli_query(args)
     progress = cli_progress()
     client = _visor_client(progress)
     result = await asyncio.to_thread(
@@ -292,7 +313,7 @@ def apply_url_to_args(args: Namespace) -> Namespace:
     if not args.url:
         logging.error("You must provide a URL")
         exit(1)
-    filters = VisorListingQuery.from_url(args.url).filters
+    filters = _cli_query(args).filters
 
     args.make = next(iter(filters.get("make", ())), "")
     args.model = next(iter(filters.get("model", ())), "")

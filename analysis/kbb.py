@@ -1235,8 +1235,10 @@ def _complete_pricing_entry(entry: dict, *, model: str, kbb_trim: str) -> dict:
     return entry
 
 
-def _national_row_values(row: tuple) -> tuple[str, int | None, int | None, str, str]:
-    trim, msrp, national_fpp, source, _, timestamp = row
+def _national_row_values(
+    row: tuple,
+) -> tuple[str, int | None, int | None, str, str | None, str]:
+    trim, msrp, national_fpp, source, trim_source, timestamp = row
     return (
         str(trim),
         to_int(msrp) if msrp and str(msrp).upper() != "TBD" else None,
@@ -1244,6 +1246,7 @@ def _national_row_values(row: tuple) -> tuple[str, int | None, int | None, str, 
         if national_fpp and str(national_fpp).upper() != "TBD"
         else None,
         str(source),
+        str(trim_source) if trim_source else None,
         str(timestamp),
     )
 
@@ -1546,7 +1549,7 @@ async def get_vin_first_pricing_data(
             ))
 
         for (
-            ymm, _, year, model_name, variant_listings, model_configurations
+            ymm, model_slug, year, model_name, variant_listings, model_configurations
         ) in variant_jobs:
             national_rows = _fresh_vin_first_national_rows(national_tables.get(ymm))
             if national_rows is None:
@@ -1569,7 +1572,7 @@ async def get_vin_first_pricing_data(
                     )
                     continue
                 row = next(row for row in parsed_rows if row[0] == national_trim)
-                _, msrp, national_fpp, source, timestamp = row
+                _, msrp, national_fpp, source, _, timestamp = row
                 entries[cache_key].update({
                     "msrp": msrp,
                     "fpp_natl": national_fpp,
@@ -1584,7 +1587,7 @@ async def get_vin_first_pricing_data(
                 if not national_trim:
                     continue
                 row = next(row for row in parsed_rows if row[0] == national_trim)
-                _, msrp, national_fpp, source, timestamp = row
+                _, msrp, national_fpp, source, trim_source, timestamp = row
                 cache_key = f"{year} {make} {model_name} {national_trim}"
                 entry = _complete_pricing_entry(
                     entries.setdefault(cache_key, {}),
@@ -1598,6 +1601,37 @@ async def get_vin_first_pricing_data(
                     "natl_timestamp": timestamp,
                     "pricing_basis": "national",
                 })
+                if (
+                    str(listing.get("condition") or "").casefold() == "new"
+                    and not is_local_fresh(entry)
+                ):
+                    local_source = (
+                        urllib.parse.urljoin(source, trim_source)
+                        if trim_source else None
+                    )
+                    fmr_low, fmr_high, fpp_local, fmv, local_source = (
+                        await _get_local_pricing_with_progress(
+                            progress,
+                            page,
+                            year,
+                            make,
+                            model_slug,
+                            national_trim,
+                            cache_key,
+                            entries,
+                            source_url=local_source,
+                            expect_used=False,
+                        )
+                    )
+                    entry.update({
+                        "fmr_low": fmr_low,
+                        "fmr_high": fmr_high,
+                        "fpp_local": fpp_local,
+                        "fmv": fmv,
+                        "local_source": local_source,
+                        "local_timestamp": datetime.now().isoformat(),
+                        "pricing_basis": "new",
+                    })
                 listing["kbb_cache_key"] = cache_key
 
             for cache_key, entry in entries.items():

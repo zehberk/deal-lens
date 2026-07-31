@@ -242,6 +242,53 @@ async def test_vin_first_does_not_fetch_local_price_without_vin_resolution(
 	assert entry["local_source"] is None
 
 
+async def test_vin_first_new_listing_uses_national_trim_link_for_local_fpp(
+	monkeypatch,
+):
+	listing = {
+		"id": "new-one", "vin": "NEWVIN", "year": 2026,
+		"condition": "New", "trim": "SE",
+	}
+	local = AsyncMock(return_value=(36_000, 40_000, 39_500, None, (
+		"https://kbb.com/hyundai/ioniq-5/2026/se/"
+	)))
+	monkeypatch.setattr("analysis.kbb.create_kbb_browser", AsyncMock(
+		return_value=_fake_kbb_browser()
+	))
+	monkeypatch.setattr("analysis.kbb._get_local_pricing_with_progress", local)
+	monkeypatch.setattr("analysis.kbb.get_or_fetch_national_pricing", AsyncMock(
+		return_value=([(
+			"SE", "$39,100", "$38,750",
+			"https://kbb.com/hyundai/ioniq-5/2026/",
+			"/hyundai/ioniq-5/2026/se/", "2026-01-01",
+		)], None)
+	))
+	monkeypatch.setattr("analysis.kbb.save_cache", lambda _cache: None)
+	cache = {}
+
+	await get_vin_first_pricing_data(
+		"Hyundai", "IONIQ 5", [listing],
+		{"2026 Hyundai IONIQ 5": [listing]}, cache,
+	)
+
+	local.assert_awaited_once()
+	await_args = local.await_args
+	assert await_args is not None
+	assert await_args.args[5] == "SE"
+	assert await_args.kwargs == {
+		"source_url": "https://kbb.com/hyundai/ioniq-5/2026/se/",
+		"expect_used": False,
+	}
+	entry = cache["level23_entries"][listing["kbb_cache_key"]]
+	assert entry["pricing_basis"] == "new"
+	assert entry["msrp"] == 39_100
+	assert entry["fpp_natl"] == 38_750
+	assert entry["fpp_local"] == 39_500
+	assert entry["local_source"] == (
+		"https://kbb.com/hyundai/ioniq-5/2026/se/"
+	)
+
+
 def test_configuration_matching_treats_optional_evidence_as_constraints():
 	configuration = {
 		"style": "SE Hatchback 4D",
