@@ -19,6 +19,7 @@ from utils.cache import (
     is_entry_fresh,
     is_local_fresh,
     is_natl_fresh,
+    record_pricing_lookup,
     save_cache,
 )
 from analysis.normalization import (
@@ -152,27 +153,16 @@ async def log_kbb_vin_diagnostic_state(
         )
 
 
-async def get_model_slug_map(
-    slugs: dict[str, str],
+def get_model_slug_map(
     make: str,
     variant_map: dict[str, list[dict]],
 ) -> dict[str, str]:
-    relevant_slugs: dict[str, str] = {}
-
-    for model_key in variant_map.keys():
-        if slugs.get(model_key):
-            relevant_slugs[model_key] = slugs[model_key]
-            continue
-
+    model_slugs: dict[str, str] = {}
+    for model_key in variant_map:
         year = model_key[:4]
         kbb_model = model_key.replace(year, "").replace(make, "").strip()
-
-        model_slug = make_string_url_safe(kbb_model)
-
-        slugs[model_key] = model_slug
-        relevant_slugs[model_key] = model_slug
-
-    return relevant_slugs
+        model_slugs[model_key] = make_string_url_safe(kbb_model)
+    return model_slugs
 
 
 async def get_used_style_url_from_vins(
@@ -1060,7 +1050,6 @@ async def create_kbb_browser() -> (
 async def get_trim_valuations_from_scrape(
     make: str,
     model: str,
-    slugs: dict[str, str],
     listings: list[dict],
     cache_entries: dict[str, dict],
     cache: dict,
@@ -1075,7 +1064,7 @@ async def get_trim_valuations_from_scrape(
 
     try:
         variant_map = await get_variant_map(make, model, listings)
-        relevant_slugs = await get_model_slug_map(slugs, make, variant_map)
+        relevant_slugs = get_model_slug_map(make, variant_map)
 
         messages: set[str] = set()
         for ymm, slug in progress.track(
@@ -1127,6 +1116,7 @@ async def get_trim_valuations_from_scrape(
                     progress,
                     used_style_urls,
                 )
+                record_pricing_lookup(cache, ymm)
 
                 if message:
                     messages.add(message)
@@ -1559,8 +1549,7 @@ async def get_vin_first_pricing_data(
     configurations: dict[str, dict] = cache.setdefault("configurations", {})
     vin_resolutions: dict[str, dict] = cache.setdefault("vin_resolutions", {})
     national_tables: dict[str, dict] = cache.setdefault("level23_national_tables", {})
-    slugs = cache.setdefault("model_slugs", {})
-    relevant_slugs = await get_model_slug_map(slugs, make, variant_map)
+    relevant_slugs = get_model_slug_map(make, variant_map)
 
     progress = cli_progress()
     with progress.status("Starting KBB browser"):
@@ -1748,6 +1737,8 @@ async def get_vin_first_pricing_data(
                     entry["skip_reason"] = (
                         "There is currently no pricing data for this configuration."
                     )
+        for ymm, _, _, _, _, _ in variant_jobs:
+            record_pricing_lookup(cache, ymm)
     finally:
         try:
             await page.close()
@@ -1787,8 +1778,6 @@ async def get_pricing_data(
         )
 
     cache_entries = cache.setdefault("entries", {})
-    slugs = cache.setdefault("model_slugs", {})
-
     years = extract_years(norm_listings)
     relevant_entries: dict[str, dict[str, dict]] = {}
     for y in years:
@@ -1811,7 +1800,7 @@ async def get_pricing_data(
         return get_trim_valuations_from_cache(make, model, years, cache_entries)
 
     return await get_trim_valuations_from_scrape(
-        make, model, slugs, norm_listings, cache_entries, cache
+        make, model, norm_listings, cache_entries, cache
     )
 
 
