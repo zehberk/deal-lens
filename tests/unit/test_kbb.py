@@ -17,6 +17,7 @@ from analysis.kbb import (
 	create_kbb_browser,
 	get_or_fetch_national_pricing,
 	get_or_fetch_local_pricing,
+	get_model_slug_map,
 	get_price_advisor_values,
 	get_used_style_url_from_vins,
 	get_vin_first_pricing_data,
@@ -188,20 +189,37 @@ async def test_national_phase_overlaps_bounded_vin_clusters(monkeypatch):
 	monkeypatch.setattr("analysis.kbb.create_kbb_browser", AsyncMock(
 		return_value=_fake_kbb_browser()
 	))
-	monkeypatch.setattr("analysis.kbb.get_model_slug_map", AsyncMock(
-		return_value={key: "4runner" for key in variants}
-	))
 	monkeypatch.setattr("analysis.kbb._resolve_vin_first_variant", resolve)
 	monkeypatch.setattr(
 		"analysis.kbb._prefetch_vin_first_national_tables", prefetch
 	)
 	monkeypatch.setattr("analysis.kbb.save_cache", lambda _cache: None)
 
+	cache = {}
 	await get_vin_first_pricing_data(
-		"Toyota", "4Runner", [], variants, {}
+		"Toyota", "4Runner", [], variants, cache
 	)
 
 	assert peak == 3
+	assert set(cache["pricing_lookups"]) == set(variants)
+	assert all(
+		lookup["status"] == "complete"
+		for lookup in cache["pricing_lookups"].values()
+	)
+
+
+def test_model_slug_map_is_derived_without_persistent_state():
+	variants = {
+		"2024 Volkswagen Taos": [],
+		"2025 Volkswagen Taos": [],
+		"2025 Volkswagen Taos Limited": [],
+	}
+
+	assert get_model_slug_map("Volkswagen", variants) == {
+		"2024 Volkswagen Taos": "taos",
+		"2025 Volkswagen Taos": "taos",
+		"2025 Volkswagen Taos Limited": "taos-limited",
+	}
 
 
 async def test_vin_first_pricing_reuses_configuration_and_enriches_national(

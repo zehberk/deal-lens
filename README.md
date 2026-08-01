@@ -85,6 +85,12 @@ FPP to each canonical KBB style. A failed VIN lookup may still receive national
 pricing, but DealLens will not substitute local pricing from a guessed trim or
 model-page link. Level 2/3 VIN resolutions, canonical configurations, and national
 tables use separate cache namespaces so legacy Level 1 trim rows remain unchanged.
+KBB model URL slugs are derived from normalized model names at runtime instead of
+being saved once per model year. The pricing cache records explicit, timestamped
+lookup completion metadata so successful empty results can be reused until the
+normal KBB cache expiration rather than relying on a saved slug as an implicit
+completion marker. Legacy `model_slugs` data is removed on the next successful
+atomic cache save.
 These KBB lookups do not add Visor API requests. National tables, used VIN/style
 clusters, and unique new trim local-price pages use separate bounded worker pools.
 

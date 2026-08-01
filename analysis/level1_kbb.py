@@ -9,7 +9,7 @@ from pathlib import Path
 from analysis.analysis_utils import get_relevant_entries
 from analysis.kbb import create_kbb_browser, populate_pricing_for_year
 from analysis.normalization import best_kbb_model_match, best_kbb_trim_match
-from utils.cache import is_entry_fresh, load_cache, save_cache
+from utils.cache import is_entry_fresh, load_cache, record_pricing_lookup, save_cache
 from utils.common import make_string_url_safe
 from utils.constants import KBB_VARIANT_CACHE, PRICING_CACHE
 from utils.models import TrimValuation
@@ -65,7 +65,6 @@ async def get_level1_kbb_valuations(
 		if "postal_code" in entry:
 			entry.pop("postal_code")
 			removed_legacy_postal_codes = True
-	slugs = cache.setdefault("model_slugs", {})
 	stale_groups = {
 		(year, kbb_model): trims
 		for (year, kbb_model), trims in trim_groups.items()
@@ -94,7 +93,7 @@ async def get_level1_kbb_valuations(
 				unit="",
 			):
 				model_key = f"{year} {make} {kbb_model}"
-				slug = slugs.setdefault(model_key, make_string_url_safe(kbb_model))
+				slug = make_string_url_safe(kbb_model)
 				await populate_pricing_for_year(
 					page,
 					make,
@@ -105,6 +104,7 @@ async def get_level1_kbb_valuations(
 					set(trims),
 					progress,
 				)
+				record_pricing_lookup(cache, model_key)
 		finally:
 			await page.close()
 			await context.close()

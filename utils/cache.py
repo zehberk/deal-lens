@@ -40,6 +40,9 @@ def load_cache(cache_file: Path = PRICING_CACHE) -> dict[str, Any]:
 def save_cache(cache: dict, cache_file: Path = PRICING_CACHE):
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     temporary_path: Path | None = None
+    serialized_cache = {
+        key: value for key, value in cache.items() if key != "model_slugs"
+    }
     try:
         with tempfile.NamedTemporaryFile(
             "w",
@@ -50,7 +53,7 @@ def save_cache(cache: dict, cache_file: Path = PRICING_CACHE):
             delete=False,
         ) as f:
             temporary_path = Path(f.name)
-            json.dump(cache, f, indent=2)
+            json.dump(serialized_cache, f, indent=2)
             f.flush()
             os.fsync(f.fileno())
 
@@ -59,6 +62,7 @@ def save_cache(cache: dict, cache_file: Path = PRICING_CACHE):
             shutil.copy2(cache_file, backup_path)
         os.replace(temporary_path, cache_file)
         temporary_path = None
+        cache.pop("model_slugs", None)
     finally:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
@@ -92,19 +96,34 @@ def is_local_fresh(entry: dict) -> bool:
     return datetime.now() - fmv_ts < KBB_CACHE_TTL
 
 
+def record_pricing_lookup(cache: dict, model_key: str) -> None:
+    cache.setdefault("pricing_lookups", {})[model_key] = {
+        "status": "complete",
+        "checked_at": datetime.now().isoformat(),
+    }
+
+
+def is_pricing_lookup_fresh(cache: dict, model_key: str) -> bool:
+    lookup = cache.get("pricing_lookups", {}).get(model_key, {})
+    if not isinstance(lookup, dict):
+        return False
+    if lookup.get("status") != "complete" or not lookup.get("checked_at"):
+        return False
+
+    try:
+        checked_at = datetime.fromisoformat(lookup["checked_at"])
+    except (TypeError, ValueError):
+        return False
+    return datetime.now() - checked_at < KBB_CACHE_TTL
+
+
 def cache_covers_all(
     variants: list[str],
     relevant_entries: dict[str, dict[str, dict]],
     cache: dict,
 ) -> bool:
-    cache_entries = cache.get("entries", {})
-    slugs = cache.get("model_slugs", {})
-
-    if len(cache_entries) == 0:
-        return False
-
     for ymm in variants:
-        if ymm not in slugs:
+        if not is_pricing_lookup_fresh(cache, ymm):
             return False
 
         year: str = ymm[:4]
