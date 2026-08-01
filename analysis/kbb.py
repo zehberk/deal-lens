@@ -1282,12 +1282,92 @@ def _listing_national_trim(listing: dict, national_trims: list[str]) -> str | No
 
 
 def _fresh_vin_first_national_rows(table: dict | None) -> list[tuple] | None:
-    if not table or not table.get("timestamp") or not table.get("rows"):
+    if (
+        not table
+        or not table.get("timestamp")
+        or not isinstance(table.get("rows"), list)
+    ):
         return None
     timestamp = datetime.fromisoformat(str(table["timestamp"]))
     if datetime.now() - timestamp >= KBB_CACHE_TTL:
         return None
     return [tuple(row) for row in table["rows"]]
+
+
+def _apply_complete_vin_first_cache(
+    make: str,
+    variant_map: dict[str, list[dict]],
+    entries: dict[str, dict],
+    configurations: dict[str, dict],
+    vin_resolutions: dict[str, dict],
+    national_tables: dict[str, dict],
+) -> bool:
+    """Assign cached pricing keys when every browser dependency is fresh."""
+    for ymm, variant_listings in variant_map.items():
+        if _fresh_vin_first_national_rows(national_tables.get(ymm)) is None:
+            return False
+        year = ymm[:4]
+        model_name = ymm.replace(year, "").replace(make, "").strip()
+        model_configurations = {
+            fingerprint: configuration
+            for fingerprint, configuration in configurations.items()
+            if (
+                str(configuration.get("year")) == year
+                and str(configuration.get("make", "")).casefold()
+                == make.casefold()
+                and str(configuration.get("model", "")).casefold()
+                == model_name.casefold()
+            )
+        }
+        for listing in variant_listings:
+            condition = str(listing.get("condition") or "").casefold()
+            if condition not in {"new", "used", "certified", "cpo"}:
+                continue
+            vin = str(listing.get("vin") or "").strip()
+            if not vin:
+                return False
+            fingerprint = str(
+                (vin_resolutions.get(vin) or {}).get("configuration") or ""
+            )
+            configuration = model_configurations.get(fingerprint)
+            if not configuration:
+                compatible = [
+                    candidate
+                    for candidate in model_configurations.values()
+                    if _configuration_matches_listing(candidate, listing)
+                ]
+                if len(compatible) != 1:
+                    return False
+                configuration = compatible[0]
+            style = str(configuration.get("style") or "")
+            body_style = (
+                _listing_configuration_value(listing, "body_style")
+                or str(configuration.get("body_style") or "")
+            )
+            if _complete_kbb_style_with_body(style, body_style) != style:
+                return False
+            cache_key = str(configuration.get("cache_key") or "")
+            entry = entries.get(cache_key)
+            if not cache_key or entry is None or not is_local_fresh(entry):
+                return False
+            listing["kbb_cache_key"] = cache_key
+    return True
+
+
+def _vin_first_valuations(
+    make: str,
+    variant_map: dict[str, list[dict]],
+    entries: dict[str, dict],
+) -> list[TrimValuation]:
+    relevant_models = {
+        key.replace(key[:4], "").replace(make, "").strip().casefold()
+        for key in variant_map
+    }
+    return [
+        TrimValuation.from_dict(entry)
+        for entry in entries.values()
+        if str(entry.get("model", "")).casefold() in relevant_models
+    ]
 
 
 async def _prefetch_vin_first_national_tables(
@@ -1551,6 +1631,17 @@ async def get_vin_first_pricing_data(
     national_tables: dict[str, dict] = cache.setdefault("level23_national_tables", {})
     relevant_slugs = get_model_slug_map(make, variant_map)
 
+    if _apply_complete_vin_first_cache(
+        make,
+        variant_map,
+        entries,
+        configurations,
+        vin_resolutions,
+        national_tables,
+    ):
+        logger.info("Using complete cached KBB pricing without starting browser")
+        return _vin_first_valuations(make, variant_map, entries)
+
     progress = cli_progress()
     with progress.status("Starting KBB browser"):
         request, browser, context, page = await create_kbb_browser()
@@ -1749,15 +1840,7 @@ async def get_vin_first_pricing_data(
             pass
         save_cache(cache)
 
-    valuations = []
-    for entry in entries.values():
-        if str(entry.get("model", "")).casefold() not in {
-            key.replace(key[:4], "").replace(make, "").strip().casefold()
-            for key in variant_map
-        }:
-            continue
-        valuations.append(TrimValuation.from_dict(entry))
-    return valuations
+    return _vin_first_valuations(make, variant_map, entries)
 
 
 async def get_pricing_data(
