@@ -269,6 +269,59 @@ async def test_vin_first_pricing_reuses_configuration_and_enriches_national(
 	)
 
 
+async def test_vin_first_keeps_local_pricing_without_national_rows(monkeypatch):
+	listing = {
+		"id": "f150-xlt",
+		"vin": "1FTFW3L58SKE44302",
+		"year": 2025,
+		"condition": "New",
+		"trim": "XLT",
+		"body_style": "pickup",
+	}
+	local_source = (
+		"https://kbb.com/ford/f150-supercrew-cab/2025/"
+		"xlt-pickup-4d-5-1-2-ft/"
+	)
+	monkeypatch.setattr("analysis.kbb.create_kbb_browser", AsyncMock(
+		return_value=_fake_kbb_browser()
+	))
+	monkeypatch.setattr(
+		"analysis.kbb.get_used_style_url_from_vins",
+		AsyncMock(return_value=("XLT Pickup 4D 5 1/2 ft", local_source)),
+	)
+	monkeypatch.setattr(
+		"analysis.kbb._get_local_pricing_with_progress",
+		AsyncMock(return_value=(40_880, 48_980, 44_880, 41_300, local_source)),
+	)
+	monkeypatch.setattr(
+		"analysis.kbb.get_or_fetch_national_pricing",
+		AsyncMock(return_value=([], None)),
+	)
+	monkeypatch.setattr("analysis.kbb.save_cache", lambda _cache: None)
+	cache = {}
+
+	valuations = await get_vin_first_pricing_data(
+		"Ford",
+		"F-150",
+		[listing],
+		{"2025 Ford F150 SuperCrew Cab": [listing]},
+		cache,
+	)
+
+	cache_key = listing["kbb_cache_key"]
+	entry = cache["level23_entries"][cache_key]
+	assert cache_key == (
+		"2025 Ford F150 SuperCrew Cab XLT Pickup 4D 5 1/2 ft"
+	)
+	assert entry["pricing_basis"] == "vin"
+	assert entry["fpp_natl"] is None
+	assert entry["fpp_local"] == 44_880
+	assert entry["fmr_low"] == 40_880
+	assert entry["fmr_high"] == 48_980
+	assert "skip_reason" not in entry
+	assert valuations[0].kbb_trim == cache_key
+
+
 async def test_vin_first_does_not_fetch_local_price_without_vin_resolution(
 	monkeypatch,
 ):

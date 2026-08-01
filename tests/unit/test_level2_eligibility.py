@@ -53,7 +53,7 @@ def test_level2_uses_msrp_only_for_new_vehicle_fallback():
 	narrative = []
 	assert level2._price_assessment(new, narrative) is not None
 	assert any("fallback benchmark" in message for message in narrative)
-	assert not any("MSRP" in message for message in narrative)
+	assert any("MSRP was used as the comparison value" in message for message in narrative)
 
 
 async def test_level2_keeps_price_only_and_unmapped_listings(monkeypatch):
@@ -293,8 +293,11 @@ async def test_level2_uses_available_national_fpp_without_fmv(monkeypatch):
 	assessed_listing, _, risk, narrative, pricing = render_args[4][0]
 	assert assessed_listing == listing
 	assert risk is None
-	assert not any("National FPP" in message for message in narrative)
-	assert narrative[0].startswith("Listing price is")
+	assert any(
+		"National FPP was used as the comparison value" in message
+		for message in narrative
+	)
+	assert narrative[1].startswith("Listing price is")
 	assert pricing["listing_price"] == listing["price"]
 	assert render_args[5] == []
 
@@ -595,8 +598,41 @@ def test_price_assessment_provides_visual_range_without_redundant_bullets():
 	assert 0 <= visual["marker_pct"] <= 100
 	assert not any("being listed at" in line for line in narrative)
 	assert not any("Deal bins are set" in line for line in narrative)
+	assert narrative[0].startswith("Local FPP was used as the comparison value")
 	assert "Listing price is 7.4% below the fair-price midpoint." in narrative
-	assert not any("comparison value" in line for line in narrative)
+
+
+def test_price_assessment_accepts_local_pricing_without_national_fpp():
+	lc = ListingContext(
+		listing_id="f150-xlt",
+		listing={"price": 45_000, "condition": "New"},
+		pricing=PricingAnchors(
+			fpp_natl=None,
+			fpp_local=44_880,
+			fmr_low=40_880,
+			fmr_high=48_980,
+			source_local=(
+				"https://kbb.com/ford/f150-supercrew-cab/2025/"
+				"xlt-pickup-4d-5-1-2-ft/"
+			),
+		),
+	)
+	narrative = []
+
+	assessment = level2._price_assessment(lc, narrative)
+
+	assert assessment is not None
+	visual = assessment[4]
+	assert (
+		visual["scale_low"]
+		< visual["great_high"]
+		< visual["good_high"]
+		< visual["fair_high"]
+		< visual["poor_high"]
+		< visual["scale_high"]
+	)
+	assert visual.get("kbb_url") == lc.pricing.source_local
+	assert narrative[0].startswith("Local FPP was used as the comparison value")
 
 
 def test_price_assessment_explains_percent_from_fair_midpoint():
