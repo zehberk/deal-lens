@@ -1337,6 +1337,10 @@ def _apply_complete_vin_first_cache(
                     if _configuration_matches_listing(candidate, listing)
                 ]
                 if len(compatible) != 1:
+                    if _vin_resolution_unavailable_fresh(
+                        vin_resolutions.get(vin)
+                    ):
+                        continue
                     return False
                 configuration = compatible[0]
             style = str(configuration.get("style") or "")
@@ -1352,6 +1356,19 @@ def _apply_complete_vin_first_cache(
                 return False
             listing["kbb_cache_key"] = cache_key
     return True
+
+
+def _vin_resolution_unavailable_fresh(value: dict | None) -> bool:
+    if not value or value.get("status") != "unavailable":
+        return False
+    timestamp = value.get("timestamp")
+    if not timestamp:
+        return False
+    try:
+        checked_at = datetime.fromisoformat(str(timestamp))
+    except ValueError:
+        return False
+    return datetime.now() - checked_at < KBB_CACHE_TTL
 
 
 def _vin_first_valuations(
@@ -1523,6 +1540,9 @@ async def _resolve_vin_first_variant(
                 )
 
         if not configuration:
+            if _vin_resolution_unavailable_fresh(vin_resolutions.get(vin)):
+                logger.debug("Using cached unavailable KBB VIN result for %s", vin)
+                continue
             resolution = await get_used_style_url_from_vins(
                 page,
                 year,
@@ -1535,6 +1555,11 @@ async def _resolve_vin_first_variant(
                 logger.warning(
                     "KBB VIN did not resolve a used style for VIN %s", vin
                 )
+                vin_resolutions[vin] = {
+                    "configuration": None,
+                    "status": "unavailable",
+                    "timestamp": datetime.now().isoformat(),
+                }
                 continue
             style, style_url = resolution
             fingerprint = _configuration_fingerprint(

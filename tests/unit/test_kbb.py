@@ -551,6 +551,40 @@ async def test_complete_vin_first_cache_does_not_start_browser(monkeypatch):
 	assert len(valuations) == 1
 
 
+async def test_fresh_unavailable_vin_result_does_not_restart_browser(monkeypatch):
+	listing = {
+		"id": "unresolved",
+		"vin": "UNRESOLVEDVIN",
+		"year": 2025,
+		"condition": "Used",
+		"trim": "Unknown",
+	}
+	ymm = "2025 Ford F150 SuperCrew Cab"
+	cache = {
+		"level23_entries": {},
+		"configurations": {},
+		"vin_resolutions": {
+			"UNRESOLVEDVIN": {
+				"configuration": None,
+				"status": "unavailable",
+				"timestamp": datetime.now().isoformat(),
+			},
+		},
+		"level23_national_tables": {
+			ymm: {"timestamp": datetime.now().isoformat(), "rows": []},
+		},
+	}
+	create_browser = AsyncMock()
+	monkeypatch.setattr("analysis.kbb.create_kbb_browser", create_browser)
+
+	valuations = await get_vin_first_pricing_data(
+		"Ford", "F-150", [listing], {ymm: [listing]}, cache,
+	)
+
+	create_browser.assert_not_awaited()
+	assert valuations == []
+
+
 def test_configuration_matching_treats_optional_evidence_as_constraints():
 	configuration = {
 		"style": "SE Hatchback 4D",

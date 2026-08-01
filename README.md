@@ -39,6 +39,13 @@ models, while pricing, ratings, risk, and narrative stay in analysis context and
 result models. Legacy saved dictionaries are converted at load boundaries and
 remain serializable in their established format during migration.
 
+The domain-model package also defines typed compatibility boundaries for KBB
+pricing caches, VIN resolutions, vehicle configurations, completed lookups and
+national tables; supplementary-resource attempt state; dealer fees, installed
+options, price history, warranty coverage, provenance and data warnings; and
+persisted listing datasets with metadata. These models preserve unknown legacy
+fields so individual subsystems can migrate without invalidating saved files.
+
 Raw API facts remain separate from calculated values and AI-written explanations.
 Important report inputs retain source provenance. Missing API fields remain
 unavailable rather than being guessed.
