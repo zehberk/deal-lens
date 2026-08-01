@@ -5,6 +5,8 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
 
+from deal_lens.models import Listing, listing_from_legacy
+
 from visor_api.models import APIModel
 
 
@@ -153,7 +155,7 @@ def _adapt_price_history(value: Any) -> list[dict[str, Any]] | None:
 	return result
 
 
-def adapt_listing(
+def _adapt_listing_legacy(
 	search_listing: Mapping[str, Any] | APIModel | None,
 	detail_listing: Mapping[str, Any] | APIModel | None = None,
 ) -> dict[str, Any]:
@@ -405,6 +407,24 @@ def adapt_listing(
 	return listing
 
 
+def listing_from_visor(
+	search_listing: Mapping[str, Any] | APIModel | None,
+	detail_listing: Mapping[str, Any] | APIModel | None = None,
+) -> Listing:
+	"""Build the stable DealLens listing model from Visor transport records."""
+	return listing_from_legacy(
+		_adapt_listing_legacy(search_listing, detail_listing)
+	)
+
+
+def adapt_listing(
+	search_listing: Mapping[str, Any] | APIModel | None,
+	detail_listing: Mapping[str, Any] | APIModel | None = None,
+) -> Listing:
+	"""Compatibility name for the Visor-to-domain adapter."""
+	return listing_from_visor(search_listing, detail_listing)
+
+
 def adapt_facets_response(
 	response: Mapping[str, Any] | APIModel,
 	*,
@@ -441,7 +461,8 @@ def adapt_search_response(
 	response_data = _mapping(response)
 	rows = _sequence(response_data.get("data")) or []
 	detail_by_id = details or {}
-	listings = [adapt_listing(_mapping(row), detail_by_id.get(str(_mapping(row).get("id")))) for row in rows]
+	listing_models = [adapt_listing(_mapping(row), detail_by_id.get(str(_mapping(row).get("id")))) for row in rows]
+	listings = [listing.to_legacy_dict() for listing in listing_models]
 	warnings = []
 	for listing in listings:
 		for listing_warning in listing.get("warnings", []):

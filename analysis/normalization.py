@@ -1,4 +1,6 @@
 from collections import defaultdict
+from collections.abc import Mapping
+from typing import Any
 from difflib import SequenceMatcher
 
 from analysis.kbb_collector import get_missing_models
@@ -388,7 +390,7 @@ def filter_valid_listings(
     return valid_entries, skipped_listings, skip_summary
 
 
-def normalize_listing(listing: dict) -> dict:
+def normalize_listing(listing: Mapping[str, Any]) -> dict[str, Any]:
     """Convert a raw listing into the minimal Level-1 schema."""
 
     addl = listing.get("additional_docs", {}) or {}

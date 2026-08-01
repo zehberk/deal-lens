@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
+from deal_lens.models import Listing, listing_from_legacy
 from utils.progress import NULL_PROGRESS, ProgressReporter
 from visor_api.adapter import adapt_listing
 from visor_api.client import QueryParams, VisorAPIError, VisorTimeoutError
@@ -41,7 +42,7 @@ class Level2ListingRecord:
 
 	listing_id: str
 	vin: str | None
-	listing: dict[str, Any]
+	listing: Listing | dict[str, Any]
 	search_record: dict[str, Any]
 	detail_record: dict[str, Any] | None
 	detail_error: str | None = None
@@ -50,7 +51,10 @@ class Level2ListingRecord:
 		return {
 			"listing_id": self.listing_id,
 			"vin": self.vin,
-			"listing": self.listing,
+			"listing": (
+				self.listing.to_legacy_dict()
+				if isinstance(self.listing, Listing) else self.listing
+			),
 			"search_record": self.search_record,
 			"detail_record": self.detail_record,
 			"detail_error": self.detail_error,
@@ -64,7 +68,7 @@ class Level2ListingRecord:
 		return cls(
 			listing_id=listing_id,
 			vin=_optional_string(value.get("vin")),
-			listing=_dictionary(value.get("listing"), "listing"),
+			listing=listing_from_legacy(_dictionary(value.get("listing"), "listing")),
 			search_record=_dictionary(value.get("search_record"), "search_record"),
 			detail_record=(
 				_dictionary(value.get("detail_record"), "detail_record")
@@ -206,13 +210,13 @@ def collect_level2_listings(
 		detail, detail_error = _collect_detail(client, listing_id)
 		adapted = adapt_listing(row, detail)
 		if detail_error is not None:
-			adapted.setdefault("warnings", []).append({
+			adapted.warnings.append({
 				"field": "detail",
 				"code": "source_error",
 				"message": "Listing detail could not be retrieved.",
 				"api_path": f"/v1/listings/{listing_id}",
 			})
-			adapted.setdefault("provenance", {})["detail"] = {
+			adapted.provenance["detail"] = {
 				"kind": "unavailable",
 				"reason": "source_error",
 			}

@@ -1,5 +1,6 @@
 import asyncio
 
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 from contextlib import nullcontext
 
@@ -487,6 +488,101 @@ async def test_vin_first_new_listing_uses_resolved_body_specific_style(
 		"https://kbb.com/honda/civic/2025/sport-hatchback-4d/"
 	)
 	assert cache["vin_resolutions"]["19XFL2H80SE034568"]
+
+
+async def test_complete_vin_first_cache_does_not_start_browser(monkeypatch):
+	listing = {
+		"id": "cached",
+		"vin": "CACHEDVIN",
+		"year": 2025,
+		"condition": "Used",
+		"trim": "XLT",
+	}
+	cache_key = "2025 Ford F150 SuperCrew Cab XLT Pickup 4D"
+	fingerprint = "cached-configuration"
+	cache = {
+		"level23_entries": {
+			cache_key: {
+				"model": "F150 SuperCrew Cab",
+				"kbb_trim": cache_key,
+				"msrp": 50_000,
+				"fpp_natl": 48_000,
+				"fmr_low": 42_000,
+				"fmr_high": 47_000,
+				"fpp_local": 45_000,
+				"fmv": 44_500,
+				"natl_source": "https://kbb.example/national",
+				"local_source": "https://kbb.example/local",
+			},
+		},
+		"configurations": {
+			fingerprint: {
+				"year": "2025",
+				"make": "Ford",
+				"model": "F150 SuperCrew Cab",
+				"style": "XLT Pickup 4D",
+				"cache_key": cache_key,
+			},
+		},
+		"vin_resolutions": {
+			"CACHEDVIN": {"configuration": fingerprint},
+		},
+		"level23_national_tables": {
+			"2025 Ford F150 SuperCrew Cab": {
+				"timestamp": datetime.now().isoformat(),
+				"rows": [],
+			},
+		},
+	}
+	create_browser = AsyncMock()
+	monkeypatch.setattr("analysis.kbb.create_kbb_browser", create_browser)
+	monkeypatch.setattr("analysis.kbb.is_local_fresh", lambda _entry: True)
+
+	valuations = await get_vin_first_pricing_data(
+		"Ford",
+		"F-150",
+		[listing],
+		{"2025 Ford F150 SuperCrew Cab": [listing]},
+		cache,
+	)
+
+	create_browser.assert_not_awaited()
+	assert listing["kbb_cache_key"] == cache_key
+	assert len(valuations) == 1
+
+
+async def test_fresh_unavailable_vin_result_does_not_restart_browser(monkeypatch):
+	listing = {
+		"id": "unresolved",
+		"vin": "UNRESOLVEDVIN",
+		"year": 2025,
+		"condition": "Used",
+		"trim": "Unknown",
+	}
+	ymm = "2025 Ford F150 SuperCrew Cab"
+	cache = {
+		"level23_entries": {},
+		"configurations": {},
+		"vin_resolutions": {
+			"UNRESOLVEDVIN": {
+				"configuration": None,
+				"status": "unavailable",
+				"timestamp": datetime.now().isoformat(),
+			},
+		},
+		"level23_national_tables": {
+			ymm: {"timestamp": datetime.now().isoformat(), "rows": []},
+		},
+	}
+	create_browser = AsyncMock()
+	monkeypatch.setattr("analysis.kbb.create_kbb_browser", create_browser)
+
+	valuations = await get_vin_first_pricing_data(
+		"Ford", "F-150", [listing], {ymm: [listing]}, cache,
+	)
+
+	create_browser.assert_not_awaited()
+	assert valuations == []
 
 
 def test_configuration_matching_treats_optional_evidence_as_constraints():
