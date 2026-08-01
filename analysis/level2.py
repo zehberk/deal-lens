@@ -93,7 +93,6 @@ def _price_assessment(
         fpp_local,
         fpp_natl,
         fmv,
-        narrative,
         msrp=msrp,
         is_new=is_new,
     )
