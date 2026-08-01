@@ -15,6 +15,7 @@ from utils.constants import *
 from utils.download import download_files
 from deal_lens.cli_support import *
 from deal_lens.config import get_visor_api_key, get_visor_rate_limits
+from deal_lens.models import Listing
 from deal_lens.progress import CLI_CONSOLE, cli_progress
 from utils.progress import ProgressReporter
 from visor_api import (
@@ -224,7 +225,11 @@ async def collect_and_run_level2_api(args: Namespace) -> None:
         force=args.force,
         progress=progress,
     )
-    listings = [record.listing for record in result.collection.listings]
+    listings = [
+        record.listing.to_legacy_dict()
+        if isinstance(record.listing, Listing) else record.listing
+        for record in result.collection.listings
+    ]
     metadata = build_metadata(args)
     apply_level2_collection_metadata(metadata, result.collection, result.cache_used)
 

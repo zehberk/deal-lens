@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
 
+from deal_lens.models import Listing, listing_from_legacy
+
 from utils.constants import (
     BED_LENGTH_RE,
     BODY_STYLE_ALIASES,
@@ -609,15 +611,16 @@ class PricingAnchors:
 
 @dataclass
 class ListingContext:
-    listing_id: str
+    listing_id: str = ""
     vin: str = ""
     cache_key: str = ""
 
     year: str = ""
     base_trim: str = ""
 
-    listing: dict[str, Any] = field(default_factory=dict)
-    full_listing: dict[str, Any] = field(default_factory=dict)
+    # Any keeps transitional dict-oriented scoring/report call sites type-safe;
+    # __post_init__ guarantees the runtime value is the canonical Listing.
+    listing: Any = field(default_factory=dict)
 
     report_path: Optional[str] = None
     carfax: Any | None = None
@@ -631,6 +634,13 @@ class ListingContext:
     deal_rating: Optional[str] = None
     risk_score: Optional[int] = None
     narrative: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.listing, Listing):
+            self.listing = listing_from_legacy(self.listing)
+        self.listing_id = self.listing_id or self.listing.id
+        self.vin = self.vin or self.listing.vin or ""
+        self.year = self.year or str(self.listing.year or "")
 
 
 @dataclass

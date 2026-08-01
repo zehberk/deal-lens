@@ -7,7 +7,12 @@ from visor_api.client import (
 	VisorReadTimeoutError,
 	VisorTimeoutError,
 )
-from visor_api.adapter import adapt_facets_response, adapt_listing, adapt_search_response
+from visor_api.adapter import (
+	adapt_facets_response,
+	adapt_listing,
+	adapt_search_response,
+	listing_from_visor,
+)
 from visor_api.query import LISTING_EXPANSIONS, LISTING_FIELDS, VisorListingQuery
 from visor_api.level1_query import (
 	LEVEL1_FACETS,
@@ -123,5 +128,6 @@ __all__ = [
 	"VehicleBuild",
 	"adapt_facets_response",
 	"adapt_listing",
+	"listing_from_visor",
 	"adapt_search_response",
 ]

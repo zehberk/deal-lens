@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 from analysis.analysis_utils import (
     check_missing_docs,
     download_files,
@@ -15,6 +17,7 @@ from utils.cache import load_cache
 from utils.constants import *
 from utils.download import needs_supplementary_info
 from utils.models import AnalysisContext, ListingContext, PricingAnchors
+from deal_lens.models import Listing, listing_from_legacy
 
 
 def build_analysis_context(metadata: dict) -> AnalysisContext:
@@ -43,7 +46,9 @@ async def populate_pricing_data(
 
 
 def populate_filtered_listings(
-    ctx: AnalysisContext, listings: list[dict], full_listings: list[dict] | None = None
+    ctx: AnalysisContext,
+    listings: list[dict],
+    full_listings: Sequence[dict | Listing] | None = None,
 ):
     valid_data, skipped_listings, skip_summary = filter_valid_listings(
         ctx.make, ctx.model, listings, ctx.cache_entries, ctx.variant_map
@@ -52,7 +57,7 @@ def populate_filtered_listings(
     ctx.skipped_listings = skipped_listings
     ctx.skip_summary = skip_summary
 
-    full_listings = full_listings or listings
+    source_listings: Sequence[dict | Listing] = full_listings or listings
 
     ctx.listings = []
     for vd in valid_data:
@@ -63,9 +68,12 @@ def populate_filtered_listings(
         vin = str(listing.get("vin", "") or "")
 
         # Find the matching “full listing” once, here (so level2 doesn’t do it)
-        full = next((l for l in full_listings if str(l.get("id", "")) == lid), listing)
+        full = next((l for l in source_listings if str(l.get("id", "")) == lid), listing)
+        full_data = full.to_legacy_dict() if isinstance(full, Listing) else dict(full)
+        # Keep calculated normalization fields while retaining every source fact.
+        model = listing_from_legacy({**full_data, **listing})
 
-        report = get_report_dir(full)
+        report = get_report_dir(full_data)
         report_path = str(report) if report else None
 
         entry = ctx.cache_entries.get(cache_key, {})
@@ -88,8 +96,7 @@ def populate_filtered_listings(
                 cache_key=cache_key,
                 year=vd["year"],
                 base_trim=vd["base_trim"],
-                listing=listing,
-                full_listing=full,
+                listing=model,
                 report_path=report_path,
                 pricing=pricing,
             )

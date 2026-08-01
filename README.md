@@ -33,6 +33,12 @@ The main boundaries are:
 - `tests/visor_authenticated/`: manual, explicitly opted-in API probes that may
   incur usage charges.
 
+Listing records cross those boundaries as the source-independent
+`deal_lens.models.Listing` domain model. Visor response classes remain transport
+models, while pricing, ratings, risk, and narrative stay in analysis context and
+result models. Legacy saved dictionaries are converted at load boundaries and
+remain serializable in their established format during migration.
+
 Raw API facts remain separate from calculated values and AI-written explanations.
 Important report inputs retain source provenance. Missing API fields remain
 unavailable rather than being guessed.
