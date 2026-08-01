@@ -1,3 +1,4 @@
+from analysis.analysis_utils import get_relevant_entries
 from analysis.normalization import (
 	best_kbb_model_match,
 	filter_valid_listings,
@@ -5,6 +6,23 @@ from analysis.normalization import (
 	model_variant_title,
 	normalize_listing,
 )
+
+
+def test_relevant_entries_use_local_source_when_national_source_is_none():
+	cache_key = "2025 Ford F150 SuperCrew Cab XLT Pickup 4D 5 1/2 ft"
+	entry = {
+		"natl_source": None,
+		"local_source": (
+			"https://kbb.com/ford/f150-supercrew-cab/2025/"
+			"xlt-pickup-4d-5-1-2-ft/"
+		),
+	}
+
+	result = get_relevant_entries(
+		{cache_key: entry}, "Ford", "F150 SuperCrew Cab", "2025"
+	)
+
+	assert result == {cache_key: entry}
 
 
 def test_normalization_preserves_listing_age_for_warranty_calculation():
@@ -185,3 +203,59 @@ def test_filter_does_not_collapse_specialty_trim_to_partial_identity():
 
 	assert valid == []
 	assert skipped == [listing]
+
+
+def test_filter_does_not_fuzzy_match_when_explicit_cache_key_is_missing():
+	explicit_key = "2025 Ford F150 SuperCrew Cab XLT Pickup 4D 6 1/2 ft"
+	listing = {
+		"id": "f150-xlt",
+		"year": 2025,
+		"trim": "XLT",
+		"price": 45_000,
+		"kbb_cache_key": explicit_key,
+	}
+	entries = {
+		"2025 Ford F150 SuperCrew Cab XLT Pickup 4D 5 1/2 ft": {
+			"fpp_local": 44_880,
+			"pricing_basis": "vin",
+		},
+	}
+	variant_map = {"2025 Ford F150 SuperCrew Cab": [listing]}
+
+	valid, skipped, _ = filter_valid_listings(
+		"Ford", "F-150", [listing], entries, variant_map
+	)
+
+	assert valid == []
+	assert skipped == [listing]
+
+
+def test_filter_accepts_explicit_local_only_cache_entry():
+	cache_key = "2025 Ford F150 SuperCrew Cab XLT Pickup 4D 5 1/2 ft"
+	listing = {
+		"id": "f150-xlt",
+		"year": 2025,
+		"trim": "XLT",
+		"price": 45_000,
+		"kbb_cache_key": cache_key,
+	}
+	entries = {
+		cache_key: {
+			"natl_source": None,
+			"fpp_natl": None,
+			"local_source": (
+				"https://kbb.com/ford/f150-supercrew-cab/2025/"
+				"xlt-pickup-4d-5-1-2-ft/"
+			),
+			"fpp_local": 44_880,
+			"pricing_basis": "vin",
+		},
+	}
+	variant_map = {"2025 Ford F150 SuperCrew Cab": [listing]}
+
+	valid, skipped, _ = filter_valid_listings(
+		"Ford", "F-150", [listing], entries, variant_map
+	)
+
+	assert skipped == []
+	assert valid[0]["cache_key"] == cache_key

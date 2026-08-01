@@ -77,7 +77,8 @@ def get_relevant_entries(
     stripped_safe_model = safe_model.replace("-", "")
 
     for key, entry in entries.items():
-        url: str = entry.get("natl_source", "").lower()
+        source = entry.get("natl_source") or entry.get("local_source")
+        url = str(source or "").lower()
         if not url:
             continue
 
