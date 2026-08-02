@@ -12,6 +12,7 @@ from analysis.scoring import (
 	score_new_vehicle_warranty,
 	score_warranty_status,
 )
+from deal_lens.models import listing_from_legacy
 from utils.models import CarfaxData, StructuralStatus
 
 
@@ -144,7 +145,7 @@ def test_warranty_bonus_uses_limiting_mileage_at_typical_use():
 	)
 	narrative = []
 
-	result = score_warranty_status(carfax, {"coverages": []}, narrative)
+	result = score_warranty_status(carfax, listing_from_legacy({"warranty": {"coverages": []}}), narrative)
 
 	assert result == pytest.approx(-0.0916, abs=0.001)
 	assert narrative == ["Warranty active: ~5 months, ~687 miles remaining."]
@@ -154,7 +155,7 @@ def test_new_vehicle_warranty_subtracts_listing_time_and_mileage():
 	narrative = []
 
 	result = score_new_vehicle_warranty(
-		{"days_on_market": 45, "mileage": 500}, narrative
+		listing_from_legacy({"days_on_market": 45, "mileage": 500}), narrative
 	)
 
 	assert result == -2.0
@@ -174,7 +175,7 @@ def test_missing_warranty_information_is_neutral():
 	)
 	narrative = []
 
-	result = score_warranty_status(carfax, {"coverages": []}, narrative)
+	result = score_warranty_status(carfax, listing_from_legacy({"warranty": {"coverages": []}}), narrative)
 
 	assert result == 0
 	assert narrative == [
@@ -193,7 +194,7 @@ def test_explicitly_expired_warranty_remains_neutral_but_known():
 	)
 	narrative = []
 
-	result = score_warranty_status(carfax, {"coverages": []}, narrative)
+	result = score_warranty_status(carfax, listing_from_legacy({"warranty": {"coverages": []}}), narrative)
 
 	assert result == 0
 	assert narrative == ["The basic warranty on this vehicle has expired."]

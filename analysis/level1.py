@@ -48,7 +48,7 @@ async def create_level1_file(listings: list[dict], metadata: dict):
         fmr_high = int(ctx.cache_entries[cache_key].get("fmr_high") or 0)
         fmv = int(ctx.cache_entries[cache_key].get("fmv") or 0)
 
-        price = int(listing.get("price") or 0)
+        price = int(listing.price or 0)
         best_comparison = determine_best_price(
             price,
             fpp_local,
@@ -56,7 +56,7 @@ async def create_level1_file(listings: list[dict], metadata: dict):
             fmv,
             [],
             msrp=msrp,
-            is_new=str(listing.get("condition", "")).casefold() == "new",
+            is_new=listing.condition is not None and listing.condition.value.casefold() == "new",
         )
 
         deal, midpoint, _, _ = classify_deal_rating(
@@ -66,17 +66,17 @@ async def create_level1_file(listings: list[dict], metadata: dict):
         risk = rate_risk_level1(listing, price, midpoint)
 
         car_listing = CarListing(
-            id=listing["id"],
-            vin=listing["vin"],
+            id=listing.id,
+            vin=listing.vin or "",
             year=int(year),
             make=ctx.make,
             model=ctx.model,
             trim=base_trim,
-            trim_version=listing["trim_version"],
-            title=listing["title"],
+            trim_version=listing.vehicle.trim_version or "",
+            title=listing.title or "",
             cache_key=cache_key,
-            condition=listing["condition"],
-            miles=listing["mileage"],
+            condition=listing.condition.value if listing.condition else "",
+            miles=listing.mileage or 0,
             price=price,
             price_delta=price - midpoint if price else 0,
             uncertainty=uncertainty,
@@ -174,7 +174,7 @@ async def start_level1_analysis(
 
 def main():
     _, dataset = load_latest_listing_dataset(Path("output/raw"))
-    listings = [listing.to_legacy_dict() for listing in dataset.listings]
+    listings = [listing.to_dict() for listing in dataset.listings]
     if listings:
         metadata = dataset.metadata.to_dict()
         asyncio.run(start_level1_analysis(listings, metadata, None, ""))

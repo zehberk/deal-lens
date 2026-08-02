@@ -154,8 +154,9 @@ def test_recorded_pages_flow_through_level2_collection_and_adapter():
 
 	assert len(collection.listings) == 150
 	assert collection.exclusions == ()
-	assert collection.listings[0].listing["title"].startswith("2026 Hyundai IONIQ 5")
-	assert collection.listings[0].listing["price"] <= 55_000
+	assert (collection.listings[0].listing.title or "").startswith("2026 Hyundai IONIQ 5")
+	assert collection.listings[0].listing.price is not None
+	assert collection.listings[0].listing.price <= 55_000
 	assert collection.listings[-1].search_record["days_on_market"] >= (
 		collection.listings[0].search_record["days_on_market"]
 	)

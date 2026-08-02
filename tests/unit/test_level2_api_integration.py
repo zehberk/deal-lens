@@ -4,6 +4,7 @@ from pathlib import Path
 from analysis.analysis_utils import check_missing_docs
 from visor_api import Level2Collection, Level2Exclusion, Level2ListingRecord
 from deal_lens.cli import apply_level2_collection_metadata, scrape
+from deal_lens.models import listing_from_legacy
 
 
 def collection():
@@ -12,7 +13,7 @@ def collection():
 			Level2ListingRecord(
 				listing_id="listing-1",
 				vin="TESTVIN1",
-				listing={
+				listing=listing_from_legacy({
 					"id": "listing-1",
 					"vin": "TESTVIN1",
 					"warnings": [{
@@ -20,14 +21,14 @@ def collection():
 						"code": "missing_data",
 						"message": "Warranty is unavailable.",
 					}],
-				},
+				}),
 				search_record={"id": "listing-1", "vin": "TESTVIN1"},
 				detail_record={"id": "listing-1", "vin": "TESTVIN1"},
 			),
 			Level2ListingRecord(
 				listing_id="listing-2",
 				vin="TESTVIN2",
-				listing={"id": "listing-2", "vin": "TESTVIN2", "warnings": []},
+				listing=listing_from_legacy({"id": "listing-2", "vin": "TESTVIN2", "warnings": []}),
 				search_record={"id": "listing-2", "vin": "TESTVIN2"},
 				detail_record=None,
 				detail_error="Visor API read timeout",

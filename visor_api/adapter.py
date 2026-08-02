@@ -462,7 +462,7 @@ def adapt_search_response(
 	rows = _sequence(response_data.get("data")) or []
 	detail_by_id = details or {}
 	listing_models = [adapt_listing(_mapping(row), detail_by_id.get(str(_mapping(row).get("id")))) for row in rows]
-	listings = [listing.to_legacy_dict() for listing in listing_models]
+	listings = [listing.to_dict() for listing in listing_models]
 	warnings = []
 	for listing in listings:
 		for listing_warning in listing.get("warnings", []):

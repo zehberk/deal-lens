@@ -37,21 +37,21 @@ async def start_level3_analysis(metadata: dict, listings: list[dict], filename: 
     ratings: list[tuple[dict, str, int, list[str]]] = []
 
     # Extract Carfax report
-    for item in sorted(ctx.listings, key=lambda x: str(x.listing.get("id", ""))):
+    for item in sorted(ctx.listings, key=lambda x: x.listing.id):
         listing = item.listing
         cache_key = item.cache_key
 
-        full_listing = next(l for l in listings if l.get("id") == listing.get("id"))
+        full_listing = next(l for l in listings if l.get("id") == listing.id)
         report = get_report_dir(full_listing)
-        is_new = str(listing.get("condition") or "").casefold() == "new"
-        if listing.get("price") is None:
+        is_new = listing.condition is not None and listing.condition.value.casefold() == "new"
+        if listing.price is None:
             continue
         if not is_new and (report is None or not report.exists()):
             continue
 
         narrative: list[str] = []
 
-        price = int(listing.get("price", 0))
+        price = int(listing.price or 0)
         fpp_natl = int(ctx.cache_entries[cache_key].get("fpp_natl") or 0)
         fpp_local = int(ctx.cache_entries[cache_key].get("fpp_local") or 0)
         fmr_high = int(ctx.cache_entries[cache_key].get("fmr_high") or 0)
@@ -91,12 +91,12 @@ async def start_level3_analysis(metadata: dict, listings: list[dict], filename: 
                 "New vehicles do not require a vehicle history report."
             )
         deal = adjust_deal_for_risk(deal, risk, narrative)
-        ratings.append((listing, deal, risk, narrative))
+        ratings.append((listing.to_dict(), deal, risk, narrative))
 
 
 def main():
     path, dataset = load_latest_listing_dataset(Path("output/raw"))
-    listings = [listing.to_legacy_dict() for listing in dataset.listings]
+    listings = [listing.to_dict() for listing in dataset.listings]
     if listings:
         metadata = dataset.metadata.to_dict()
         latest_json_file = str(path)

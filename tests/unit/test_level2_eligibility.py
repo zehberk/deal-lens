@@ -1,6 +1,7 @@
 import shutil
 import uuid
 import re
+from decimal import Decimal
 
 from pathlib import Path
 from unittest.mock import Mock
@@ -17,7 +18,15 @@ from analysis.reporting import (
 	summarize_level2_failures,
 )
 from jinja2 import Environment, FileSystemLoader
-from utils.models import AnalysisContext, CarfaxData, ListingContext, PricingAnchors
+from deal_lens.models import listing_from_legacy
+from utils.models import AnalysisContext, CarfaxData, ListingContext as DomainListingContext, PricingAnchors
+
+
+def ListingContext(**values):
+	listing = values.get("listing")
+	if isinstance(listing, dict):
+		values["listing"] = listing_from_legacy(listing)
+	return DomainListingContext(**values)
 
 
 def test_level2_uses_one_local_report_image(monkeypatch):
@@ -98,18 +107,12 @@ async def test_level2_keeps_price_only_and_unmapped_listings(monkeypatch):
 	)
 
 	assert render_args[3] == []
-	assert render_args[4] == [
-		(
-			price_only_listing,
-			"Good",
-			None,
-			[
-				"Price evidence available.",
-				"A vehicle-history report was not collected, so risk and the final Level 2 rating are unavailable.",
-			],
-			{"listing_price": 25_000},
-		)
-	]
+	assert render_args[4][0][0]["id"] == price_only_listing["id"]
+	assert render_args[4][0][1:] == (
+		"Good", None,
+		["Price evidence available.", "A vehicle-history report was not collected, so risk and the final Level 2 rating are unavailable."],
+		{"listing_price": 25_000},
+	)
 	assert render_args[5] == [
 		(unmapped_listing, "The listing trim could not be mapped to compatible KBB pricing.")
 	]
@@ -149,7 +152,7 @@ async def test_level2_rates_new_vehicle_without_history_report(monkeypatch):
 
 	assert len(render_args[3]) == 1
 	assessed, _, risk, narrative, pricing = render_args[3][0]
-	assert assessed == listing
+	assert assessed["id"] == listing["id"]
 	assert risk == 0
 	assert context.risk_score == 0
 	assert pricing["risk_summary"] == "none identified"
@@ -197,7 +200,7 @@ async def test_level2_keeps_price_only_rating_without_listing_or_carfax_mileage(
 	price_assessment.assert_called_once()
 	assert render_args[3] == []
 	assert render_args[4] == [(
-		context.listing, "Good", None,
+		context.listing.to_dict(), "Good", None,
 		[
 			"Mileage is unavailable from both the listing and CARFAX, so risk and the final Level 2 rating are unavailable."
 		],
@@ -252,8 +255,8 @@ async def test_level2_uses_carfax_mileage_when_listing_mileage_is_missing(monkey
 	try:
 		await level2.start_level2_analysis({}, [listing], "unused.json")
 
-		assert context.listing["mileage"] == 24_321
-		assert context.listing["provenance"]["mileage"] == {
+		assert context.listing.mileage == 24_321
+		assert context.listing.provenance["mileage"].to_dict() == {
 			"kind": "source_fact",
 			"api_path": "carfax.last_odometer_reading",
 		}
@@ -362,7 +365,7 @@ async def test_level2_uses_available_national_fpp_without_fmv(monkeypatch):
 	assert render_args[3] == []
 	assert len(render_args[4]) == 1
 	assessed_listing, _, risk, narrative, pricing = render_args[4][0]
-	assert assessed_listing == listing
+	assert assessed_listing["id"] == listing["id"]
 	assert risk is None
 	assert not any("National FPP" in message for message in narrative)
 	assert narrative[0].startswith("Listing price is")
@@ -734,7 +737,7 @@ def test_price_below_displayed_great_range_remains_great_and_caps_marker():
 	)
 
 	inside_great = level2._price_assessment(lc, [])
-	lc.listing["price"] = 21999
+	lc.listing.price = Decimal("21999")
 	below_great = level2._price_assessment(lc, [])
 
 	assert inside_great is not None and inside_great[0] == "Great"

@@ -47,7 +47,7 @@ class Level2ListingRecord:
 
 	listing_id: str
 	vin: str | None
-	listing: Listing | dict[str, Any]
+	listing: Listing
 	search_record: dict[str, Any]
 	detail_record: dict[str, Any] | None
 	detail_error: str | None = None
@@ -56,10 +56,7 @@ class Level2ListingRecord:
 		return {
 			"listing_id": self.listing_id,
 			"vin": self.vin,
-			"listing": (
-				self.listing.to_legacy_dict()
-				if isinstance(self.listing, Listing) else self.listing
-			),
+			"listing": self.listing.to_dict(),
 			"search_record": self.search_record,
 			"detail_record": self.detail_record,
 			"detail_error": self.detail_error,

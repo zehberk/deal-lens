@@ -14,7 +14,7 @@ from utils.constants import *
 from utils.download import download_files
 from deal_lens.cli_support import *
 from deal_lens.config import get_visor_api_key, get_visor_rate_limits
-from deal_lens.models import Listing, ListingDataset
+from deal_lens.models import ListingDataset
 from deal_lens.progress import CLI_CONSOLE, cli_progress
 from utils.progress import ProgressReporter
 from visor_api import (
@@ -91,14 +91,12 @@ def save_results(
 ) -> Path:
     analysis_cache = load_cache(ANALYSIS_CACHE)
     for listing in dataset.listings:
-        l = listing.to_legacy_dict()
-        vin = l.get("vin")
+        vin = listing.vin
         if vin is None:
             continue
 
-        docs = l.get("additional_docs")
-        if docs:
-            url = docs.get("carfax_url")
+        if listing.documents:
+            url = listing.documents.carfax_url
             if url and url != "Unavailable":
                 analysis_cache.setdefault(vin, {})["carfax_url"] = url
 
@@ -121,7 +119,7 @@ def save_results(
 async def run_analysis(
     dataset: ListingDataset, args, filename: str
 ) -> None:
-    listings = [listing.to_legacy_dict() for listing in dataset.listings]
+    listings = [listing.to_dict() for listing in dataset.listings]
     metadata = dataset.metadata.to_dict()
     if listings:
         if args.level1:
@@ -187,7 +185,8 @@ def apply_level2_collection_metadata(
         }
     }
     for record in collection.listings:
-        for warning in record.listing.get("warnings", []):
+        for warning_record in record.listing.warnings:
+            warning = warning_record.to_dict()
             metadata["warnings"].append(
                 {
                     **warning,
@@ -223,11 +222,7 @@ async def collect_and_run_level2_api(args: Namespace) -> None:
         force=args.force,
         progress=progress,
     )
-    listings = [
-        record.listing.to_legacy_dict()
-        if isinstance(record.listing, Listing) else record.listing
-        for record in result.collection.listings
-    ]
+    listings = [record.listing.to_dict() for record in result.collection.listings]
     metadata = build_metadata(args)
     apply_level2_collection_metadata(metadata, result.collection, result.cache_used)
 
