@@ -4,7 +4,15 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 from analysis import level3
-from utils.models import AnalysisContext, ListingContext
+from deal_lens.models import listing_from_legacy
+from utils.models import AnalysisContext, ListingContext as DomainListingContext
+
+
+def ListingContext(**values):
+	listing = values.get("listing")
+	if isinstance(listing, dict):
+		values["listing"] = listing_from_legacy(listing)
+	return DomainListingContext(**values)
 
 
 async def test_level3_rates_new_vehicle_without_history_report(monkeypatch):

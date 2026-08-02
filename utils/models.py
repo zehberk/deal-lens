@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
 
-from deal_lens.models import KBBPricingCache, Listing, listing_from_legacy
+from deal_lens.models import KBBPricingCache, Listing
 
 from utils.constants import (
     BED_LENGTH_RE,
@@ -618,7 +618,7 @@ class ListingContext:
     year: str = ""
     base_trim: str = ""
 
-    listing: Any = field(default_factory=dict)
+    listing: Listing = field(default_factory=lambda: Listing(id=""))
 
     report_path: Optional[str] = None
     carfax: Any | None = None
@@ -634,8 +634,6 @@ class ListingContext:
     narrative: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.listing, Listing):
-            self.listing = listing_from_legacy(self.listing)
         self.listing_id = self.listing_id or self.listing.id
         self.vin = self.vin or self.listing.vin or ""
         self.year = self.year or str(self.listing.year or "")

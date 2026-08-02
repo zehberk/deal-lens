@@ -18,7 +18,15 @@ from analysis.reporting import (
 	summarize_level2_failures,
 )
 from jinja2 import Environment, FileSystemLoader
-from utils.models import AnalysisContext, CarfaxData, ListingContext, PricingAnchors
+from deal_lens.models import listing_from_legacy
+from utils.models import AnalysisContext, CarfaxData, ListingContext as DomainListingContext, PricingAnchors
+
+
+def ListingContext(**values):
+	listing = values.get("listing")
+	if isinstance(listing, dict):
+		values["listing"] = listing_from_legacy(listing)
+	return DomainListingContext(**values)
 
 
 def test_level2_uses_one_local_report_image(monkeypatch):

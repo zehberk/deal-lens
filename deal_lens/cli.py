@@ -14,7 +14,7 @@ from utils.constants import *
 from utils.download import download_files
 from deal_lens.cli_support import *
 from deal_lens.config import get_visor_api_key, get_visor_rate_limits
-from deal_lens.models import Listing, ListingDataset
+from deal_lens.models import ListingDataset
 from deal_lens.progress import CLI_CONSOLE, cli_progress
 from utils.progress import ProgressReporter
 from visor_api import (

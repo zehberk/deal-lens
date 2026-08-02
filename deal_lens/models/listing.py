@@ -163,11 +163,6 @@ class Listing:
 		)
 		return result
 
-	@classmethod
-	def from_legacy(cls, value: Mapping[str, Any]) -> "Listing":
-		return listing_from_legacy(value)
-
-
 def listing_from_legacy(value: Mapping[str, Any]) -> Listing:
 	"""Adapt legacy scraper/API envelopes without inventing missing values."""
 	data = dict(value)

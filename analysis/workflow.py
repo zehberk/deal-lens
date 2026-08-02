@@ -17,7 +17,7 @@ from utils.cache import load_cache
 from utils.constants import *
 from utils.download import needs_supplementary_info
 from utils.models import AnalysisContext, ListingContext, PricingAnchors
-from deal_lens.models import KBBPricingCache, Listing, listing_from_legacy
+from deal_lens.models import KBBPricingCache, listing_from_legacy
 
 
 def build_analysis_context(metadata: dict) -> AnalysisContext:
@@ -54,7 +54,7 @@ async def populate_pricing_data(
 def populate_filtered_listings(
     ctx: AnalysisContext,
     listings: list[dict],
-    full_listings: Sequence[dict | Listing] | None = None,
+    full_listings: Sequence[dict] | None = None,
 ):
     valid_data, skipped_listings, skip_summary = filter_valid_listings(
         ctx.make, ctx.model, listings, ctx.cache_entries, ctx.variant_map
@@ -63,7 +63,7 @@ def populate_filtered_listings(
     ctx.skipped_listings = skipped_listings
     ctx.skip_summary = skip_summary
 
-    source_listings: Sequence[dict | Listing] = full_listings or listings
+    source_listings: Sequence[dict] = full_listings or listings
 
     ctx.listings = []
     for vd in valid_data:
@@ -74,8 +74,8 @@ def populate_filtered_listings(
         vin = str(listing.get("vin", "") or "")
 
         # Find the matching “full listing” once, here (so level2 doesn’t do it)
-        full = next((l for l in source_listings if str(l.id if isinstance(l, Listing) else l.get("id", "")) == lid), listing)
-        full_data = full.to_dict() if isinstance(full, Listing) else dict(full)
+        full = next((l for l in source_listings if str(l.get("id", "")) == lid), listing)
+        full_data = dict(full)
         # Keep calculated normalization fields while retaining every source fact.
         model = listing_from_legacy({**full_data, **listing})
 
