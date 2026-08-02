@@ -1,9 +1,10 @@
-import asyncio, glob, json, os, time
+import asyncio, time
 
 from pathlib import Path
 from typing import NotRequired, TypedDict
 
 from analysis.analysis_utils import get_report_dir
+from deal_lens.persistence import load_latest_listing_dataset
 from analysis.reporting import render_level2_pdf
 from analysis.scoring import (
     calculate_deal_score_result,
@@ -18,6 +19,7 @@ from analysis.scoring import (
 )
 from analysis.workflow import prepare_level2_analysis
 
+from deal_lens.models import Listing, SourceProvenance
 from utils.carfax_parser import get_carfax_data
 from utils.models import CarfaxData
 
@@ -68,6 +70,28 @@ def _risk_summary(carfax: CarfaxData, mileage_risk: float) -> str:
 
 def _listing_key(listing: dict) -> str:
     return str(listing.get("id") or listing.get("vin") or "")
+
+
+def _fill_missing_listing_fields_from_carfax(
+    listing: Listing, carfax: CarfaxData
+) -> tuple[str, ...]:
+    """Fill directly shared, missing listing facts from CARFAX evidence."""
+    fallbacks = {
+        "mileage": (
+            carfax.last_odometer_reading or None,
+            "carfax.last_odometer_reading",
+        ),
+    }
+    filled: list[str] = []
+    for field, (value, source_path) in fallbacks.items():
+        if listing.get(field) is not None or value is None:
+            continue
+        listing[field] = value
+        listing.provenance[field] = SourceProvenance(
+            kind="source_fact", source_path=source_path
+        )
+        filled.append(field)
+    return tuple(filled)
 
 
 def _price_assessment(
@@ -188,21 +212,36 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
         narrative: list[str] = []
         condition = str(listing.get("condition") or "").casefold()
         is_new = condition == "new"
-        if (
-            condition in {"used", "certified", "cpo"}
-            and listing.get("mileage") is None
-        ):
-            information_only.append((listing, "Mileage not available."))
-            continue
+        carfax: CarfaxData | None = None
+        carfax_filled_fields: tuple[str, ...] = ()
+        if report is not None and report.exists():
+            carfax = get_carfax_data(report)
+            lc.carfax = carfax
+            carfax_filled_fields = _fill_missing_listing_fields_from_carfax(
+                listing, carfax
+            )
         assessment = _price_assessment(lc, narrative)
         if assessment is None:
             information_only.append(
                 (listing, "Complete KBB pricing is unavailable for this configuration.")
             )
             continue
+        if "mileage" in carfax_filled_fields:
+            narrative.append(
+                "Listing mileage was unavailable; the latest CARFAX odometer reading was used."
+            )
 
         deal = assessment[0]
         pricing_visual = assessment[4]
+        if (
+            condition in {"used", "certified", "cpo"}
+            and listing.get("mileage") is None
+        ):
+            narrative.append(
+                "Mileage is unavailable from both the listing and CARFAX, so risk and the final Level 2 rating are unavailable."
+            )
+            price_only.append((listing, deal, None, narrative, pricing_visual))
+            continue
         if (report is None or not report.exists()) and is_new:
             risk = 0
             lc.risk_score = risk
@@ -239,8 +278,7 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
             continue
 
         # Risk ratings and deal adjustment
-        carfax: CarfaxData = get_carfax_data(report)
-        lc.carfax = carfax
+        assert carfax is not None
 
         title_risk = score_title_status(carfax)
         mileage_risk = score_mileage_use(carfax, listing, narrative)
@@ -310,14 +348,11 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
 
 
 def main():
-    json_files = glob.glob(os.path.join("output/raw", "*.json"))
-    latest_json_file = max(json_files, key=os.path.getmtime)
-    data: dict = {}
-    with open(latest_json_file, "r") as file:
-        data = json.load(file)
-    metadata = data.get("metadata", {})
-    listings = data.get("listings", {})
-    if metadata and listings:
+    path, dataset = load_latest_listing_dataset(Path("output/raw"))
+    listings = [listing.to_legacy_dict() for listing in dataset.listings]
+    if listings:
+        metadata = dataset.metadata.to_dict()
+        latest_json_file = str(path)
         print(f"Loading {latest_json_file} - {len(listings)} found")
         asyncio.run(start_level2_analysis(metadata, listings, latest_json_file))
 

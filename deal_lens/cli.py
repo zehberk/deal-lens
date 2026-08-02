@@ -1,4 +1,4 @@
-import argparse, asyncio, json, logging, os, subprocess, sys, time
+import argparse, asyncio, json, logging, subprocess, sys, time
 
 from argparse import Namespace
 from datetime import datetime
@@ -10,12 +10,11 @@ from analysis.level1_market import build_market_snapshot
 from analysis.level1_report import render_level1_market_pdf
 from analysis.level2 import start_level2_analysis
 from utils.cache import load_cache, save_cache
-from utils.common import current_timestamp
 from utils.constants import *
 from utils.download import download_files
 from deal_lens.cli_support import *
 from deal_lens.config import get_visor_api_key, get_visor_rate_limits
-from deal_lens.models import Listing
+from deal_lens.models import Listing, ListingDataset
 from deal_lens.progress import CLI_CONSOLE, cli_progress
 from utils.progress import ProgressReporter
 from visor_api import (
@@ -88,10 +87,11 @@ def _visor_client(progress: ProgressReporter) -> VisorClient:
 
 
 def save_results(
-    listings: list[dict], metadata: dict, args, output_path: Path = LISTINGS_PATH
-) -> str:
+    dataset: ListingDataset, output_path: Path = LISTINGS_PATH
+) -> Path:
     analysis_cache = load_cache(ANALYSIS_CACHE)
-    for l in listings:
+    for listing in dataset.listings:
+        l = listing.to_legacy_dict()
         vin = l.get("vin")
         if vin is None:
             continue
@@ -104,30 +104,28 @@ def save_results(
 
     save_cache(analysis_cache, ANALYSIS_CACHE)
 
-    ts = current_timestamp()
     if not output_path.exists():
         output_path.mkdir(parents=True, exist_ok=True)
-    filename = f"{args.make}_{args.model}_listings_{ts}.json".replace(" ", "_")
+    vehicle = dataset.metadata.vehicle
+    timestamp = dataset.metadata.runtime.timestamp
+    filename = f"{vehicle.make}_{vehicle.model}_listings_{timestamp}.json".replace(" ", "_")
     # Visor sometimes uses quotes for models, so remove characters that can't be in a filename
     filename = re.sub(r'[<>:"/\\|?*]', "", filename)
-    path = os.path.join(output_path, filename)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(
-            {"metadata": metadata, "listings": listings},
-            f,
-            indent=2,
-            ensure_ascii=False,
-        )
-    logging.getLogger(__name__).info("Saved %d listings to %s", len(listings), path)
-    return ts
+    path = output_path / filename
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(dataset.to_dict(), f, indent=2, ensure_ascii=False)
+    logging.getLogger(__name__).info("Saved %d listings to %s", len(dataset.listings), path)
+    return path
 
 
 async def run_analysis(
-    listings: list, metadata: dict, args, timestamp: str, filename: str
+    dataset: ListingDataset, args, filename: str
 ) -> None:
+    listings = [listing.to_legacy_dict() for listing in dataset.listings]
+    metadata = dataset.metadata.to_dict()
     if listings:
         if args.level1:
-            await start_level1_analysis(listings, metadata, args, timestamp)
+            await start_level1_analysis(listings, metadata, args, dataset.metadata.runtime.timestamp)
         elif args.level2:
             await start_level2_analysis(metadata, listings, filename)
         elif args.level3:
@@ -233,12 +231,9 @@ async def collect_and_run_level2_api(args: Namespace) -> None:
     metadata = build_metadata(args)
     apply_level2_collection_metadata(metadata, result.collection, result.cache_used)
 
-    timestamp = save_results(listings, metadata, args)
-    filename = (
-        f"output/raw/{args.make}_{args.model}_listings_{timestamp}.json".replace(
-            " ", "_"
-        )
-    )
+    dataset = ListingDataset.from_dict({"metadata": metadata, "listings": listings})
+    path = save_results(dataset)
+    filename = str(path)
     await start_level2_analysis(metadata, listings, filename)
 
 
@@ -259,15 +254,12 @@ async def collect_and_run_level3_api(args: Namespace) -> None:
     )
     listings = result.payload["listings"]
     metadata = result.payload["metadata"]
-    timestamp = save_results(listings, metadata, args)
-    filename = (
-        f"output/raw/{args.make}_{args.model}_listings_{timestamp}.json".replace(
-            " ", "_"
-        )
-    )
+    dataset = ListingDataset.from_dict({"metadata": metadata, "listings": listings})
+    path = save_results(dataset)
+    filename = str(path)
     if args.save_docs:
         await download_files(listings, filename)
-    await run_analysis(listings, metadata, args, timestamp, filename)
+    await run_analysis(dataset, args, filename)
 
 
 async def scrape(args: Namespace) -> None:
