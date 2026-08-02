@@ -213,7 +213,12 @@ async def test_level2_delegates_document_collection_to_analysis(monkeypatch):
 	collection = SimpleNamespace(
 		listings=(SimpleNamespace(listing=listing),),
 	)
-	metadata = {"site_info": {}, "runtime": {}, "warnings": []}
+	metadata = {
+		"vehicle": {"make": "INFINITI", "model": "QX55"},
+		"site_info": {},
+		"runtime": {"timestamp": "20260728_120000"},
+		"warnings": [],
+	}
 	order = []
 
 	monkeypatch.setattr(
@@ -234,7 +239,7 @@ async def test_level2_delegates_document_collection_to_analysis(monkeypatch):
 	)
 	monkeypatch.setattr(
 		"deal_lens.cli.save_results",
-		lambda *args: "20260728_120000",
+		lambda *args: Path("output/raw/INFINITI_QX55_listings_20260728_120000.json"),
 	)
 
 	async def fake_analysis(actual_metadata, listings, filename):
@@ -252,7 +257,7 @@ async def test_level2_delegates_document_collection_to_analysis(monkeypatch):
 
 	await collect_and_run_level2_api(args)
 
-	filename = "output/raw/INFINITI_QX55_listings_20260728_120000.json"
+	filename = str(Path("output/raw/INFINITI_QX55_listings_20260728_120000.json"))
 	assert order == [("analysis", [listing], filename)]
 
 
@@ -261,25 +266,23 @@ async def test_level3_api_workflow_forwards_collection_options(monkeypatch):
 	client = object()
 	progress = object()
 	listings = [{"id": "listing-1", "vin": "TESTVIN"}]
-	metadata = {"sources": {"visor_api": {}}}
+	metadata = {
+		"vehicle": {"make": "Honda", "model": "Civic"},
+		"runtime": {"timestamp": "20260722_120000"},
+		"sources": {"visor_api": {}},
+	}
 	calls = {}
 
 	def fake_cached(api_client, api_query, **kwargs):
 		calls["cached"] = (api_client, api_query, kwargs)
 		return SimpleNamespace(payload={"listings": listings, "metadata": metadata})
 
-	def fake_save(saved_listings, saved_metadata, args):
-		calls["save"] = (saved_listings, saved_metadata, args)
-		return "20260722_120000"
+	def fake_save(dataset):
+		calls["save"] = dataset
+		return Path("output/raw/Honda_Civic_listings_20260722_120000.json")
 
-	async def fake_analysis(saved_listings, saved_metadata, args, timestamp, filename):
-		calls["analysis"] = (
-			saved_listings,
-			saved_metadata,
-			args,
-			timestamp,
-			filename,
-		)
+	async def fake_analysis(dataset, args, filename):
+		calls["analysis"] = (dataset, args, filename)
 
 	monkeypatch.setattr(
 		"deal_lens.cli.VisorListingQuery.from_url", lambda url: query
@@ -315,8 +318,9 @@ async def test_level3_api_workflow_forwards_collection_options(monkeypatch):
 			"progress": progress,
 		},
 	)
-	assert calls["save"] == (listings, metadata, args)
-	assert calls["analysis"][-2:] == (
-		"20260722_120000",
-		"output/raw/Honda_Civic_listings_20260722_120000.json",
+	assert calls["save"].metadata.vehicle.make == "Honda"
+	assert [listing.id for listing in calls["save"].listings] == ["listing-1"]
+	assert calls["analysis"] == (
+		calls["save"], args,
+		"output\\raw\\Honda_Civic_listings_20260722_120000.json",
 	)

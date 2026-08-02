@@ -1,9 +1,10 @@
-import asyncio, glob, json, os, time
+import asyncio, time
 
 from pathlib import Path
 from typing import NotRequired, TypedDict
 
 from analysis.analysis_utils import get_report_dir
+from deal_lens.persistence import load_latest_listing_dataset
 from analysis.reporting import render_level2_pdf
 from analysis.scoring import (
     calculate_deal_score_result,
@@ -310,14 +311,11 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
 
 
 def main():
-    json_files = glob.glob(os.path.join("output/raw", "*.json"))
-    latest_json_file = max(json_files, key=os.path.getmtime)
-    data: dict = {}
-    with open(latest_json_file, "r") as file:
-        data = json.load(file)
-    metadata = data.get("metadata", {})
-    listings = data.get("listings", {})
-    if metadata and listings:
+    path, dataset = load_latest_listing_dataset(Path("output/raw"))
+    listings = [listing.to_legacy_dict() for listing in dataset.listings]
+    if listings:
+        metadata = dataset.metadata.to_dict()
+        latest_json_file = str(path)
         print(f"Loading {latest_json_file} - {len(listings)} found")
         asyncio.run(start_level2_analysis(metadata, listings, latest_json_file))
 

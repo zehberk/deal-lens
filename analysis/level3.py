@@ -1,9 +1,10 @@
-import asyncio, glob, json, os, time
+import asyncio, time
 
 
 from pathlib import Path
 
 from analysis.kbb import get_pricing_data
+from deal_lens.persistence import load_latest_listing_dataset
 from analysis.normalization import (
     filter_valid_listings,
     get_variant_map,
@@ -94,14 +95,11 @@ async def start_level3_analysis(metadata: dict, listings: list[dict], filename: 
 
 
 def main():
-    json_files = glob.glob(os.path.join("output/raw", "*.json"))
-    latest_json_file = max(json_files, key=os.path.getmtime)
-    data: dict = {}
-    with open(latest_json_file, "r") as file:
-        data = json.load(file)
-    metadata = data.get("metadata", {})
-    listings = data.get("listings", {})
-    if metadata and listings:
+    path, dataset = load_latest_listing_dataset(Path("output/raw"))
+    listings = [listing.to_legacy_dict() for listing in dataset.listings]
+    if listings:
+        metadata = dataset.metadata.to_dict()
+        latest_json_file = str(path)
         print(f"Loading {latest_json_file} - {len(listings)} found")
         asyncio.run(start_level3_analysis(metadata, listings, latest_json_file))
 

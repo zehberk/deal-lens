@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-import asyncio, glob, json, os
+import asyncio
+
+from pathlib import Path
 
 from utils.cache import load_cache
 from analysis.kbb import get_pricing_data
@@ -21,6 +23,7 @@ from analysis.scoring import (
     rate_uncertainty,
 )
 from analysis.workflow import prepare_level1_analysis
+from deal_lens.persistence import load_latest_listing_dataset
 
 from utils.constants import PRICING_CACHE
 from utils.models import CarListing, DealBin, TrimValuation
@@ -170,14 +173,10 @@ async def start_level1_analysis(
 
 
 def main():
-    json_files = glob.glob(os.path.join("output/raw", "*.json"))
-    latest_json_file = max(json_files, key=os.path.getmtime)
-    data: dict = {}
-    with open(latest_json_file, "r") as file:
-        data = json.load(file)
-    metadata = data.get("metadata", {})
-    listings = data.get("listings", {})
-    if metadata and listings:
+    _, dataset = load_latest_listing_dataset(Path("output/raw"))
+    listings = [listing.to_legacy_dict() for listing in dataset.listings]
+    if listings:
+        metadata = dataset.metadata.to_dict()
         asyncio.run(start_level1_analysis(listings, metadata, None, ""))
 
 
