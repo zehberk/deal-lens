@@ -17,7 +17,7 @@ from analysis.reporting import (
 	summarize_level2_failures,
 )
 from jinja2 import Environment, FileSystemLoader
-from utils.models import AnalysisContext, ListingContext, PricingAnchors
+from utils.models import AnalysisContext, CarfaxData, ListingContext, PricingAnchors
 
 
 def test_level2_uses_one_local_report_image(monkeypatch):
@@ -160,7 +160,7 @@ async def test_level2_rates_new_vehicle_without_history_report(monkeypatch):
 	assert render_args[4] == []
 
 
-async def test_level2_cannot_analyze_used_vehicle_without_mileage(monkeypatch):
+async def test_level2_keeps_price_only_rating_without_listing_or_carfax_mileage(monkeypatch):
 	listing = {
 		"id": "used-no-mileage",
 		"vin": "2HGFE4F8XSH354866",
@@ -170,10 +170,11 @@ async def test_level2_cannot_analyze_used_vehicle_without_mileage(monkeypatch):
 		"price": 29_436,
 	}
 	ctx = AnalysisContext(make="Honda", model="Civic")
-	ctx.listings = [ListingContext(
+	context = ListingContext(
 		listing_id="used-no-mileage",
 		listing=listing,
-	)]
+	)
+	ctx.listings = [context]
 
 	async def fake_prepare(*_args, **_kwargs):
 		return ctx
@@ -184,17 +185,87 @@ async def test_level2_cannot_analyze_used_vehicle_without_mileage(monkeypatch):
 		nonlocal render_args
 		render_args = args
 
-	price_assessment = Mock()
+	price_assessment = Mock(return_value=(
+		"Good", 0, 0, 0.0, {"marker_pct": 25.0},
+	))
 	monkeypatch.setattr(level2, "prepare_level2_analysis", fake_prepare)
 	monkeypatch.setattr(level2, "_price_assessment", price_assessment)
 	monkeypatch.setattr(level2, "render_level2_pdf", fake_render)
 
 	await level2.start_level2_analysis({}, [listing], "unused.json")
 
-	price_assessment.assert_not_called()
+	price_assessment.assert_called_once()
 	assert render_args[3] == []
-	assert render_args[4] == []
-	assert render_args[5] == [(listing, "Mileage not available.")]
+	assert render_args[4] == [(
+		context.listing, "Good", None,
+		[
+			"Mileage is unavailable from both the listing and CARFAX, so risk and the final Level 2 rating are unavailable."
+		],
+		{"marker_pct": 25.0},
+	)]
+	assert render_args[5] == []
+
+
+async def test_level2_uses_carfax_mileage_when_listing_mileage_is_missing(monkeypatch):
+	report = Path("cache") / f"test-carfax-mileage-{uuid.uuid4().hex}.html"
+	report.parent.mkdir(parents=True, exist_ok=True)
+	report.write_text("saved report", encoding="utf-8")
+	listing = {
+		"id": "used-carfax-mileage",
+		"vin": "2HGFE4F8XSH354866",
+		"year": 2025,
+		"condition": "Used",
+		"mileage": None,
+		"price": 29_436,
+	}
+	ctx = AnalysisContext(make="Honda", model="Civic")
+	context = ListingContext(
+		listing_id="used-carfax-mileage", listing=listing,
+		report_path=str(report),
+	)
+	ctx.listings = [context]
+	carfax = CarfaxData(
+		summary={"odometer": "24,321 miles"}, accident_damage={},
+		reliability_section={}, additional_history={}, ownership_history={},
+		detailed_history=[],
+	)
+	render_args: tuple = ()
+
+	async def fake_render(*args):
+		nonlocal render_args
+		render_args = args
+
+	async def fake_prepare(*_args, **_kwargs):
+		return ctx
+
+	monkeypatch.setattr(level2, "prepare_level2_analysis", fake_prepare)
+	monkeypatch.setattr(level2, "get_carfax_data", lambda _report: carfax)
+	monkeypatch.setattr(
+		level2, "_price_assessment",
+		lambda _lc, narrative: narrative.append("Price evidence available.")
+		or ("Good", 0, 0, 0.0, {"marker_pct": 25.0}),
+	)
+	monkeypatch.setattr(level2, "score_title_status", lambda _carfax: 0.0)
+	monkeypatch.setattr(level2, "score_mileage_use", lambda *_args: 0.0)
+	monkeypatch.setattr(level2, "score_warranty_status", lambda *_args: 0.0)
+	monkeypatch.setattr(level2, "render_level2_pdf", fake_render)
+	try:
+		await level2.start_level2_analysis({}, [listing], "unused.json")
+
+		assert context.listing["mileage"] == 24_321
+		assert context.listing["provenance"]["mileage"] == {
+			"kind": "source_fact",
+			"api_path": "carfax.last_odometer_reading",
+		}
+		assert context.carfax is carfax
+		assert len(render_args[3]) == 1
+		assert render_args[5] == []
+		assert (
+			"Listing mileage was unavailable; the latest CARFAX odometer reading was used."
+			in render_args[3][0][3]
+		)
+	finally:
+		report.unlink()
 
 
 async def test_level2_uses_existing_history_report_for_new_vehicle(monkeypatch):
@@ -224,7 +295,7 @@ async def test_level2_uses_existing_history_report_for_new_vehicle(monkeypatch):
 		nonlocal render_args
 		render_args = args
 
-	parser = Mock(return_value=object())
+	parser = Mock(return_value=Mock(last_odometer_reading=0))
 	monkeypatch.setattr(level2, "prepare_level2_analysis", fake_prepare)
 	monkeypatch.setattr(
 		level2,
