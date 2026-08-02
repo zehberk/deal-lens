@@ -160,7 +160,10 @@ class InstalledOption:
 		)
 
 	def to_dict(self) -> dict[str, Any]:
-		return {**self.extra, "name": self.name, "price": self.price, "code": self.code}
+		result = {**self.extra, "name": self.name, "price": self.price}
+		if self.code is not None:
+			result["code"] = self.code
+		return result
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)

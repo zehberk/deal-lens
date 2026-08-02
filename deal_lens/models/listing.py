@@ -7,7 +7,15 @@ from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import Any
 
-from deal_lens.models.common import SupplementaryStatus
+from deal_lens.models.common import (
+	DataWarning,
+	DealerFee,
+	InstalledOption,
+	PriceHistoryRecord,
+	SourceProvenance,
+	SupplementaryStatus,
+	WarrantyCoverage,
+)
 
 
 class ListingCondition(StrEnum):
@@ -28,7 +36,8 @@ class Seller:
 	postal_code: str | None = None
 	latitude: float | None = None
 	longitude: float | None = None
-	dealer_fees: list[dict[str, Any]] = field(default_factory=list)
+	dealer_fees: list[DealerFee] = field(default_factory=list)
+	extra: dict[str, Any] = field(default_factory=dict, repr=False)
 
 
 @dataclass(kw_only=True, slots=True)
@@ -79,14 +88,15 @@ class Listing(MutableMapping[str, Any]):
 	seller: Seller = field(default_factory=Seller)
 	documents: ListingDocuments = field(default_factory=ListingDocuments)
 	images: list[str] = field(default_factory=list)
-	installed_options: list[dict[str, Any]] | None = None
+	installed_options: list[InstalledOption] | None = None
 	installed_options_total: Decimal | None = None
-	price_history: list[dict[str, Any]] | None = None
-	warranty_coverages: list[dict[str, Any]] = field(default_factory=list)
+	price_history: list[PriceHistoryRecord] | None = None
+	warranty_coverages: list[WarrantyCoverage] = field(default_factory=list)
+	warranty_extra: dict[str, Any] = field(default_factory=dict, repr=False)
 	source: str = "legacy"
 	source_record_id: str | None = None
-	provenance: dict[str, Any] = field(default_factory=dict)
-	warnings: list[dict[str, Any]] = field(default_factory=list)
+	provenance: dict[str, SourceProvenance] = field(default_factory=dict)
+	warnings: list[DataWarning] = field(default_factory=list)
 	supplementary_status: SupplementaryStatus = field(default_factory=SupplementaryStatus)
 	raw_source: dict[str, Any] = field(default_factory=dict, repr=False)
 	extra: dict[str, Any] = field(default_factory=dict, repr=False)
@@ -129,26 +139,36 @@ class Listing(MutableMapping[str, Any]):
 			"seller": _seller_dict(self.seller),
 			"specs": dict(self.vehicle.specs),
 			"installed_addons": {
-				"items": self.installed_options,
+				"items": (
+					[option.to_dict() for option in self.installed_options]
+					if self.installed_options is not None else None
+				),
 				"total": _json_number(self.installed_options_total),
 			},
-			"price_history": self.price_history,
+			"price_history": (
+				[item.to_dict() for item in self.price_history]
+				if self.price_history is not None else None
+			),
 			"additional_docs": {
 				"carfax_url": self.documents.carfax_url,
 				"autocheck_url": self.documents.autocheck_url,
 				"window_sticker_url": self.documents.window_sticker_url,
 			},
-			"provenance": self.provenance,
-			"warnings": self.warnings,
+			"provenance": {
+				key: item.to_dict() for key, item in self.provenance.items()
+			},
+			"warnings": [warning.to_dict() for warning in self.warnings],
 			"supplementary_status": self.supplementary_status.to_dict(),
 		})
 		if self.raw_source:
 			result["source_data"] = self.raw_source
-		if "warranty" not in result:
-			result["warranty"] = (
-				{"coverages": self.warranty_coverages}
-				if self.warranty_coverages else None
-			)
+		result["warranty"] = (
+			{
+				**self.warranty_extra,
+				"coverages": [coverage.to_dict() for coverage in self.warranty_coverages],
+			}
+			if self.warranty_coverages or self.warranty_extra else None
+		)
 		return result
 
 	def __getitem__(self, key: str) -> Any:
@@ -213,9 +233,30 @@ def listing_from_legacy(value: Mapping[str, Any]) -> Listing:
 		"mileage", "days_on_market", "listed", "listed_at", "listing_url",
 		"images", "seller", "specs", "installed_addons", "price_history",
 		"additional_docs", "source_data", "provenance", "warnings",
-		"supplementary_status",
+		"supplementary_status", "warranty",
 	}
 	addons = _dict(data.get("installed_addons"))
+	typed_warnings = [
+		DataWarning.from_dict(item)
+		for item in data.get("warnings") or []
+		if isinstance(item, Mapping)
+	]
+	dealer_fees = _dealer_fees(
+		seller_data.get("dealer_fees"), typed_warnings
+	)
+	installed_options = _mapping_records(
+		addons.get("items"), InstalledOption.from_dict,
+		"installed_addons.items", typed_warnings,
+	)
+	price_history = _mapping_records(
+		data.get("price_history"), PriceHistoryRecord.from_dict,
+		"price_history", typed_warnings,
+	)
+	warranty_coverages = _mapping_records(
+		warranty.get("coverages"), WarrantyCoverage.from_dict,
+		"warranty.coverages", typed_warnings,
+	) or []
+	provenance = _provenance_records(data.get("provenance"), typed_warnings)
 	return Listing(
 		id=str(data.get("id") or data.get("vin") or ""),
 		vehicle=Vehicle(
@@ -248,7 +289,19 @@ def listing_from_legacy(value: Mapping[str, Any]) -> Listing:
 			phone=_string(seller_data.get("phone")),
 			stock_number=_string(seller_data.get("stock_number")),
 			location=_string(seller_data.get("location")),
-			dealer_fees=list(seller_data.get("dealer_fees") or []),
+			city=_string(seller_data.get("city")),
+			state=_string(seller_data.get("state")),
+			postal_code=_string(seller_data.get("postal_code")),
+			latitude=_float(seller_data.get("latitude")),
+			longitude=_float(seller_data.get("longitude")),
+			dealer_fees=dealer_fees,
+			extra={
+				key: item for key, item in seller_data.items()
+				if key not in {
+					"id", "name", "phone", "stock_number", "location", "city",
+					"state", "postal_code", "latitude", "longitude", "dealer_fees",
+				}
+			},
 		),
 		documents=ListingDocuments(
 			carfax_url=_string(documents.get("carfax_url")),
@@ -256,14 +309,17 @@ def listing_from_legacy(value: Mapping[str, Any]) -> Listing:
 			window_sticker_url=_string(documents.get("window_sticker_url")),
 		),
 		images=list(data.get("images") or []),
-		installed_options=addons.get("items"),
+		installed_options=installed_options,
 		installed_options_total=_decimal(addons.get("total")),
-		price_history=data.get("price_history"),
-		warranty_coverages=list(warranty.get("coverages") or []),
+		price_history=price_history,
+		warranty_coverages=warranty_coverages,
+		warranty_extra={
+			key: item for key, item in warranty.items() if key != "coverages"
+		},
 		source=str(source_data.get("provider") or "legacy"),
 		source_record_id=str(data.get("id")) if data.get("id") is not None else None,
-		provenance=_dict(data.get("provenance")),
-		warnings=list(data.get("warnings") or []),
+		provenance=provenance,
+		warnings=typed_warnings,
 		supplementary_status=SupplementaryStatus.from_dict(
 			_dict(data.get("supplementary_status"))
 		),
@@ -276,6 +332,59 @@ def _dict(value: Any) -> dict[str, Any]:
 	return dict(value) if isinstance(value, Mapping) else {}
 
 
+def _boundary_warning(field: str, value: Any) -> DataWarning:
+	return DataWarning(
+		code="incompatible_data", field=field,
+		message=f"{field} contained a child record with an incompatible type.",
+		extra={"received_type": type(value).__name__},
+	)
+
+
+def _dealer_fees(value: Any, warnings: list[DataWarning]) -> list[DealerFee]:
+	if value is None:
+		return []
+	if not isinstance(value, (list, tuple)):
+		warnings.append(_boundary_warning("seller.dealer_fees", value))
+		return []
+	result = []
+	for item in value:
+		try:
+			result.append(DealerFee.from_legacy(item))
+		except ValueError:
+			warnings.append(_boundary_warning("seller.dealer_fees", item))
+	return result
+
+
+def _mapping_records(value: Any, factory: Any, field: str, warnings: list[DataWarning]) -> list[Any] | None:
+	if value is None:
+		return None
+	if not isinstance(value, (list, tuple)):
+		warnings.append(_boundary_warning(field, value))
+		return None
+	result = []
+	for item in value:
+		if isinstance(item, Mapping):
+			result.append(factory(item))
+		else:
+			warnings.append(_boundary_warning(field, item))
+	return result
+
+
+def _provenance_records(value: Any, warnings: list[DataWarning]) -> dict[str, SourceProvenance]:
+	if value is None:
+		return {}
+	if not isinstance(value, Mapping):
+		warnings.append(_boundary_warning("provenance", value))
+		return {}
+	result = {}
+	for key, item in value.items():
+		if isinstance(item, Mapping):
+			result[str(key)] = SourceProvenance.from_dict(item)
+		else:
+			warnings.append(_boundary_warning(f"provenance.{key}", item))
+	return result
+
+
 def _string(value: Any) -> str | None:
 	return str(value) if value is not None else None
 
@@ -285,6 +394,15 @@ def _integer(value: Any) -> int | None:
 		return None
 	try:
 		return int(value)
+	except (TypeError, ValueError):
+		return None
+
+
+def _float(value: Any) -> float | None:
+	if value is None or isinstance(value, bool):
+		return None
+	try:
+		return float(value)
 	except (TypeError, ValueError):
 		return None
 
@@ -310,11 +428,19 @@ def _date_value(value: datetime | str | None) -> str | None:
 
 def _seller_dict(value: Seller) -> dict[str, Any]:
 	result: dict[str, Any] = {
+		**value.extra,
 		"name": value.name,
 		"location": value.location,
 		"phone": value.phone,
 		"stock_number": value.stock_number,
 	}
+	for key, item in (
+		("id", value.id), ("city", value.city), ("state", value.state),
+		("postal_code", value.postal_code), ("latitude", value.latitude),
+		("longitude", value.longitude),
+	):
+		if item is not None:
+			result[key] = item
 	if value.dealer_fees:
-		result["dealer_fees"] = value.dealer_fees
+		result["dealer_fees"] = [fee.to_legacy() for fee in value.dealer_fees]
 	return result
