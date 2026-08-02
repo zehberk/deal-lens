@@ -73,7 +73,7 @@ def _listing_key(listing: dict) -> str:
 
 
 def _fill_missing_listing_fields_from_carfax(
-    listing: dict | Listing, carfax: CarfaxData
+    listing: Listing, carfax: CarfaxData
 ) -> tuple[str, ...]:
     """Fill directly shared, missing listing facts from CARFAX evidence."""
     fallbacks = {
@@ -87,16 +87,9 @@ def _fill_missing_listing_fields_from_carfax(
         if listing.get(field) is not None or value is None:
             continue
         listing[field] = value
-        if isinstance(listing, Listing):
-            listing.provenance[field] = SourceProvenance(
-                kind="source_fact", source_path=source_path
-            )
-        else:
-            provenance = listing.setdefault("provenance", {})
-            if isinstance(provenance, dict):
-                provenance[field] = {
-                    "kind": "source_fact", "api_path": source_path,
-                }
+        listing.provenance[field] = SourceProvenance(
+            kind="source_fact", source_path=source_path
+        )
         filled.append(field)
     return tuple(filled)
 
