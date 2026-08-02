@@ -167,21 +167,6 @@ def _price_assessment(
     return deal, midpoint, increment, percent, pricing_visual
 
 
-def report_stats(label: str, values: list[float]):
-    if not values:
-        return f"{label}: no data\n"
-    avg = sum(values) / len(values)
-    mn = min(values)
-    mx = max(values)
-    return (
-        f"{label}:\n"
-        f"  avg: {avg:.4f}s\n"
-        f"  min: {mn:.4f}s\n"
-        f"  max: {mx:.4f}s\n"
-        f"  count: {len(values)}\n"
-    )
-
-
 async def start_level2_analysis(metadata: dict, listings: list[dict], filename: str):
     ctx = await prepare_level2_analysis(metadata, listings, filename)
 

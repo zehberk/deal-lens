@@ -1,6 +1,15 @@
 from decimal import Decimal
 
-from deal_lens.models import ListingCondition, listing_from_legacy
+from deal_lens.models import (
+	DataWarning,
+	DealerFee,
+	InstalledOption,
+	ListingCondition,
+	PriceHistoryRecord,
+	SourceProvenance,
+	WarrantyCoverage,
+	listing_from_legacy,
+)
 from visor_api.adapter import listing_from_visor
 
 
@@ -58,10 +67,38 @@ def test_visor_factory_prefers_detail_and_retains_provenance():
 	assert listing.vehicle.model == "Car"
 	assert listing.source == "visor_api"
 	assert listing.raw_source["search_listing"]["price"] == 30_000
-	assert listing.provenance["price"] == {
-		"kind": "source_fact",
-		"api_path": "price",
-	}
+	assert listing.provenance["price"].kind == "source_fact"
+	assert listing.provenance["price"].source_path == "price"
+
+
+def test_legacy_factory_converts_listing_child_records_to_models():
+	listing = listing_from_legacy({
+		"id": "listing-1",
+		"seller": {"dealer_fees": [["Doc fee", 250, False]]},
+		"installed_addons": {
+			"items": [{"name": "Floor Mats", "price": 150}],
+			"total": 150,
+		},
+		"price_history": [{"date": "2026-01-01", "price": 25_000}],
+		"warranty": {
+			"coverages": [{"type": "Basic", "status": "Active"}],
+			"overall_status": "Active",
+		},
+		"provenance": {"price": {"kind": "source_fact", "api_path": "price"}},
+		"warnings": [{
+			"field": "mileage", "code": "missing_data", "message": "Missing",
+		}],
+	})
+
+	assert isinstance(listing.seller.dealer_fees[0], DealerFee)
+	assert listing.installed_options is not None
+	assert listing.price_history is not None
+	assert isinstance(listing.installed_options[0], InstalledOption)
+	assert isinstance(listing.price_history[0], PriceHistoryRecord)
+	assert isinstance(listing.warranty_coverages[0], WarrantyCoverage)
+	assert isinstance(listing.provenance["price"], SourceProvenance)
+	assert isinstance(listing.warnings[0], DataWarning)
+	assert listing.to_legacy_dict()["warranty"]["overall_status"] == "Active"
 
 
 def test_legacy_serialization_uses_json_compatible_currency_values():
@@ -76,3 +113,14 @@ def test_legacy_serialization_uses_json_compatible_currency_values():
 	assert serialized["price"] == 25_500
 	assert serialized["msrp"] == 27_000.5
 	assert not isinstance(serialized["price"], Decimal)
+
+
+def test_malformed_child_record_is_reported_instead_of_silently_skipped():
+	listing = listing_from_legacy({
+		"id": "listing-1",
+		"installed_addons": {"items": ["not-an-option"]},
+	})
+
+	assert listing.installed_options == []
+	assert listing.warnings[-1].field == "installed_addons.items"
+	assert listing.warnings[-1].code == "incompatible_data"

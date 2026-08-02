@@ -49,12 +49,6 @@ DAMAGE_BRANDS = ["Salvage", "Junk", "Rebuilt", "Fire", "Flood", "Hail", "Lemon"]
 ODOMETER_BRANDS = ["Not Actual Mileage", "Exceeds Mechanical Limits"]
 
 
-def get_info_panel(summary: Tag):
-    info_panel = summary.find("div", id="vehicle-information-panel")
-    if info_panel:
-        print(info_panel.prettify())
-
-
 def get_history_overview(summary: Tag) -> dict[str, str]:
     history_overview = summary.find("div", id="history-overview")
     if history_overview:

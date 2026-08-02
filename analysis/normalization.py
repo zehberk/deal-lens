@@ -77,15 +77,6 @@ def get_sequence_score(
     return SequenceMatcher(None, visor_string, kbb_string).ratio()
 
 
-def tokens_from_url(url: str) -> set[str]:
-    path = strip_domain(url)
-    if not path:
-        return set()
-
-    s = re.sub(r"[-_/]", " ", path)
-    return set(s.split())
-
-
 def best_kbb_model_match(
     make: str, model: str, listing: dict, kbb_models: list[str]
 ) -> str | None:

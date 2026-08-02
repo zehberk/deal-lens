@@ -5,7 +5,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
-from deal_lens.models import Listing, listing_from_legacy
+from deal_lens.models import (
+	DataWarning,
+	Listing,
+	SourceProvenance,
+	listing_from_legacy,
+)
 from utils.progress import NULL_PROGRESS, ProgressReporter
 from visor_api.adapter import adapt_listing
 from visor_api.client import QueryParams, VisorAPIError, VisorTimeoutError
@@ -210,16 +215,16 @@ def collect_level2_listings(
 		detail, detail_error = _collect_detail(client, listing_id)
 		adapted = adapt_listing(row, detail)
 		if detail_error is not None:
-			adapted.warnings.append({
+			adapted.warnings.append(DataWarning.from_dict({
 				"field": "detail",
 				"code": "source_error",
 				"message": "Listing detail could not be retrieved.",
 				"api_path": f"/v1/listings/{listing_id}",
-			})
-			adapted.provenance["detail"] = {
+			}))
+			adapted.provenance["detail"] = SourceProvenance.from_dict({
 				"kind": "unavailable",
 				"reason": "source_error",
-			}
+			})
 		listings.append(Level2ListingRecord(
 			listing_id=listing_id,
 			vin=vin,

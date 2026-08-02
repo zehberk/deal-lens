@@ -9,6 +9,7 @@ from playwright.async_api import TimeoutError
 
 from analysis.kbb import (
 	_cluster_vin_lookahead_listings,
+	_base_national_trim_for_configuration,
 	_configuration_matches_listing,
 	_fetch_new_local_pricing_jobs,
 	_prefetch_vin_first_national_tables,
@@ -598,6 +599,34 @@ def test_configuration_matching_treats_optional_evidence_as_constraints():
 	assert not _configuration_matches_listing(configuration, {
 		"trim": "SE", "fuel_type": "hybrid",
 	})
+
+
+def test_explicit_base_vin_style_selects_unique_unbadged_national_row():
+	cache_key = "2018 Kia Soul Wagon 4D Hatchback 4D"
+	listing = {"trim": "Base", "kbb_cache_key": cache_key}
+
+	assert _base_national_trim_for_configuration(
+		"Wagon 4D Hatchback 4D",
+		cache_key,
+		[listing],
+		["Wagon 4D", "+ Wagon 4D", "! Wagon 4D"],
+	) == "Wagon 4D"
+
+
+def test_base_national_fallback_rejects_nonbase_or_ambiguous_rows():
+	cache_key = "2018 Kia Soul Wagon 4D Hatchback 4D"
+	assert _base_national_trim_for_configuration(
+		"Wagon 4D Hatchback 4D",
+		cache_key,
+		[{"trim": "+", "kbb_cache_key": cache_key}],
+		["Wagon 4D", "+ Wagon 4D", "! Wagon 4D"],
+	) is None
+	assert _base_national_trim_for_configuration(
+		"Wagon 4D Hatchback 4D",
+		cache_key,
+		[{"trim": "Base", "kbb_cache_key": cache_key}],
+		["Wagon 4D", "Base Wagon 4D"],
+	) is None
 
 
 async def test_kbb_browser_launches_headless(monkeypatch):
