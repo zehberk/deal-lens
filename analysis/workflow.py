@@ -71,8 +71,6 @@ def populate_filtered_listings(
         cache_key = vd["cache_key"]
 
         lid = str(listing.get("id", ""))
-        vin = str(listing.get("vin", "") or "")
-
         # Find the matching “full listing” once, here (so level2 doesn’t do it)
         full = next((l for l in source_listings if str(l.get("id", "")) == lid), listing)
         full_data = dict(full)
@@ -97,10 +95,7 @@ def populate_filtered_listings(
 
         ctx.listings.append(
             ListingContext(
-                listing_id=lid,
-                vin=vin,
                 cache_key=cache_key,
-                year=vd["year"],
                 base_trim=vd["base_trim"],
                 listing=model,
                 report_path=report_path,

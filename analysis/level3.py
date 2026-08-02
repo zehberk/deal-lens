@@ -39,8 +39,6 @@ async def start_level3_analysis(metadata: dict, listings: list[dict], filename: 
     # Extract Carfax report
     for item in sorted(ctx.listings, key=lambda x: x.listing.id):
         listing = item.listing
-        cache_key = item.cache_key
-
         full_listing = next(l for l in listings if l.get("id") == listing.id)
         report = get_report_dir(full_listing)
         is_new = listing.condition is not None and listing.condition.value.casefold() == "new"
@@ -52,11 +50,11 @@ async def start_level3_analysis(metadata: dict, listings: list[dict], filename: 
         narrative: list[str] = []
 
         price = int(listing.price or 0)
-        fpp_natl = int(ctx.cache_entries[cache_key].get("fpp_natl") or 0)
-        fpp_local = int(ctx.cache_entries[cache_key].get("fpp_local") or 0)
-        fmr_high = int(ctx.cache_entries[cache_key].get("fmr_high") or 0)
-        fmv = int(ctx.cache_entries[cache_key].get("fmv") or 0)
-        msrp = int(ctx.cache_entries[cache_key].get("msrp") or 0)
+        fpp_natl = int(item.pricing.fpp_natl or 0)
+        fpp_local = int(item.pricing.fpp_local or 0)
+        fmr_high = int(item.pricing.fmr_high or 0)
+        fmv = int(item.pricing.fmv or 0)
+        msrp = int(item.pricing.msrp or 0)
         if not any((fpp_natl, fpp_local, fmv, msrp if is_new else 0)):
             narrative.append(
                 "Unable to provide ratings for this vehicle: no pricing data is available for this vehicle."

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
+from dataclasses import replace
 from pathlib import Path
 
 from utils.cache import load_cache
@@ -40,14 +41,13 @@ async def create_level1_file(listings: list[dict], metadata: dict):
     for item in ctx.listings:
         listing = item.listing
         cache_key = item.cache_key
-        year = item.year
         base_trim = item.base_trim
 
-        msrp = int(ctx.cache_entries[cache_key].get("msrp") or 0)
-        fpp_natl = int(ctx.cache_entries[cache_key].get("fpp_natl") or 0)
-        fpp_local = int(ctx.cache_entries[cache_key].get("fpp_local") or 0)
-        fmr_high = int(ctx.cache_entries[cache_key].get("fmr_high") or 0)
-        fmv = int(ctx.cache_entries[cache_key].get("fmv") or 0)
+        msrp = int(item.pricing.msrp or 0)
+        fpp_natl = int(item.pricing.fpp_natl or 0)
+        fpp_local = int(item.pricing.fpp_local or 0)
+        fmr_high = int(item.pricing.fmr_high or 0)
+        fmv = int(item.pricing.fmv or 0)
 
         price = int(listing.price or 0)
         best_comparison = determine_best_price(
@@ -121,9 +121,10 @@ async def create_level1_file(listings: list[dict], metadata: dict):
     quicklist = sorted(
         {l.cache_key for l in all_listings if l.cache_key in ctx.cache_entries}
     )
+    pricing_by_key = {item.cache_key: item.pricing for item in ctx.listings}
     visible_entries = {
-        k: KBBPricingEntry.from_dict({**ctx.cache_entries[k], "kbb_trim": k})
-        for k in quicklist
+        key: replace(pricing_by_key[key], kbb_trim=key)
+        for key in quicklist
     }
 
     # Output skipped listing reasons

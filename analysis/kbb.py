@@ -1397,7 +1397,7 @@ def _vin_first_valuations(
         for key in variant_map
     }
     return [
-        KBBPricingEntry.from_dict(entry.to_dict())
+        entry
         for _, entry in cache.level23_items()
         if str(entry.model or "").casefold() in relevant_models
     ]

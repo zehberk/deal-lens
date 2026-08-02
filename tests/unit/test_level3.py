@@ -4,13 +4,20 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 from analysis import level3
-from deal_lens.models import listing_from_legacy
+from deal_lens.models import KBBPricingEntry, listing_from_legacy
 from utils.models import AnalysisContext, ListingContext as DomainListingContext
 
 
 def ListingContext(**values):
 	listing = values.get("listing")
+	listing_id = values.pop("listing_id", None)
+	vin = values.pop("vin", None)
+	year = values.pop("year", None)
 	if isinstance(listing, dict):
+		listing = dict(listing)
+		listing.setdefault("id", listing_id)
+		listing.setdefault("vin", vin)
+		listing.setdefault("year", year)
 		values["listing"] = listing_from_legacy(listing)
 	return DomainListingContext(**values)
 
@@ -21,12 +28,12 @@ async def test_level3_rates_new_vehicle_without_history_report(monkeypatch):
 		"condition": "New",
 		"price": 25_000,
 	}
-	context = ListingContext(listing_id="new-no-report", listing=listing)
+	context = ListingContext(
+		listing_id="new-no-report", listing=listing,
+		pricing=KBBPricingEntry(fpp_natl=26_000),
+	)
 	ctx = AnalysisContext(make="Test", model="Vehicle")
 	ctx.listings = [context]
-	ctx.cache_entries = {
-		"": {"fpp_natl": 26_000, "fpp_local": 0, "fmr_high": 0, "fmv": 0, "msrp": 0}
-	}
 
 	monkeypatch.setattr(level3, "prepare_level3_analysis", AsyncMock(return_value=ctx))
 	monkeypatch.setattr(level3, "get_report_dir", lambda _listing: None)
@@ -57,12 +64,12 @@ async def test_level3_uses_existing_history_report_for_new_vehicle(monkeypatch):
 		"condition": "New",
 		"price": 25_000,
 	}
-	context = ListingContext(listing_id="new-with-report", listing=listing)
+	context = ListingContext(
+		listing_id="new-with-report", listing=listing,
+		pricing=KBBPricingEntry(fpp_natl=26_000),
+	)
 	ctx = AnalysisContext(make="Test", model="Vehicle")
 	ctx.listings = [context]
-	ctx.cache_entries = {
-		"": {"fpp_natl": 26_000, "fpp_local": 0, "fmr_high": 0, "fmv": 0, "msrp": 0}
-	}
 
 	monkeypatch.setattr(level3, "prepare_level3_analysis", AsyncMock(return_value=ctx))
 	monkeypatch.setattr(level3, "get_report_dir", lambda _listing: report)

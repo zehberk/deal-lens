@@ -428,11 +428,7 @@ class DealCheck:
 
 @dataclass
 class ListingContext:
-    listing_id: str = ""
-    vin: str = ""
     cache_key: str = ""
-
-    year: str = ""
     base_trim: str = ""
 
     listing: Listing = field(default_factory=lambda: Listing(id=""))
@@ -450,10 +446,17 @@ class ListingContext:
     risk_score: Optional[int] = None
     narrative: list[str] = field(default_factory=list)
 
-    def __post_init__(self) -> None:
-        self.listing_id = self.listing_id or self.listing.id
-        self.vin = self.vin or self.listing.vin or ""
-        self.year = self.year or str(self.listing.year or "")
+    @property
+    def listing_id(self) -> str:
+        return self.listing.id
+
+    @property
+    def vin(self) -> str:
+        return self.listing.vin or ""
+
+    @property
+    def year(self) -> str:
+        return str(self.listing.year or "")
 
 
 @dataclass

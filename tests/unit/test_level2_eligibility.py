@@ -24,7 +24,14 @@ from utils.models import AnalysisContext, CarfaxData, ListingContext as DomainLi
 
 def ListingContext(**values):
 	listing = values.get("listing")
+	listing_id = values.pop("listing_id", None)
+	vin = values.pop("vin", None)
+	year = values.pop("year", None)
 	if isinstance(listing, dict):
+		listing = dict(listing)
+		listing.setdefault("id", listing_id)
+		listing.setdefault("vin", vin)
+		listing.setdefault("year", year)
 		values["listing"] = listing_from_legacy(listing)
 	return DomainListingContext(**values)
 
