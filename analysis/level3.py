@@ -72,12 +72,19 @@ async def start_level3_analysis(metadata: dict, listings: list[dict], filename: 
             msrp=msrp,
             is_new=is_new,
         )
-        deal, midpoint, increment, percent = classify_deal_rating(
+        classification = classify_deal_rating(
             price, best_comparison, fmv, fpp_local, fmr_high
         )
-        narrative.append(
-            f"Deal bins are set at ${increment * 2} ({percent * 200}%) in size, placing the Fair midpoint at ${midpoint}."
-        )
+        deal = classification.rating
+        midpoint = classification.midpoint
+        if classification.percent is not None:
+            narrative.append(
+                f"Deal ratings use price-relative bands around the ${midpoint} Fair midpoint."
+            )
+        else:
+            narrative.append(
+                f"Deal ratings use KBB's fair-market range around the ${midpoint} Fair midpoint."
+            )
         # Risk ratings and deal adjustment
         if report is not None and report.exists():
             assert report is not None

@@ -115,71 +115,71 @@ def classify_deal_rating(
     fmv: int,
     fpp_local: int,
     fmr_high: int,
-) -> tuple[str, int, int, float]:
+) -> "PriceClassification":
     """
     Returns a deal rating and the midpoint comparison for the provided price
     """
-    if price == 0:
-        return "No price", 0, 0, 0.0
+    if price <= 0 or compare_price <= 0:
+        return PriceClassification("No price", 0, None, (0, 0, 0, 0))
 
-    increment = 1000  # baseline
-    compare_pct = compare_price != fpp_local
-
-    if compare_price == fmv:
-        return (
-            categorize_price_tier(price, fmv, increment, compare_pct, 0.04),
-            fmv,
-            increment,
-            0.04,
+    boundaries: tuple[int, int, int, int]
+    if compare_price == fpp_local and fmr_high > fpp_local:
+        range_step = (fmr_high - fpp_local) / 3
+        midpoint = round(fpp_local + range_step * 2)
+        boundaries = (
+            round(midpoint - range_step * 3),
+            round(midpoint - range_step),
+            round(midpoint + range_step),
+            round(midpoint + range_step * 3),
         )
+        percent = None
+    else:
+        midpoint = fmv if compare_price == fmv else compare_price
+        percent = 0.04 if compare_price == fmv else 0.03
+        boundaries = percentage_price_boundaries(midpoint, percent)
 
-    if compare_price == fpp_local:
-        increment = round((fmr_high - fpp_local) / 3)
-
-    # Shift the fpp midpoint from "Good" to "Fair"
-    midpoint = compare_price + increment * 2
-    return (
-        categorize_price_tier(price, midpoint, increment, compare_pct),
+    return PriceClassification(
+        categorize_price_tier(price, boundaries),
         midpoint,
-        increment,
-        0.03,  # Get calculated value
+        percent,
+        boundaries,
     )
 
 
+@dataclass(frozen=True, slots=True)
+class PriceClassification:
+    rating: str
+    midpoint: int
+    percent: float | None
+    boundaries: tuple[int, int, int, int]
+
+
+def percentage_price_boundaries(
+    midpoint: int, percent: float
+) -> tuple[int, int, int, int]:
+    if midpoint <= 0 or percent <= 0:
+        return (0, 0, 0, 0)
+    values = tuple(round(midpoint * multiplier) for multiplier in (
+        1 - percent * 3,
+        1 - percent,
+        1 + percent,
+        1 + percent * 3,
+    ))
+    return values[0], values[1], values[2], values[3]
+
+
 def categorize_price_tier(
-    price: int, midpoint: int, increment: int, compare_pct: bool, pct: float = 0.03
+    price: int, boundaries: tuple[int, int, int, int]
 ) -> str:
-
-    # absolute ranges (min, max)
-    # Each bin is two increments
-    abs_ranges = {
-        "Great": (float("-inf"), midpoint - increment * 3),
-        "Good": (midpoint - increment * 3, midpoint - increment),
-        "Fair": (midpoint - increment, midpoint + increment),
-        "Poor": (midpoint + increment, midpoint + increment * 3),
-        "Bad": (midpoint + increment * 3, float("inf")),
-    }
-
-    # percentage ranges (min, max)
-    pct_ranges = {
-        "Great": (float("-inf"), midpoint * (1 - pct * 3)),
-        "Good": (midpoint * (1 - pct * 3), midpoint * (1 - pct)),
-        "Fair": (midpoint * (1 - pct), midpoint * (1 + pct)),
-        "Poor": (midpoint * (1 + pct), midpoint * (1 + pct * 3)),
-        "Bad": (midpoint * (1 + pct * 3), float("inf")),
-    }
-
-    for label in abs_ranges.keys():
-        abs_min, abs_max = abs_ranges[label]
-        pct_min, pct_max = pct_ranges[label]
-
-        abs_match = abs_min <= price <= abs_max
-        pct_match = compare_pct and (pct_min <= price < pct_max)
-
-        if abs_match or pct_match:
-            return label
-
-    # Default to Bad in case math is off
+    great_high, good_high, fair_high, poor_high = boundaries
+    if price <= great_high:
+        return "Great"
+    if price <= good_high:
+        return "Good"
+    if price <= fair_high:
+        return "Fair"
+    if price <= poor_high:
+        return "Poor"
     return "Bad"
 
 

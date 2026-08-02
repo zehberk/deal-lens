@@ -731,6 +731,32 @@ def test_price_assessment_explains_percent_from_fair_midpoint():
 	assert "Listing price is 1.9% above the fair-price midpoint." in narrative
 
 
+def test_rendered_scale_uses_the_exact_rating_boundaries():
+	lc = ListingContext(
+		listing_id="low-price",
+		listing={"price": 9_000},
+		pricing=KBBPricingEntry(fpp_natl=9_000),
+	)
+
+	assessment = level2._price_assessment(lc, [])
+
+	assert assessment is not None
+	boundaries = assessment[3]
+	visual = assessment[4]
+	assert boundaries == (8_190, 8_730, 9_270, 9_810)
+	assert boundaries == (
+		visual["great_high"],
+		visual["good_high"],
+		visual["fair_high"],
+		visual["poor_high"],
+	)
+	for price, expected in zip(boundaries, ("Great", "Good", "Fair", "Poor")):
+		lc.listing.price = Decimal(price)
+		boundary_assessment = level2._price_assessment(lc, [])
+		assert boundary_assessment is not None
+		assert boundary_assessment[0] == expected
+
+
 def test_price_below_displayed_great_range_remains_great_and_caps_marker():
 	lc = ListingContext(
 		listing_id="one",

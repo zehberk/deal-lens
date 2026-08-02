@@ -1,6 +1,7 @@
 import pytest
 
 from analysis.scoring import (
+	classify_deal_rating,
 	deal_score_from_position,
 	calculate_deal_score,
 	calculate_deal_score_result,
@@ -14,6 +15,43 @@ from analysis.scoring import (
 )
 from deal_lens.models import listing_from_legacy
 from utils.models import CarfaxData, StructuralStatus
+
+
+@pytest.mark.parametrize("midpoint", [9_000, 30_000, 90_000])
+def test_price_classification_uses_proportional_boundaries(midpoint):
+	classification = classify_deal_rating(
+		midpoint, midpoint, 0, 0, 0,
+	)
+
+	assert classification.rating == "Fair"
+	assert classification.midpoint == midpoint
+	assert classification.boundaries == (
+		round(midpoint * 0.91),
+		round(midpoint * 0.97),
+		round(midpoint * 1.03),
+		round(midpoint * 1.09),
+	)
+
+
+def test_270_dollar_difference_is_material_for_9000_dollar_vehicle():
+	assert classify_deal_rating(9_000, 9_000, 0, 0, 0).rating == "Fair"
+	assert classify_deal_rating(8_730, 9_000, 0, 0, 0).rating == "Good"
+
+
+def test_classification_uses_explicit_local_market_range():
+	classification = classify_deal_rating(
+		45_000, 44_880, 0, 44_880, 48_980,
+	)
+
+	assert classification.percent is None
+	assert classification.boundaries == (43_513, 46_246, 48_980, 51_713)
+
+
+def test_invalid_comparison_produces_bounded_empty_classification():
+	classification = classify_deal_rating(9_000, 0, 0, 0, 0)
+
+	assert classification.rating == "No price"
+	assert classification.boundaries == (0, 0, 0, 0)
 
 
 def test_favorable_evidence_crosses_nearby_good_to_great_boundary():

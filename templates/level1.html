@@ -396,24 +396,24 @@
 		<h3>Deal Rating</h3>
 		<p>
 			Car listings are grouped into Great, Good, Fair, Poor, or Bad deals (this is called
-			binning) based solely on price. We use a very basic formula:
+			binning) based solely on price. For most pricing anchors, the thresholds are:
 		</p>
 		<ul>
 			<li>
-				<span class="bold-highlight">🟢 Great: </span>$2,000+ or 7%+ under market value,
-				whichever is larger
+				<span class="bold-highlight">🟢 Great: </span>9% or more under the Fair midpoint
 			</li>
 			<li>
-				<span class="bold-highlight">🔵 Good: </span>$1000–1999 or 3–7% under market value
+				<span class="bold-highlight">🔵 Good: </span>3–9% under the Fair midpoint
 			</li>
-			<li><span class="bold-highlight">🟡 Fair: </span>within $1000 or 3% of market value</li>
+			<li><span class="bold-highlight">🟡 Fair: </span>within 3% of the Fair midpoint</li>
 			<li>
-				<span class="bold-highlight">🟠 Poor: </span>$1000–1999 or 3–7% over market value
+				<span class="bold-highlight">🟠 Poor: </span>3–9% over the Fair midpoint
 			</li>
-			<li><span class="bold-highlight">🔴 Bad: </span>$2,000+ or 7%+ over market value</li>
+			<li><span class="bold-highlight">🔴 Bad: </span>more than 9% over the Fair midpoint</li>
 		</ul>
 		<p>
-			If a local FPP has been found, we use the Fair Market Range to group the bins.
+			When FMV is the available anchor, the corresponding thresholds are 4% and 12%.
+			If a local FPP has been found, we use KBB's Fair Market Range to group the bins.
 			<br />
 			<br />
 			Listings that are considered Poor or Bad deals are rarely worth looking into because
