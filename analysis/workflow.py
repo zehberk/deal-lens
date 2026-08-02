@@ -16,8 +16,8 @@ from analysis.normalization import (
 from utils.cache import load_cache
 from utils.constants import *
 from utils.download import needs_supplementary_info
-from utils.models import AnalysisContext, ListingContext, PricingAnchors
-from deal_lens.models import KBBPricingCache, listing_from_legacy
+from utils.models import AnalysisContext, ListingContext
+from deal_lens.models import KBBPricingCache, KBBPricingEntry, listing_from_legacy
 
 
 def build_analysis_context(metadata: dict) -> AnalysisContext:
@@ -83,7 +83,7 @@ def populate_filtered_listings(
         report_path = str(report) if report else None
 
         entry = ctx.cache_entries.get(cache_key, {})
-        pricing = PricingAnchors(
+        pricing = KBBPricingEntry(
             msrp=entry.get("msrp"),
             fpp_natl=entry.get("fpp_natl"),
             fpp_local=entry.get("fpp_local"),
@@ -91,8 +91,8 @@ def populate_filtered_listings(
             fmr_low=entry.get("fmr_low"),
             fmr_high=entry.get("fmr_high"),
             uncertainty=entry.get("uncertainty"),
-            source_natl=entry.get("natl_source"),
-            source_local=entry.get("local_source"),
+            natl_source=entry.get("natl_source"),
+            local_source=entry.get("local_source"),
         )
 
         ctx.listings.append(

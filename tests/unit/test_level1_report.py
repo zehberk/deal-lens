@@ -15,7 +15,7 @@ from analysis.level1_models import (
 	YearTrimSummary,
 )
 from analysis.level1_report import _format_percent, render_level1_html
-from utils.models import TrimValuation
+from deal_lens.models import KBBPricingEntry
 
 
 def compact_rendered_html(html: str) -> str:
@@ -131,7 +131,7 @@ def report_data():
 			year=2024,
 			visor_trim=trim,
 			kbb_trim=trim,
-			valuation=TrimValuation(
+			valuation=KBBPricingEntry(
 				model="Civic",
 				kbb_trim=f"2024 Honda Civic {trim}",
 				msrp=27_000,

@@ -6,12 +6,11 @@ from datetime import datetime
 from typing import Optional
 
 from analysis.analysis_utils import to_int
-from deal_lens.models import Listing
+from deal_lens.models import Listing, ListingEvaluation
 from itertools import groupby
 from utils.constants import *
 from utils.models import (
     CarfaxData,
-    CarListing,
     DamageSeverity,
     DealBin,
     StructuralStatus,
@@ -768,7 +767,7 @@ def deviation_pct(
     return None
 
 
-def build_bins_and_crosstab(listings: list[CarListing]) -> tuple[list[DealBin], dict]:
+def build_bins_and_crosstab(listings: list[ListingEvaluation]) -> tuple[list[DealBin], dict]:
     """
     Returns (deal_bins:list[DealBin], crosstab:dict)
     - deal_bins includes avg_deviation_pct, condition_counts, percent_of_total
@@ -782,7 +781,7 @@ def build_bins_and_crosstab(listings: list[CarListing]) -> tuple[list[DealBin], 
         total += 1
 
     # group by bin
-    by_bin: dict[str, list[CarListing]] = {k: [] for k in DEAL_ORDER}
+    by_bin: dict[str, list[ListingEvaluation]] = {k: [] for k in DEAL_ORDER}
     for row in listings:
         if row.deal_rating in by_bin:
             by_bin[row.deal_rating].append(row)
@@ -828,7 +827,7 @@ def build_bins_and_crosstab(listings: list[CarListing]) -> tuple[list[DealBin], 
 
 
 def compute_condition_distribution_total(
-    all_listings: list[CarListing],
+    all_listings: list[ListingEvaluation],
     no_price_bin: DealBin | None = None,
 ) -> dict[str, int]:
     counts = {c: 0 for c in COND_ORDER}

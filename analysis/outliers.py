@@ -1,7 +1,7 @@
 from typing import Callable
 
 from analysis.analysis_utils import percentile
-from utils.models import CarListing
+from deal_lens.models import ListingEvaluation
 
 
 UNDER = -10.0  # ≤ -10% = strong underpriced
@@ -11,8 +11,8 @@ LOW_PCTL = 0.15
 HIGH_PCTL = 0.85
 EXAMPLE_LIMIT = 3
 
-# Each rule takes a CarListing and returns a list of strings
-RuleFunc = Callable[[CarListing], list[str]]
+# Each rule takes a ListingEvaluation and returns a list of strings
+RuleFunc = Callable[[ListingEvaluation], list[str]]
 
 EXTRA_RULES: dict[str, RuleFunc] = {
     "strong_underpriced": lambda l: (
@@ -37,7 +37,7 @@ EXTRA_RULES: dict[str, RuleFunc] = {
 }
 
 
-def mileage_price_tension(listings: list[CarListing]) -> list:
+def mileage_price_tension(listings: list[ListingEvaluation]) -> list:
     miles_list = [l.miles for l in listings if l.miles is not None]
     if not miles_list:
         return []
@@ -58,7 +58,7 @@ def mileage_price_tension(listings: list[CarListing]) -> list:
     return [l for l in listings if is_tension(l)]
 
 
-def summarize_outliers(listings: list[CarListing]):
+def summarize_outliers(listings: list[ListingEvaluation]):
     # Strong under/over
     strong_under = [
         l for l in listings if l.deviation_pct is not None and l.deviation_pct <= UNDER
@@ -147,7 +147,7 @@ def fmt_example(l, kind: str) -> str:
     return base if not extras else f"{base} — " + " — ".join(extras)
 
 
-def _base_label(l: CarListing) -> str:
+def _base_label(l: ListingEvaluation) -> str:
     last5 = (l.vin or "")[-5:]
     title = (l.title or "").strip()
     return f"{l.id} · {last5}" + (f" · {title}" if title else "")

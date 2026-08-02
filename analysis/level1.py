@@ -23,17 +23,18 @@ from analysis.scoring import (
     rate_uncertainty,
 )
 from analysis.workflow import prepare_level1_analysis
+from deal_lens.models import KBBPricingEntry, ListingEvaluation
 from deal_lens.persistence import load_latest_listing_dataset
 
 from utils.constants import PRICING_CACHE
-from utils.models import CarListing, DealBin, TrimValuation
+from utils.models import DealBin
 
 
 async def create_level1_file(listings: list[dict], metadata: dict):
     ctx = await prepare_level1_analysis(metadata, listings)
 
     no_price_bin = DealBin(category="No Price", listings=[], count=0)
-    all_listings: list[CarListing] = []
+    all_listings: list[ListingEvaluation] = []
     seen_ids: set[str] = set()  # guard if input has dupes
 
     for item in ctx.listings:
@@ -65,28 +66,21 @@ async def create_level1_file(listings: list[dict], metadata: dict):
         uncertainty = rate_uncertainty(listing)
         risk = rate_risk_level1(listing, price, midpoint)
 
-        car_listing = CarListing(
-            id=listing.id,
-            vin=listing.vin or "",
-            year=int(year),
-            make=ctx.make,
-            model=ctx.model,
-            trim=base_trim,
-            trim_version=listing.vehicle.trim_version or "",
-            title=listing.title or "",
+        car_listing = ListingEvaluation(
+            listing=listing,
             cache_key=cache_key,
-            condition=listing.condition.value if listing.condition else "",
-            miles=listing.mileage or 0,
-            price=price,
+            base_trim=base_trim,
+            pricing=KBBPricingEntry(
+                msrp=msrp,
+                fpp_natl=fpp_natl,
+                fpp_local=fpp_local,
+                fmv=fmv,
+            ),
             price_delta=price - midpoint if price else 0,
             uncertainty=uncertainty,
             risk=risk,
             deal_rating=deal,
             compare_price=midpoint,
-            msrp=msrp,
-            fpp_natl=fpp_natl,
-            fpp_local=fpp_local,
-            fmv=fmv,
             deviation_pct=deviation_pct(price, midpoint),
         )
 
@@ -128,7 +122,7 @@ async def create_level1_file(listings: list[dict], metadata: dict):
         {l.cache_key for l in all_listings if l.cache_key in ctx.cache_entries}
     )
     visible_entries = {
-        k: TrimValuation.from_dict({**ctx.cache_entries[k], "kbb_trim": k})
+        k: KBBPricingEntry.from_dict({**ctx.cache_entries[k], "kbb_trim": k})
         for k in quicklist
     }
 

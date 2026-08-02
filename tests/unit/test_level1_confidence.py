@@ -1,7 +1,7 @@
 from analysis.level1_confidence import calculate_market_confidence
 from analysis.level1_kbb import Level1KBBFailure, Level1KBBMatch, Level1KBBResult
 from analysis.level1_models import ConfidenceLevel, MarketCohort
-from utils.models import TrimValuation
+from deal_lens.models import KBBPricingEntry
 from visor_api import (
 	FacetResponse,
 	Level1FacetCollection,
@@ -69,7 +69,7 @@ def collection(*, sold_count=10, price_missing=0, price_stddev=10):
 
 
 def kbb(mapped=True):
-	valuation = TrimValuation(
+	valuation = KBBPricingEntry(
 		model="Civic",
 		kbb_trim="2024 Honda Civic Sport",
 		msrp=25_000,

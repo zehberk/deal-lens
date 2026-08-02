@@ -17,6 +17,7 @@ from deal_lens.models.dataset import (
 	ListingDataset,
 	ListingDatasetMetadata,
 )
+from deal_lens.models.evaluation import ListingEvaluation
 from deal_lens.models.kbb import (
 	KBBLookupState,
 	KBBLookupStatus,
@@ -53,6 +54,7 @@ __all__ = [
 	"KBBVehicleConfiguration",
 	"KBBVinResolution",
 	"Listing",
+	"ListingEvaluation",
 	"ListingCondition",
 	"ListingDataset",
 	"ListingDatasetMetadata",

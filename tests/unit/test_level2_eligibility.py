@@ -18,8 +18,8 @@ from analysis.reporting import (
 	summarize_level2_failures,
 )
 from jinja2 import Environment, FileSystemLoader
-from deal_lens.models import listing_from_legacy
-from utils.models import AnalysisContext, CarfaxData, ListingContext as DomainListingContext, PricingAnchors
+from deal_lens.models import KBBPricingEntry, listing_from_legacy
+from utils.models import AnalysisContext, CarfaxData, ListingContext as DomainListingContext
 
 
 def ListingContext(**values):
@@ -48,7 +48,7 @@ def test_level2_uses_one_local_report_image(monkeypatch):
 
 
 def test_level2_uses_msrp_only_for_new_vehicle_fallback():
-	pricing = PricingAnchors(msrp=30_000)
+	pricing = KBBPricingEntry(msrp=30_000)
 	used = ListingContext(
 		listing_id="used", listing={"price": 25_000, "condition": "Used"},
 		pricing=pricing,
@@ -336,7 +336,7 @@ async def test_level2_uses_available_national_fpp_without_fmv(monkeypatch):
 	ctx.listings = [ListingContext(
 		listing_id="incomplete-kbb",
 		listing=listing,
-		pricing=PricingAnchors(
+		pricing=KBBPricingEntry(
 			fpp_natl=26_000,
 			fpp_local=None,
 			fmv=24_000,
@@ -646,7 +646,7 @@ def test_price_assessment_provides_visual_range_without_redundant_bullets():
 	lc = ListingContext(
 		listing_id="one",
 		listing={"price": 25000},
-		pricing=PricingAnchors(
+		pricing=KBBPricingEntry(
 			fpp_natl=26000,
 			fpp_local=25000,
 			fmv=24000,
@@ -677,12 +677,12 @@ def test_price_assessment_accepts_local_pricing_without_national_fpp():
 	lc = ListingContext(
 		listing_id="f150-xlt",
 		listing={"price": 45_000, "condition": "New"},
-		pricing=PricingAnchors(
+		pricing=KBBPricingEntry(
 			fpp_natl=None,
 			fpp_local=44_880,
 			fmr_low=40_880,
 			fmr_high=48_980,
-			source_local=(
+			local_source=(
 				"https://kbb.com/ford/f150-supercrew-cab/2025/"
 				"xlt-pickup-4d-5-1-2-ft/"
 			),
@@ -702,7 +702,7 @@ def test_price_assessment_accepts_local_pricing_without_national_fpp():
 		< visual["poor_high"]
 		< visual["scale_high"]
 	)
-	assert visual.get("kbb_url") == lc.pricing.source_local
+	assert visual.get("kbb_url") == lc.pricing.local_source
 	assert not any("comparison value" in line for line in narrative)
 
 
@@ -710,7 +710,7 @@ def test_price_assessment_explains_percent_from_fair_midpoint():
 	lc = ListingContext(
 		listing_id="one",
 		listing={"price": 27500},
-		pricing=PricingAnchors(
+		pricing=KBBPricingEntry(
 			fpp_natl=26000,
 			fpp_local=25000,
 			fmv=24000,
@@ -728,7 +728,7 @@ def test_price_below_displayed_great_range_remains_great_and_caps_marker():
 	lc = ListingContext(
 		listing_id="one",
 		listing={"price": 24000},
-		pricing=PricingAnchors(
+		pricing=KBBPricingEntry(
 			fpp_natl=26000,
 			fpp_local=25000,
 			fmv=24000,

@@ -7,7 +7,8 @@ from pathlib import Path
 from playwright.async_api import async_playwright
 
 from utils.constants import DOC_PATH
-from utils.models import CarListing, DealBin, TrimValuation
+from deal_lens.models import KBBPricingEntry, ListingEvaluation
+from utils.models import DealBin
 
 LEVEL2_RATING_ORDER = ("Great", "Good", "Fair", "Poor", "Bad")
 logger = logging.getLogger(__name__)
@@ -115,9 +116,9 @@ def create_report_filter_summary(metadata: dict) -> str:
 async def render_level1_pdf(
     make: str,
     model: str,
-    cache_entries: dict[str, TrimValuation],
-    all_listings: list[CarListing],
-    trim_valuations: list[TrimValuation],
+    cache_entries: dict[str, KBBPricingEntry],
+    all_listings: list[ListingEvaluation],
+    trim_valuations: list[KBBPricingEntry],
     deal_bins: list[DealBin],
     great_bin: DealBin,
     good_bin: DealBin,

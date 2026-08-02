@@ -169,9 +169,9 @@ def _price_assessment(
     great_end_pct, good_end_pct, fair_end_pct, poor_end_pct = boundary_percentages
 
     kbb_url = (
-        lc.pricing.source_local or lc.pricing.source_natl
+        lc.pricing.local_source or lc.pricing.natl_source
         if fpp_local or fmv
-        else lc.pricing.source_natl or lc.pricing.source_local
+        else lc.pricing.natl_source or lc.pricing.local_source
     )
     pricing_visual: PricingVisual = {
         "listing_price": price,

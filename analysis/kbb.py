@@ -17,6 +17,7 @@ from deal_lens.progress import cli_progress
 from deal_lens.models import (
     KBBNationalRow,
     KBBPricingCache,
+    KBBPricingEntry,
     KBBVehicleConfiguration,
 )
 from utils.cache import (
@@ -45,7 +46,7 @@ from utils.common import make_string_url_safe
 
 logger = logging.getLogger(__name__)
 from utils.constants import *
-from utils.models import TrimProfile, TrimValuation
+from utils.models import TrimProfile
 from utils.progress import NULL_PROGRESS, ProgressReporter
 
 
@@ -1058,7 +1059,7 @@ async def get_trim_valuations_from_scrape(
     listings: list[dict],
     cache_entries: dict[str, dict],
     cache: dict,
-) -> list[TrimValuation]:
+) -> list[KBBPricingEntry]:
     trim_valuations = []
 
     relevant_slugs: dict[str, str] = {}
@@ -1143,7 +1144,7 @@ async def get_trim_valuations_from_scrape(
         new_model = ymm.replace(year, "").replace(make, "").lower().strip()
         entries = get_relevant_entries(cache_entries, make, new_model, year)
         for entry in entries.values():
-            trim_valuations.append(TrimValuation.from_dict(entry))
+            trim_valuations.append(KBBPricingEntry.from_dict(entry))
 
     return trim_valuations
 
@@ -1390,13 +1391,13 @@ def _vin_first_valuations(
     make: str,
     variant_map: dict[str, list[dict]],
     cache: KBBPricingCache,
-) -> list[TrimValuation]:
+) -> list[KBBPricingEntry]:
     relevant_models = {
         key.replace(key[:4], "").replace(make, "").strip().casefold()
         for key in variant_map
     }
     return [
-        TrimValuation.from_dict(entry.to_dict())
+        KBBPricingEntry.from_dict(entry.to_dict())
         for _, entry in cache.level23_items()
         if str(entry.model or "").casefold() in relevant_models
     ]
@@ -1668,7 +1669,7 @@ async def get_vin_first_pricing_data(
     listings: list[dict],
     variant_map: dict[str, list[dict]],
     cache: dict | KBBPricingCache,
-) -> list[TrimValuation]:
+) -> list[KBBPricingEntry]:
     """Collect exact Level 2/3 local pricing before national-table enrichment."""
     legacy_cache = cache if isinstance(cache, dict) else None
     pricing_cache = (
@@ -1904,7 +1905,7 @@ async def get_pricing_data(
     cache: dict | KBBPricingCache,
     *,
     vin_first: bool = False,
-) -> list[TrimValuation]:
+) -> list[KBBPricingEntry]:
     """
     Get's the pricing data for the provided variants. Must use normalized listings, not the raw listings
     """
