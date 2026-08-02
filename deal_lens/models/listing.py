@@ -1,6 +1,6 @@
 """Source-independent listing model used by the DealLens pipeline."""
 
-from collections.abc import Iterator, Mapping, MutableMapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -67,9 +67,9 @@ class ListingDocuments:
 	window_sticker_verified: bool | None = None
 
 
-@dataclass(kw_only=True, slots=True, eq=False)
-class Listing(MutableMapping[str, Any]):
-	"""Canonical listing facts with a compatibility mapping during migration.
+@dataclass(kw_only=True, slots=True)
+class Listing:
+	"""Canonical listing facts accessed through typed attributes.
 
 	Calculated analysis results deliberately do not live on this model. ``extra``
 	retains legacy fields so old saved records can cross the new boundary without
@@ -77,6 +77,7 @@ class Listing(MutableMapping[str, Any]):
 	"""
 
 	id: str
+	title: str | None = None
 	vehicle: Vehicle = field(default_factory=Vehicle)
 	condition: ListingCondition | None = None
 	price: Decimal | None = None
@@ -109,16 +110,7 @@ class Listing(MutableMapping[str, Any]):
 	def year(self) -> int | None:
 		return self.vehicle.year
 
-	@property
-	def title(self) -> str | None:
-		existing = self.extra.get("title")
-		if existing:
-			return str(existing)
-		parts = (self.year, self.vehicle.make, self.vehicle.model, self.vehicle.trim)
-		result = " ".join(str(value) for value in parts if value is not None)
-		return result or None
-
-	def to_legacy_dict(self) -> dict[str, Any]:
+	def to_dict(self) -> dict[str, Any]:
 		"""Serialize to the established saved-data and analysis envelope."""
 		result = dict(self.extra)
 		result.update({
@@ -170,40 +162,6 @@ class Listing(MutableMapping[str, Any]):
 			if self.warranty_coverages or self.warranty_extra else None
 		)
 		return result
-
-	def __getitem__(self, key: str) -> Any:
-		return self.to_legacy_dict()[key]
-
-	def __iter__(self) -> Iterator[str]:
-		return iter(self.to_legacy_dict())
-
-	def __len__(self) -> int:
-		return len(self.to_legacy_dict())
-
-	def __setitem__(self, key: str, value: Any) -> None:
-		if key == "price":
-			self.price = _decimal(value)
-		elif key == "msrp":
-			self.msrp = _decimal(value)
-		elif key == "mileage":
-			self.mileage = _integer(value)
-		elif key == "days_on_market":
-			self.days_on_market = _integer(value)
-		else:
-			self.extra[key] = value
-
-	def __delitem__(self, key: str) -> None:
-		if key not in self.extra:
-			raise KeyError(key)
-		del self.extra[key]
-
-	def __eq__(self, other: object) -> bool:
-		if isinstance(other, Listing):
-			return self.to_legacy_dict() == other.to_legacy_dict()
-		if isinstance(other, Mapping):
-			ours = self.to_legacy_dict()
-			return all(ours.get(key) == value for key, value in other.items())
-		return NotImplemented
 
 	@classmethod
 	def from_legacy(cls, value: Mapping[str, Any]) -> "Listing":
@@ -259,6 +217,12 @@ def listing_from_legacy(value: Mapping[str, Any]) -> Listing:
 	provenance = _provenance_records(data.get("provenance"), typed_warnings)
 	return Listing(
 		id=str(data.get("id") or data.get("vin") or ""),
+		title=_string(data.get("title")) or _generated_title(
+			data.get("year"),
+			build_source.get("make") or detail_source.get("make") or search_source.get("make") or metadata_vehicle.get("make"),
+			build_source.get("model") or detail_source.get("model") or search_source.get("model") or metadata_vehicle.get("model"),
+			data.get("trim"),
+		),
 		vehicle=Vehicle(
 			vin=_string(data.get("vin")),
 			year=_integer(data.get("year")),
@@ -387,6 +351,11 @@ def _provenance_records(value: Any, warnings: list[DataWarning]) -> dict[str, So
 
 def _string(value: Any) -> str | None:
 	return str(value) if value is not None else None
+
+
+def _generated_title(*parts: Any) -> str | None:
+	result = " ".join(str(value) for value in parts if value is not None)
+	return result or None
 
 
 def _integer(value: Any) -> int | None:

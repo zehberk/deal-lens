@@ -618,8 +618,6 @@ class ListingContext:
     year: str = ""
     base_trim: str = ""
 
-    # Any keeps transitional dict-oriented scoring/report call sites type-safe;
-    # __post_init__ guarantees the runtime value is the canonical Listing.
     listing: Any = field(default_factory=dict)
 
     report_path: Optional[str] = None

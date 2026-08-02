@@ -68,7 +68,9 @@ def _risk_summary(carfax: CarfaxData, mileage_risk: float) -> str:
     return ", ".join(factors) if factors else "none identified"
 
 
-def _listing_key(listing: dict) -> str:
+def _listing_key(listing: dict | Listing) -> str:
+    if isinstance(listing, Listing):
+        return str(listing.id or listing.vin or "")
     return str(listing.get("id") or listing.get("vin") or "")
 
 
@@ -84,9 +86,9 @@ def _fill_missing_listing_fields_from_carfax(
     }
     filled: list[str] = []
     for field, (value, source_path) in fallbacks.items():
-        if listing.get(field) is not None or value is None:
+        if getattr(listing, field) is not None or value is None:
             continue
-        listing[field] = value
+        setattr(listing, field, value)
         listing.provenance[field] = SourceProvenance(
             kind="source_fact", source_path=source_path
         )
@@ -98,7 +100,7 @@ def _price_assessment(
     lc, narrative: list[str]
 ) -> tuple[str, int, int, float, PricingVisual] | None:
     listing = lc.listing
-    price_val = listing.get("price")
+    price_val = listing.price
     if price_val is None:
         return None
 
@@ -108,7 +110,7 @@ def _price_assessment(
     fmr_high = int(lc.pricing.fmr_high or 0)
     fmv = int(lc.pricing.fmv or 0)
     msrp = int(lc.pricing.msrp or 0)
-    is_new = str(listing.get("condition", "")).casefold() == "new"
+    is_new = listing.condition is not None and listing.condition.value.casefold() == "new"
     if not any((fpp_natl, fpp_local, fmv, msrp if is_new else 0)):
         return None
 
@@ -203,14 +205,14 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
         tuple[dict, str, None, list[str], PricingVisual]
     ] = []
     # listing, concrete reason
-    information_only: list[tuple[dict, str]] = []
+    information_only: list[tuple[dict | Listing, str]] = []
 
     # Extract Carfax report
-    for lc in sorted(ctx.listings, key=lambda x: str(x.listing.get("id", ""))):
+    for lc in sorted(ctx.listings, key=lambda x: x.listing.id):
         listing = lc.listing
         report = Path(lc.report_path) if lc.report_path else None
         narrative: list[str] = []
-        condition = str(listing.get("condition") or "").casefold()
+        condition = listing.condition.value.casefold() if listing.condition else ""
         is_new = condition == "new"
         carfax: CarfaxData | None = None
         carfax_filled_fields: tuple[str, ...] = ()
@@ -223,7 +225,7 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
         assessment = _price_assessment(lc, narrative)
         if assessment is None:
             information_only.append(
-                (listing, "Complete KBB pricing is unavailable for this configuration.")
+                (listing.to_dict(), "Complete KBB pricing is unavailable for this configuration.")
             )
             continue
         if "mileage" in carfax_filled_fields:
@@ -235,12 +237,12 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
         pricing_visual = assessment[4]
         if (
             condition in {"used", "certified", "cpo"}
-            and listing.get("mileage") is None
+            and listing.mileage is None
         ):
             narrative.append(
                 "Mileage is unavailable from both the listing and CARFAX, so risk and the final Level 2 rating are unavailable."
             )
-            price_only.append((listing, deal, None, narrative, pricing_visual))
+            price_only.append((listing.to_dict(), deal, None, narrative, pricing_visual))
             continue
         if (report is None or not report.exists()) and is_new:
             risk = 0
@@ -267,14 +269,14 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
             deal = score_result.rating
             lc.deal_rating = deal
             lc.narrative = narrative
-            ratings.append((listing, deal, risk, narrative, pricing_visual))
+            ratings.append((listing.to_dict(), deal, risk, narrative, pricing_visual))
             continue
 
         if report is None or not report.exists():
             narrative.append(
                 "A vehicle-history report was not collected, so risk and the final Level 2 rating are unavailable."
             )
-            price_only.append((listing, deal, None, narrative, pricing_visual))
+            price_only.append((listing.to_dict(), deal, None, narrative, pricing_visual))
             continue
 
         # Risk ratings and deal adjustment
@@ -313,7 +315,7 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
         lc.deal_rating = deal
         lc.narrative = narrative
 
-        ratings.append((listing, deal, risk, narrative, pricing_visual))
+        ratings.append((listing.to_dict(), deal, risk, narrative, pricing_visual))
 
     for listing in ctx.skipped_listings:
         reason = (
@@ -349,7 +351,7 @@ async def start_level2_analysis(metadata: dict, listings: list[dict], filename: 
 
 def main():
     path, dataset = load_latest_listing_dataset(Path("output/raw"))
-    listings = [listing.to_legacy_dict() for listing in dataset.listings]
+    listings = [listing.to_dict() for listing in dataset.listings]
     if listings:
         metadata = dataset.metadata.to_dict()
         latest_json_file = str(path)

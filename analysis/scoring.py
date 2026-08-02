@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Optional
 
 from analysis.analysis_utils import to_int
+from deal_lens.models import Listing
 from itertools import groupby
 from utils.constants import *
 from utils.models import (
@@ -42,9 +43,9 @@ MINIMUM_LOW_RISK_SCORE = 10.0
 
 
 def rate_uncertainty(listing) -> str:
-    report_present = listing["report_present"]
-    window_sticker_present = listing["window_sticker_present"]
-    warranty_info_present = listing["warranty_info_present"]
+    report_present = bool(listing.extra.get("report_present"))
+    window_sticker_present = bool(listing.extra.get("window_sticker_present"))
+    warranty_info_present = bool(listing.extra.get("warranty_info_present"))
 
     if not report_present and not window_sticker_present and not warranty_info_present:
         return "High"
@@ -184,11 +185,11 @@ def categorize_price_tier(
 
 
 def rate_risk_level1(listing, price, compare_value) -> str:
-    year = int(listing["title"][:4])
+    year = int(listing.year or 0)
     avg_miles_per_day = 15000 / 365
     est_days_since_manufacture = (datetime.now() - datetime(year, 1, 1)).days
     expected_miles = est_days_since_manufacture * avg_miles_per_day
-    mileage = int(listing["mileage"])
+    mileage = int(listing.mileage or 0)
     if price == 0:
         return "Unknown"
     if (mileage >= expected_miles * 1.35) or (
@@ -362,7 +363,7 @@ def deal_rating_from_score(score: float) -> str:
 
 
 def calculate_risk_level2(
-    carfax: CarfaxData, listing: dict, narrative: Optional[list[str]] = None
+    carfax: CarfaxData, listing: Listing, narrative: Optional[list[str]] = None
 ) -> float:
     """
     Score adverse evidence only; favorable evidence is handled separately.
@@ -382,7 +383,7 @@ def calculate_risk_level2(
 
 def calculate_level2_evidence(
     carfax: CarfaxData,
-    listing: dict,
+    listing: Listing,
     narrative: Optional[list[str]] = None,
 ) -> tuple[float, float]:
     """Return actual risk and favorable evidence as separate non-negative values."""
@@ -395,7 +396,7 @@ def calculate_level2_evidence(
 
 
 def rate_risk_level2(
-    carfax: CarfaxData, listing: dict, narrative: Optional[list[str]] = None
+    carfax: CarfaxData, listing: Listing, narrative: Optional[list[str]] = None
 ) -> int:
     """Return the displayed 0-10 adverse-risk score."""
     score = calculate_risk_level2(carfax, listing, narrative)
@@ -563,7 +564,7 @@ def get_branded_score(
 
 
 def score_warranty_status(
-    carfax: CarfaxData, listing: dict, narrative: Optional[list[str]] = None
+    carfax: CarfaxData, listing: Listing, narrative: Optional[list[str]] = None
 ) -> float:
     """
     Finds the rating score for a vehicle's warranty status. Range is -2 to 0.
@@ -581,7 +582,7 @@ def score_warranty_status(
     """
     basic_months: int = 0
     basic_miles: int = 0
-    coverages: list[dict] = listing.get("coverages", [])
+    coverages = [coverage.to_dict() for coverage in listing.warranty_coverages]
     basic = next((c for c in coverages if c.get("type") == "Basic"), None)
     warranty_text = str(carfax.additional_history.get("Basic Warranty", "")).strip()
 
@@ -639,11 +640,11 @@ def score_warranty_status(
 
 
 def score_new_vehicle_warranty(
-    listing: dict, narrative: Optional[list[str]] = None
+    listing: Listing, narrative: Optional[list[str]] = None
 ) -> float:
     """Score and describe the remaining standard 3-year/36,000-mile warranty."""
-    days_on_market = max(to_int(listing.get("days_on_market")) or 0, 0)
-    mileage = max(to_int(listing.get("mileage")) or 0, 0)
+    days_on_market = max(listing.days_on_market or 0, 0)
+    mileage = max(listing.mileage or 0, 0)
     warranty_days = max((3 * 365) - days_on_market, 0)
     basic_months = round(warranty_days / (365 / 12))
     basic_miles = max(36_000 - mileage, 0)
@@ -662,7 +663,7 @@ def score_new_vehicle_warranty(
 
 
 def score_mileage_use(
-    carfax: CarfaxData, listing: dict, narrative: Optional[list[str]] = None
+    carfax: CarfaxData, listing: Listing, narrative: Optional[list[str]] = None
 ) -> float:
     """
     Calculates a mileage-based risk modifier on a -1.0 to 2.0 scale.
@@ -696,7 +697,7 @@ def score_mileage_use(
             )
         return 2.5
 
-    production_year = int(listing["year"])
+    production_year = int(listing.year or 0)
     if not production_year:
         return 0.0
 
@@ -709,7 +710,7 @@ def score_mileage_use(
     available_readings = []
     if carfax.last_odometer_reading > 0:
         available_readings.append(carfax.last_odometer_reading)
-    listing_mileage = listing.get("mileage")
+    listing_mileage = listing.mileage
     if listing_mileage is not None:
         try:
             available_readings.append(int(listing_mileage))

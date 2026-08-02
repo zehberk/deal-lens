@@ -74,8 +74,8 @@ def populate_filtered_listings(
         vin = str(listing.get("vin", "") or "")
 
         # Find the matching “full listing” once, here (so level2 doesn’t do it)
-        full = next((l for l in source_listings if str(l.get("id", "")) == lid), listing)
-        full_data = full.to_legacy_dict() if isinstance(full, Listing) else dict(full)
+        full = next((l for l in source_listings if str(l.id if isinstance(l, Listing) else l.get("id", "")) == lid), listing)
+        full_data = full.to_dict() if isinstance(full, Listing) else dict(full)
         # Keep calculated normalization fields while retaining every source fact.
         model = listing_from_legacy({**full_data, **listing})
 

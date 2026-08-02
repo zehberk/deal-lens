@@ -118,7 +118,7 @@ def test_collection_uses_enriched_search_and_sequential_standard_details():
 	assert client.detail_calls == [("listing-1", None), ("listing-2", None)]
 	assert [item.listing_id for item in result.listings] == ["listing-1", "listing-2"]
 	assert result.listings[0].vin == "TESTVIN1"
-	assert result.listings[0].listing["seller"]["phone"] == "(000) 000-0000"
+	assert result.listings[0].listing.seller.phone == "(000) 000-0000"
 	assert result.retrieved_at == "2026-07-21T00:00:00+00:00"
 	assert result.raw_search_response["data"][0]["options"][0]["code"] == "OP1"
 
@@ -134,9 +134,9 @@ def test_collection_preserves_search_listing_when_detail_fails():
 
 	assert record.detail_record is None
 	assert record.detail_error == "RuntimeError"
-	assert record.listing["price"] == 25_000
-	assert record.listing["provenance"]["detail"]["reason"] == "source_error"
-	assert record.listing["warnings"][-1]["field"] == "detail"
+	assert record.listing.price == 25_000
+	assert record.listing.provenance["detail"].reason == "source_error"
+	assert record.listing.warnings[-1].field == "detail"
 	assert result.exclusions == ()
 
 

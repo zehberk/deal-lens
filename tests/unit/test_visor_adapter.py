@@ -3,10 +3,14 @@ import json
 from pathlib import Path
 
 from analysis.normalization import normalize_listing
-from visor_api import adapt_facets_response, adapt_listing, adapt_search_response
+from visor_api import adapt_facets_response, adapt_listing as adapt_listing_model, adapt_search_response
 
 
 FIXTURES = Path(__file__).parents[2] / "docs" / "fixtures" / "visor_api"
+
+
+def adapt_listing(*args, **kwargs):
+	return adapt_listing_model(*args, **kwargs).to_dict()
 
 
 def fixture(name):

@@ -109,7 +109,7 @@ class ListingDataset:
 	def to_dict(self) -> dict[str, Any]:
 		return {
 			**self.extra, "metadata": self.metadata.to_dict(),
-			"listings": [listing.to_legacy_dict() for listing in self.listings],
+			"listings": [listing.to_dict() for listing in self.listings],
 		}
 
 

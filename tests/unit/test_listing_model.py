@@ -34,8 +34,8 @@ def test_legacy_factory_preserves_source_facts_and_unknown_fields():
 	assert listing.price == Decimal("25500")
 	assert listing.mileage == 12_345
 	assert listing.source == "legacy_scraper"
-	assert listing["custom_legacy_field"] == "preserved"
-	assert listing.to_legacy_dict()["source_data"] == source["source_data"]
+	assert listing.extra["custom_legacy_field"] == "preserved"
+	assert listing.to_dict()["source_data"] == source["source_data"]
 
 
 def test_missing_values_remain_unknown():
@@ -98,7 +98,7 @@ def test_legacy_factory_converts_listing_child_records_to_models():
 	assert isinstance(listing.warranty_coverages[0], WarrantyCoverage)
 	assert isinstance(listing.provenance["price"], SourceProvenance)
 	assert isinstance(listing.warnings[0], DataWarning)
-	assert listing.to_legacy_dict()["warranty"]["overall_status"] == "Active"
+	assert listing.to_dict()["warranty"]["overall_status"] == "Active"
 
 
 def test_legacy_serialization_uses_json_compatible_currency_values():
@@ -108,7 +108,7 @@ def test_legacy_serialization_uses_json_compatible_currency_values():
 		"msrp": 27_000.50,
 	})
 
-	serialized = listing.to_legacy_dict()
+	serialized = listing.to_dict()
 
 	assert serialized["price"] == 25_500
 	assert serialized["msrp"] == 27_000.5

@@ -15,6 +15,7 @@ from deal_lens.cli import (
 	run_with_runtime,
 	scrape,
 )
+from deal_lens.models import listing_from_legacy
 
 
 def test_cli_ignores_unsupported_url_options_and_keeps_supported_filters(
@@ -209,7 +210,7 @@ async def test_level2_delegates_document_collection_to_analysis(monkeypatch):
 	query = object()
 	client = object()
 	progress = object()
-	listing = {"id": "listing-1", "vin": "TESTVIN"}
+	listing = listing_from_legacy({"id": "listing-1", "vin": "TESTVIN"})
 	collection = SimpleNamespace(
 		listings=(SimpleNamespace(listing=listing),),
 	)
@@ -258,7 +259,7 @@ async def test_level2_delegates_document_collection_to_analysis(monkeypatch):
 	await collect_and_run_level2_api(args)
 
 	filename = str(Path("output/raw/INFINITI_QX55_listings_20260728_120000.json"))
-	assert order == [("analysis", [listing], filename)]
+	assert order == [("analysis", [listing.to_dict()], filename)]
 
 
 async def test_level3_api_workflow_forwards_collection_options(monkeypatch):
