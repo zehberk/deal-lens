@@ -45,7 +45,7 @@ from utils.common import make_string_url_safe
 
 logger = logging.getLogger(__name__)
 from utils.constants import *
-from utils.models import TrimValuation
+from utils.models import TrimProfile, TrimValuation
 from utils.progress import NULL_PROGRESS, ProgressReporter
 
 
@@ -1293,6 +1293,43 @@ def _listing_national_trim(listing: dict, national_trims: list[str]) -> str | No
     return None
 
 
+def _base_national_trim_for_configuration(
+    style: str,
+    cache_key: str,
+    listings: list[dict],
+    national_trims: list[str],
+) -> str | None:
+    """Select one unbadged body row for an explicitly Base VIN cluster."""
+    associated = [
+        listing for listing in listings
+        if listing.get("kbb_cache_key") == cache_key
+    ]
+    if not associated or any(
+        str(listing.get("trim") or "").strip().casefold() != "base"
+        for listing in associated
+    ):
+        return None
+
+    style_profile = TrimProfile.from_string(style)
+    candidates = []
+    for national_trim in national_trims:
+        profile = TrimProfile.from_string(national_trim)
+        # A genuine unbadged row has no residual trim marker after its body
+        # label is removed. Permit an explicit "Base" label as equivalent.
+        if profile.tokens not in ([], ["base"]):
+            continue
+        if (
+            style_profile.body_style
+            and profile.body_style
+            and style_profile.body_style.casefold()
+            != profile.body_style.casefold()
+        ):
+            continue
+        candidates.append(national_trim)
+
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def _apply_complete_vin_first_cache(
     make: str,
     variant_map: dict[str, list[dict]],
@@ -1759,6 +1796,16 @@ async def get_vin_first_pricing_data(
                 if not national_trim or not kbb_trim_identity_matches(
                     national_trim, style
                 ):
+                    national_trim = _base_national_trim_for_configuration(
+                        style, cache_key, variant_listings, national_trims
+                    )
+                    if national_trim:
+                        logger.info(
+                            "Matched explicit Base VIN style %s to unbadged "
+                            "national KBB row %s",
+                            style, national_trim,
+                        )
+                if not national_trim:
                     logger.warning(
                         "No national KBB trim match for VIN-resolved style %s", style
                     )
