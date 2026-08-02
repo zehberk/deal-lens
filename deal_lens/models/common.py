@@ -1,7 +1,7 @@
 """Typed child records shared by listing and enrichment models."""
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field as dataclass_field
+from dataclasses import dataclass, field as dataclass_field, replace
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, Self
@@ -227,6 +227,16 @@ class SupplementaryResourceStatus:
 			"http_status": self.http_status,
 		}
 
+	def should_attempt(self, source_url: str | None, *, now: datetime | None = None) -> bool:
+		"""Return whether this resource is due, including after a URL change."""
+		if source_url and source_url != self.source_url:
+			return True
+		if self.state in {ResourceState.DOWNLOADED, ResourceState.UNAVAILABLE}:
+			return False
+		if self.state is ResourceState.AVAILABLE:
+			return True
+		return self.retry_after is None or (now or datetime.now()) >= self.retry_after
+
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class SupplementaryStatus:
@@ -255,6 +265,19 @@ class SupplementaryStatus:
 			)
 			if item is not None
 		}
+
+	def resource(self, name: str) -> SupplementaryResourceStatus | None:
+		if name not in {"image", "window_sticker", "dealer_data", "vehicle_history"}:
+			raise ValueError(f"Unknown supplementary resource: {name}")
+		return getattr(self, name)
+
+	def with_resource(self, name: str, status: SupplementaryResourceStatus) -> Self:
+		self.resource(name)
+		return replace(self, **{name: status})
+
+	def should_attempt(self, name: str, source_url: str | None, *, now: datetime | None = None) -> bool:
+		status = self.resource(name)
+		return status is None or status.should_attempt(source_url, now=now)
 
 
 def _optional_string(value: Any) -> str | None:

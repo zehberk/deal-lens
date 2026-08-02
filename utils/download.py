@@ -1,7 +1,7 @@
 import asyncio, base64, ctypes, glob, hashlib, io, json, logging, os, platform, re, requests, shutil, subprocess, time, urllib.parse
 
 from bs4 import BeautifulSoup
-from datetime import timedelta
+from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from PIL import Image
@@ -13,6 +13,11 @@ from playwright.async_api import (
     TimeoutError as PlaywrightTimeout,
 )
 from deal_lens.progress import cli_progress
+from deal_lens.models import (
+    ResourceState,
+    SupplementaryResourceStatus,
+    SupplementaryStatus,
+)
 from typing import Iterable
 from urllib.parse import urljoin, urlparse, unquote
 from websocket import create_connection, WebSocket
@@ -32,6 +37,43 @@ from utils.fees import parse_fee_snippets
 
 logger = logging.getLogger(__name__)
 SUPPLEMENTARY_WORKERS = 5
+
+
+def _supplementary_status(listing: dict) -> SupplementaryStatus:
+    value = listing.get("supplementary_status")
+    return SupplementaryStatus.from_dict(value) if isinstance(value, dict) else SupplementaryStatus()
+
+
+def _set_resource_status(
+    listing: dict,
+    name: str,
+    state: ResourceState,
+    *,
+    source_url: str | None = None,
+    failure_reason: str | None = None,
+    http_status: int | None = None,
+    retry: bool = False,
+) -> None:
+    attempted_at = datetime.now()
+    status = SupplementaryResourceStatus(
+        state=state,
+        source_url=source_url,
+        attempted_at=attempted_at,
+        retry_after=(
+            attempted_at + timedelta(days=MIN_POLL_DAYS)
+            if retry else None
+        ),
+        failure_reason=failure_reason,
+        http_status=http_status,
+    )
+    listing["supplementary_status"] = (
+        _supplementary_status(listing).with_resource(name, status).to_dict()
+    )
+    listing["updated"] = True
+
+
+def _resource_due(listing: dict, name: str, source_url: str | None) -> bool:
+    return _supplementary_status(listing).should_attempt(name, source_url)
 
 
 class FetchStatus(Enum):
@@ -96,7 +138,7 @@ def get_fee_snippets(html: str | None) -> list[tuple[str, float, bool | None]]:
 
 async def get_listing_details(
     browser: Browser, url: str
-) -> tuple[str | None, list[tuple[str, float, bool | None]]]:
+) -> tuple[str | None, list[tuple[str, float, bool | None]], FetchStatus]:
     html, status = await fetch_listing_html(browser, url)
 
     # if status == FetchStatus.REMOVED_OR_SOLD:
@@ -104,7 +146,7 @@ async def get_listing_details(
 
     carfax_link = get_report_link(html)
     fees = get_fee_snippets(html)
-    return carfax_link, fees
+    return carfax_link, fees, status
 
 
 async def fetch_listing_html(
@@ -221,9 +263,20 @@ async def worker(semaphore: asyncio.Semaphore, browser: Browser, listing: dict):
         dealer_fees = listing.get("seller", {}).get("dealer_fees")
 
         if carfax_url and carfax_url != "Unavailable" and dealer_fees:
+            _set_resource_status(
+                listing, "dealer_data", ResourceState.DOWNLOADED,
+                source_url=url,
+            )
             return
 
-        link, fees = await get_listing_details(browser, url)
+        try:
+            link, fees, fetch_status = await get_listing_details(browser, url)
+        except Exception as error:
+            _set_resource_status(
+                listing, "dealer_data", ResourceState.FAILED,
+                source_url=url, failure_reason=type(error).__name__, retry=True,
+            )
+            return
 
         updated = False
         if link:
@@ -236,6 +289,24 @@ async def worker(semaphore: asyncio.Semaphore, browser: Browser, listing: dict):
         if fees and fees != dealer_fees:
             listing["seller"]["dealer_fees"] = fees
             updated = True
+
+        if fetch_status is FetchStatus.OK and (link or fees):
+            _set_resource_status(
+                listing, "dealer_data", ResourceState.DOWNLOADED,
+                source_url=url,
+            )
+        elif fetch_status in {FetchStatus.REMOVED_OR_SOLD} or (
+            fetch_status is FetchStatus.OK and not link and not fees
+        ):
+            _set_resource_status(
+                listing, "dealer_data", ResourceState.UNAVAILABLE,
+                source_url=url, failure_reason=fetch_status.value,
+            )
+        else:
+            _set_resource_status(
+                listing, "dealer_data", ResourceState.FAILED,
+                source_url=url, failure_reason=fetch_status.value, retry=True,
+            )
 
         if updated:
             listing["updated"] = True
@@ -275,24 +346,43 @@ def save_listing_json(listing: dict, folder: str) -> str:
 
 async def download_images(req: APIRequestContext, listing: dict, folder: str) -> int:
     imgs: list[str] = listing.get("images") or []
+    source_url = str(imgs[0]) if imgs else None
     if not imgs:
+        _set_resource_status(
+            listing, "image", ResourceState.UNAVAILABLE,
+            failure_reason="source_url_unavailable",
+        )
+        return 0
+
+    if not _resource_due(listing, "image", source_url):
         return 0
 
     img_dir = os.path.join(folder, "images")
     os.makedirs(img_dir, exist_ok=True)
     final_path = os.path.join(img_dir, "report.jpg")
     if os.path.exists(final_path) and os.path.getsize(final_path) > 0:
+        _set_resource_status(
+            listing, "image", ResourceState.DOWNLOADED, source_url=source_url
+        )
         return 0
 
     try:
         resp = await req.get(imgs[0])
     except Exception as error:
+        _set_resource_status(
+            listing, "image", ResourceState.FAILED, source_url=source_url,
+            failure_reason=type(error).__name__, retry=True,
+        )
         logger.warning(
             "Skipped report image for listing %s: %s",
             listing.get("id"), type(error).__name__,
         )
         return 0
     if not resp.ok:
+        _set_resource_status(
+            listing, "image", ResourceState.FAILED, source_url=source_url,
+            failure_reason="http_error", http_status=resp.status, retry=True,
+        )
         logger.warning(
             "Skipped report image for listing %s: HTTP %s",
             listing.get("id"), resp.status,
@@ -307,27 +397,61 @@ async def download_images(req: APIRequestContext, listing: dict, folder: str) ->
                 image = image.resize((500, height), Image.Resampling.LANCZOS)
             image.save(final_path, format="JPEG", quality=80, optimize=True)
     except Exception as error:
+        _set_resource_status(
+            listing, "image", ResourceState.FAILED, source_url=source_url,
+            failure_reason=f"invalid_image:{type(error).__name__}", retry=True,
+        )
         logger.warning(
             "Skipped invalid report image for listing %s: %s",
             listing.get("id"), type(error).__name__,
         )
         return 0
 
+    _set_resource_status(
+        listing, "image", ResourceState.DOWNLOADED, source_url=source_url
+    )
     return 1
 
 
 async def download_sticker(req: APIRequestContext, listing: dict, folder: str) -> bool:
     url = listing.get("additional_docs", {}).get("window_sticker_url")
     if not url or url == "Unavailable":
+        _set_resource_status(
+            listing, "window_sticker", ResourceState.UNAVAILABLE,
+            failure_reason="source_url_unavailable",
+        )
         return False
+    if not _resource_due(listing, "window_sticker", str(url)):
+        status = _supplementary_status(listing).window_sticker
+        return status is not None and status.state is ResourceState.DOWNLOADED
     path = os.path.join(folder, "sticker.pdf")
     if os.path.exists(path) and os.path.getsize(path) > 0:
+        _set_resource_status(
+            listing, "window_sticker", ResourceState.DOWNLOADED,
+            source_url=str(url),
+        )
         return True
-    resp = await req.get(url)
+    try:
+        resp = await req.get(url)
+    except Exception as error:
+        _set_resource_status(
+            listing, "window_sticker", ResourceState.FAILED,
+            source_url=str(url), failure_reason=type(error).__name__, retry=True,
+        )
+        return False
     if not resp.ok:
+        _set_resource_status(
+            listing, "window_sticker", ResourceState.FAILED,
+            source_url=str(url), failure_reason="http_error",
+            http_status=resp.status, retry=True,
+        )
         return False
     with open(path, "wb") as f:
         f.write(await resp.body())
+    _set_resource_status(
+        listing, "window_sticker", ResourceState.DOWNLOADED,
+        source_url=str(url),
+    )
     return True
 
 
@@ -358,6 +482,7 @@ async def _download_supplementary_listing(
             save_listing_json(listing, folder)
             image_count = await download_images(req, listing, folder)
             sticker_saved = await download_sticker(req, listing, folder)
+            save_listing_json(listing, folder)
         except Exception:
             logger.exception(
                 "Supplementary download failed for listing %s (VIN %s) after %.2fs",
@@ -724,24 +849,39 @@ def print_to_pdf(ws: WebSocket, sid: str, out_path: Path):
     out_path.write_bytes(base64.b64decode(data_b64))
 
 
-def collect_report_jobs(listings: Iterable[dict]) -> list[tuple[str, str, Path]]:
+def collect_report_jobs(
+    listings: Iterable[dict],
+) -> list[tuple[str, str, Path, dict]]:
     jobs = []
     for lst in listings:
         title, vin = lst.get("title"), lst.get("vin")
         if not title or not vin:
             continue
         doc: dict = lst.get("additional_docs") or {}
+        found_source = False
         for provider, meta in PROVIDERS.items():
             url: str = doc.get(meta["key"], "")
             if not url or url == "Unavailable":
+                continue
+            found_source = True
+            if not _resource_due(lst, "vehicle_history", url):
                 continue
             folder = os.path.join(DOC_PATH, title, vin)
             out_path: Path = Path(folder) / meta["file"]
 
             if out_path.exists() and out_path.stat().st_size > 0:
+                _set_resource_status(
+                    lst, "vehicle_history", ResourceState.DOWNLOADED,
+                    source_url=url,
+                )
                 continue
 
-            jobs.append((provider, url, out_path))
+            jobs.append((provider, url, out_path, lst))
+        if not found_source and requires_vehicle_history_report(lst):
+            _set_resource_status(
+                lst, "vehicle_history", ResourceState.UNAVAILABLE,
+                failure_reason="source_url_unavailable",
+            )
     return jobs
 
 
@@ -804,7 +944,7 @@ def download_report_pdfs(listings: list[dict]) -> None:
         ws = connect_to_cdp(get_cdp_websocket_url(DEVTOOLS_PORT))
         current = 1
         progress = cli_progress()
-        for provider, raw_url, out_path in progress.track(
+        for provider, raw_url, out_path, listing in progress.track(
             jobs,
             total=len(jobs),
             description="Downloading reports",
@@ -854,7 +994,17 @@ def download_report_pdfs(listings: list[dict]) -> None:
                         if f.is_file() and UNAVAIL_PAT.search(f.name):
                             f.unlink()
 
-            except Exception:
+                    _set_resource_status(
+                        listing, "vehicle_history", ResourceState.DOWNLOADED,
+                        source_url=raw_url,
+                    )
+
+            except Exception as error:
+                _set_resource_status(
+                    listing, "vehicle_history", ResourceState.FAILED,
+                    source_url=raw_url, failure_reason=type(error).__name__,
+                    retry=True,
+                )
                 try:
                     unavail = PROVIDERS[provider]["unavailable"]
                     (out_path.parent / unavail).write_text(
@@ -864,6 +1014,8 @@ def download_report_pdfs(listings: list[dict]) -> None:
                     pass
 
             finally:
+                if out_path.parent.exists():
+                    save_listing_json(listing, str(out_path.parent))
                 if target_id:
                     close_cdp_target(ws, target_id)
 
@@ -882,6 +1034,11 @@ def needs_poll(l: dict, cache: dict) -> bool:
     vin = l.get("vin")
     if not vin:
         return False
+
+    listing_url = str(l.get("listing_url") or "") or None
+    status = _supplementary_status(l).dealer_data
+    if status is not None:
+        return status.should_attempt(listing_url)
 
     docs = l.get("additional_docs", {})
     current = docs.get("carfax_url")
@@ -987,6 +1144,14 @@ async def download_files(
                 l.setdefault("seller", {})["dealer_fee"] = cached_fee
             if cached_included:
                 l.setdefault("seller", {})["dealer_fee_included"] = cached_included
+            if (
+                _supplementary_status(l).dealer_data is None
+                and not needs_poll(l, analysis_cache)
+            ):
+                _set_resource_status(
+                    l, "dealer_data", ResourceState.DOWNLOADED,
+                    source_url=str(l.get("listing_url") or "") or None,
+                )
 
     async with async_playwright() as p:
         if include_reports:
@@ -1013,12 +1178,14 @@ async def download_files(
 
                 if sticker_count:
                     print(f"{sticker_count} stickers saved")
+            update_listings(listings, filename)
         finally:
             await req.dispose()
 
         # Carfax pass (single Chrome via CDP, no Playwright)
         if include_reports:
             download_report_pdfs(listings)
+            update_listings(listings, filename)
 
 
 def needs_supplementary_info(
@@ -1057,21 +1224,30 @@ def needs_supplementary_info(
     if _key_fields(old) != _key_fields(listing):
         return True
 
-    # 2. Images missing
+    # 2. Resource state is authoritative after the listing crosses this boundary.
+    status = _supplementary_status(listing)
+    image_url = str((listing.get("images") or [""])[0] or "") or None
+    if status.image is not None:
+        if status.should_attempt("image", image_url):
+            return True
+    # Legacy records without status are migrated from existing artifacts.
     img_dir = os.path.join(folder, "images")
-    if not os.path.isdir(img_dir):
+    if status.image is None and not os.path.isdir(img_dir):
         return True
 
-    has_images = any(
-        f.lower().endswith((".jpg", ".jpeg", ".png", ".webp", ".gif"))
-        for f in os.listdir(img_dir)
-    )
-    if not has_images:
-        return True
+    if status.image is None:
+        has_images = any(
+            f.lower().endswith((".jpg", ".jpeg", ".png", ".webp", ".gif"))
+            for f in os.listdir(img_dir)
+        )
+        if not has_images:
+            return True
 
-    # 3. Window sticker missing
+    # 3. Window-sticker state follows the same migration rule.
     sticker_url = listing.get("additional_docs", {}).get("window_sticker_url")
     if sticker_url and sticker_url != "Unavailable":
+        if status.window_sticker is not None:
+            return status.should_attempt("window_sticker", str(sticker_url))
         sticker_path = os.path.join(folder, "sticker.pdf")
         if not os.path.exists(sticker_path) or os.path.getsize(sticker_path) == 0:
             return True
