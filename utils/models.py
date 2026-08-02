@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
 
-from deal_lens.models import Listing, listing_from_legacy
+from deal_lens.models import KBBPricingCache, Listing, listing_from_legacy
 
 from utils.constants import (
     BED_LENGTH_RE,
@@ -649,7 +649,7 @@ class AnalysisContext:
     make: str
     model: str
 
-    cache: dict[str, Any] = field(default_factory=dict)
+    cache: dict[str, Any] | KBBPricingCache = field(default_factory=dict)
     cache_entries: dict[str, dict[str, Any]] = field(default_factory=dict)
     variant_map: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     trim_valuations: list[TrimValuation] = field(default_factory=list)

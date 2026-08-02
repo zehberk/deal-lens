@@ -134,3 +134,53 @@ def test_kbb_cache_preserves_unavailable_vin_resolution():
 	assert resolution.configuration is None
 	assert resolution.status == "unavailable"
 	assert cache.to_dict()["vin_resolutions"]["VIN"]["status"] == "unavailable"
+
+
+def test_kbb_cache_owns_freshness_and_negative_result_rules():
+	now = datetime.now()
+	cache = KBBPricingCache.from_dict({
+		"level23_entries": {
+			"entry": {
+				"local_timestamp": now.isoformat(),
+				"natl_timestamp": now.isoformat(),
+			},
+		},
+		"vin_resolutions": {
+			"VIN": {
+				"configuration": None,
+				"status": "unavailable",
+				"timestamp": now.isoformat(),
+			},
+		},
+		"level23_national_tables": {
+			"vehicle": {"timestamp": now.isoformat(), "rows": []},
+		},
+	})
+	ttl = timedelta(days=1)
+
+	entry = cache.level23_entry("entry")
+	assert entry is not None
+	assert entry.is_complete_and_fresh(ttl)
+	assert cache.vin_unavailable_is_fresh("VIN", ttl)
+	assert cache.fresh_national_rows("vehicle", ttl) == ()
+
+
+def test_kbb_cache_selects_configurations_by_vehicle_identity():
+	cache = KBBPricingCache.from_dict({
+		"configurations": {
+			"match": {
+				"year": "2025", "make": "Ford", "model": "F150",
+				"style": "XLT", "style_url": "https://example.test/xlt",
+				"cache_key": "entry",
+			},
+			"other": {
+				"year": "2024", "make": "Ford", "model": "F150",
+				"style": "XLT", "style_url": "https://example.test/xlt",
+				"cache_key": "other-entry",
+			},
+		},
+	})
+
+	assert list(cache.configurations_for(
+		year="2025", make="ford", model="f150"
+	)) == ["match"]

@@ -1,8 +1,8 @@
 """Canonical models for KBB pricing facts and persisted lookup state."""
 
-from collections.abc import Mapping
-from dataclasses import dataclass, field
-from datetime import datetime
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field, replace
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Any, Self
 
@@ -47,6 +47,15 @@ class KBBPricingEntry:
 			self.msrp, self.fpp_natl, self.fpp_local, self.fmv,
 		))
 
+	def is_national_fresh(self, ttl: timedelta, *, now: datetime | None = None) -> bool:
+		return self.natl_timestamp is not None and (now or datetime.now()) - self.natl_timestamp < ttl
+
+	def is_local_fresh(self, ttl: timedelta, *, now: datetime | None = None) -> bool:
+		return self.local_timestamp is not None and (now or datetime.now()) - self.local_timestamp < ttl
+
+	def is_complete_and_fresh(self, ttl: timedelta, *, now: datetime | None = None) -> bool:
+		return self.is_national_fresh(ttl, now=now) and self.is_local_fresh(ttl, now=now)
+
 	@classmethod
 	def from_dict(cls, value: Mapping[str, Any]) -> Self:
 		known = {
@@ -76,7 +85,7 @@ class KBBPricingEntry:
 		)
 
 	def to_dict(self) -> dict[str, Any]:
-		return {
+		result = {
 			**self.extra,
 			"model": self.model, "kbb_trim": self.kbb_trim, "msrp": self.msrp,
 			"fpp_natl": self.fpp_natl, "fmr_low": self.fmr_low,
@@ -88,6 +97,9 @@ class KBBPricingEntry:
 			"pricing_basis": self.pricing_basis.value if self.pricing_basis else None,
 			"uncertainty": self.uncertainty, "skip_reason": self.skip_reason,
 		}
+		if self.skip_reason is None:
+			result.pop("skip_reason")
+		return result
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -120,6 +132,13 @@ class KBBVehicleConfiguration:
 	def to_dict(self) -> dict[str, Any]:
 		return {**self.extra, "year": self.year, "make": self.make, "model": self.model, "style": self.style, "style_url": self.style_url, "body_style": self.body_style, "fuel_type": self.fuel_type, "powertrain_type": self.powertrain_type, "drivetrain": self.drivetrain, "cache_key": self.cache_key}
 
+	def matches_vehicle(self, *, year: str, make: str, model: str) -> bool:
+		return (
+			self.year == year
+			and self.make.casefold() == make.casefold()
+			and self.model.casefold() == model.casefold()
+		)
+
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class KBBVinResolution:
@@ -139,6 +158,13 @@ class KBBVinResolution:
 
 	def to_dict(self) -> dict[str, Any]:
 		return {**self.extra, "configuration": self.configuration, "timestamp": _isoformat(self.timestamp), "status": self.status}
+
+	def is_fresh_unavailable(self, ttl: timedelta, *, now: datetime | None = None) -> bool:
+		return (
+			self.status == "unavailable"
+			and self.timestamp is not None
+			and (now or datetime.now()) - self.timestamp < ttl
+		)
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -180,6 +206,9 @@ class KBBNationalTable:
 
 	def to_dict(self) -> dict[str, Any]:
 		return {"timestamp": self.timestamp.isoformat(), "rows": [row.to_legacy() for row in self.rows]}
+
+	def is_fresh(self, ttl: timedelta, *, now: datetime | None = None) -> bool:
+		return (now or datetime.now()) - self.timestamp < ttl
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -238,6 +267,83 @@ class KBBPricingCache:
 			"level23_national_tables": {key: item.to_dict() for key, item in self.national_tables.items()},
 			"pricing_lookups": {key: item.to_dict() for key, item in self.pricing_lookups.items()},
 		}
+
+	def level23_entry(self, key: str) -> KBBPricingEntry | None:
+		return self.level23_entries.get(key)
+
+	def level23_items(self) -> tuple[tuple[str, KBBPricingEntry], ...]:
+		return tuple(self.level23_entries.items())
+
+	def level23_entry_dicts(self) -> dict[str, dict[str, Any]]:
+		return {key: entry.to_dict() for key, entry in self.level23_entries.items()}
+
+	def national_table_dicts(self) -> dict[str, dict[str, Any]]:
+		return {key: table.to_dict() for key, table in self.national_tables.items()}
+
+	def update_level23_entry(self, key: str, **values: Any) -> KBBPricingEntry:
+		entry = self.level23_entries.get(key, KBBPricingEntry())
+		known = {field_name for field_name in KBBPricingEntry.__dataclass_fields__ if field_name != "extra"}
+		updates = {name: value for name, value in values.items() if name in known}
+		if "pricing_basis" in updates and isinstance(updates["pricing_basis"], str):
+			updates["pricing_basis"] = KBBPricingBasis(updates["pricing_basis"])
+		extra = {**entry.extra, **{name: value for name, value in values.items() if name not in known}}
+		updated = replace(entry, **updates, extra=extra)
+		self.level23_entries[key] = updated
+		return updated
+
+	def import_level23_entries(self, values: Mapping[str, Mapping[str, Any]]) -> None:
+		self.level23_entries = {
+			str(key): KBBPricingEntry.from_dict(value)
+			for key, value in values.items()
+		}
+
+	def remove_level23_entry_value(self, key: str, name: str) -> None:
+		entry = self.level23_entries.get(key)
+		if entry is None:
+			return
+		if name in KBBPricingEntry.__dataclass_fields__ and name != "extra":
+			self.level23_entries[key] = replace(entry, **{name: None})
+		else:
+			extra = dict(entry.extra)
+			extra.pop(name, None)
+			self.level23_entries[key] = replace(entry, extra=extra)
+
+	def configurations_for(self, *, year: str, make: str, model: str) -> dict[str, KBBVehicleConfiguration]:
+		return {
+			key: configuration
+			for key, configuration in self.configurations.items()
+			if configuration.matches_vehicle(year=year, make=make, model=model)
+		}
+
+	def store_configuration(self, key: str, configuration: KBBVehicleConfiguration) -> None:
+		self.configurations[key] = configuration
+
+	def vin_configuration_key(self, vin: str) -> str | None:
+		resolution = self.vin_resolutions.get(vin)
+		return resolution.configuration if resolution else None
+
+	def vin_unavailable_is_fresh(self, vin: str, ttl: timedelta) -> bool:
+		resolution = self.vin_resolutions.get(vin)
+		return resolution.is_fresh_unavailable(ttl) if resolution else False
+
+	def record_vin_resolution(self, vin: str, configuration: str | None, *, unavailable: bool = False) -> None:
+		self.vin_resolutions[vin] = KBBVinResolution(
+			configuration=configuration,
+			timestamp=datetime.now(),
+			status="unavailable" if unavailable else None,
+		)
+
+	def fresh_national_rows(self, key: str, ttl: timedelta) -> tuple[KBBNationalRow, ...] | None:
+		table = self.national_tables.get(key)
+		return table.rows if table and table.is_fresh(ttl) else None
+
+	def store_national_table(self, key: str, rows: Sequence[KBBNationalRow]) -> None:
+		self.national_tables[key] = KBBNationalTable(timestamp=datetime.now(), rows=tuple(rows))
+
+	def record_lookup_complete(self, key: str) -> None:
+		self.pricing_lookups[key] = KBBLookupStatus(
+			state=KBBLookupState.COMPLETE, checked_at=datetime.now()
+		)
 
 
 def _models(value: Any, factory: Any) -> dict[str, Any]:

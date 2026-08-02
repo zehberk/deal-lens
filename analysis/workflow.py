@@ -17,7 +17,7 @@ from utils.cache import load_cache
 from utils.constants import *
 from utils.download import needs_supplementary_info
 from utils.models import AnalysisContext, ListingContext, PricingAnchors
-from deal_lens.models import Listing, listing_from_legacy
+from deal_lens.models import KBBPricingCache, Listing, listing_from_legacy
 
 
 def build_analysis_context(metadata: dict) -> AnalysisContext:
@@ -27,9 +27,13 @@ def build_analysis_context(metadata: dict) -> AnalysisContext:
 
 
 def populate_cache(ctx: AnalysisContext, *, vin_first: bool = False):
-    ctx.cache = load_cache(PRICING_CACHE)
-    cache_name = "level23_entries" if vin_first else "entries"
-    ctx.cache_entries = ctx.cache.setdefault(cache_name, {})
+    loaded = load_cache(PRICING_CACHE)
+    if vin_first:
+        ctx.cache = KBBPricingCache.from_dict(loaded)
+        ctx.cache_entries = ctx.cache.level23_entry_dicts()
+    else:
+        ctx.cache = loaded
+        ctx.cache_entries = ctx.cache.setdefault("entries", {})
 
 
 async def populate_variants(ctx: AnalysisContext, listings: list[dict]):
@@ -43,6 +47,8 @@ async def populate_pricing_data(
         ctx.make, ctx.model, listings, ctx.variant_map, ctx.cache,
         vin_first=vin_first,
     )
+    if vin_first and isinstance(ctx.cache, KBBPricingCache):
+        ctx.cache_entries = ctx.cache.level23_entry_dicts()
 
 
 def populate_filtered_listings(
