@@ -1,6 +1,7 @@
 import json
 
 from datetime import datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 from deal_lens.models import (
@@ -9,11 +10,43 @@ from deal_lens.models import (
 	KBBNationalTable,
 	KBBPricingBasis,
 	KBBPricingCache,
+	KBBPricingEntry,
+	Listing,
+	ListingCondition,
 	ListingDataset,
+	ListingEvaluation,
 	ResourceState,
 	SupplementaryResourceStatus,
 	SupplementaryStatus,
+	Vehicle,
 )
+
+
+def test_listing_evaluation_composes_listing_facts_and_pricing():
+	listing = Listing(
+		id="listing-1",
+		title="2025 Ford F-150 XLT",
+		vehicle=Vehicle(
+			vin="VIN123", year=2025, make="Ford", model="F-150",
+			trim_version="SuperCrew",
+		),
+		condition=ListingCondition.NEW,
+		price=Decimal("42000"),
+		mileage=12,
+	)
+	evaluation = ListingEvaluation(
+		listing=listing,
+		cache_key="2025 Ford F-150 XLT",
+		base_trim="XLT",
+		pricing=KBBPricingEntry(msrp=45_000, fpp_local=43_000),
+		price_delta=-1_000,
+		deal_rating="Good",
+	)
+
+	assert evaluation.id == listing.id
+	assert evaluation.make == "Ford"
+	assert evaluation.fpp_local == 43_000
+	assert evaluation.to_dict()["deal_rating"] == "Good"
 
 
 def test_kbb_pricing_cache_models_incomplete_and_empty_results():

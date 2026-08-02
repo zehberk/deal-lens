@@ -7,7 +7,7 @@ from pathlib import Path
 from utils.common import make_string_url_safe
 from utils.constants import *
 from utils.download import download_files, download_report_pdfs
-from utils.models import TrimValuation
+from deal_lens.models import KBBPricingEntry
 
 
 def bool_from_url(val: str | None) -> bool:
@@ -108,7 +108,7 @@ def get_relevant_entries(
 
 def get_trim_valuations_from_cache(
     make: str, model: str, years: list[str], entries: dict
-) -> list[TrimValuation]:
+) -> list[KBBPricingEntry]:
     trim_valuations = []
     for y in years:
         for entry in get_relevant_entries(entries, make, model, y).values():
@@ -123,7 +123,7 @@ def get_trim_valuations_from_cache(
             entry.setdefault("natl_source", None)
             entry.setdefault("local_source", None)
 
-            trim_valuations.append(TrimValuation.from_dict(entry))
+            trim_valuations.append(KBBPricingEntry.from_dict(entry))
     return trim_valuations
 
 

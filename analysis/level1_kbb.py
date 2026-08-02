@@ -12,7 +12,7 @@ from analysis.normalization import best_kbb_model_match, best_kbb_trim_match
 from utils.cache import is_entry_fresh, load_cache, record_pricing_lookup, save_cache
 from utils.common import make_string_url_safe
 from utils.constants import KBB_VARIANT_CACHE, PRICING_CACHE
-from utils.models import TrimValuation
+from deal_lens.models import KBBPricingEntry
 from utils.progress import NULL_PROGRESS, ProgressReporter
 from visor_api.level1_service import Level1FacetCollection
 
@@ -25,7 +25,7 @@ class Level1KBBMatch:
 	year: int
 	visor_trim: str
 	kbb_trim: str
-	valuation: TrimValuation
+	valuation: KBBPricingEntry
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -217,7 +217,7 @@ def map_level1_kbb_valuations(
 				year=year,
 				visor_trim=visor_trim,
 				kbb_trim=matched_trim,
-				valuation=TrimValuation.from_dict(entry),
+				valuation=KBBPricingEntry.from_dict(entry),
 			))
 	return Level1KBBResult(matches=tuple(matches), failures=tuple(failures))
 

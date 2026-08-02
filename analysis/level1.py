@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
+from dataclasses import replace
 from pathlib import Path
 
 from utils.cache import load_cache
@@ -23,30 +24,30 @@ from analysis.scoring import (
     rate_uncertainty,
 )
 from analysis.workflow import prepare_level1_analysis
+from deal_lens.models import KBBPricingEntry, ListingEvaluation
 from deal_lens.persistence import load_latest_listing_dataset
 
 from utils.constants import PRICING_CACHE
-from utils.models import CarListing, DealBin, TrimValuation
+from utils.models import DealBin
 
 
 async def create_level1_file(listings: list[dict], metadata: dict):
     ctx = await prepare_level1_analysis(metadata, listings)
 
     no_price_bin = DealBin(category="No Price", listings=[], count=0)
-    all_listings: list[CarListing] = []
+    all_listings: list[ListingEvaluation] = []
     seen_ids: set[str] = set()  # guard if input has dupes
 
     for item in ctx.listings:
         listing = item.listing
         cache_key = item.cache_key
-        year = item.year
         base_trim = item.base_trim
 
-        msrp = int(ctx.cache_entries[cache_key].get("msrp") or 0)
-        fpp_natl = int(ctx.cache_entries[cache_key].get("fpp_natl") or 0)
-        fpp_local = int(ctx.cache_entries[cache_key].get("fpp_local") or 0)
-        fmr_high = int(ctx.cache_entries[cache_key].get("fmr_high") or 0)
-        fmv = int(ctx.cache_entries[cache_key].get("fmv") or 0)
+        msrp = int(item.pricing.msrp or 0)
+        fpp_natl = int(item.pricing.fpp_natl or 0)
+        fpp_local = int(item.pricing.fpp_local or 0)
+        fmr_high = int(item.pricing.fmr_high or 0)
+        fmv = int(item.pricing.fmv or 0)
 
         price = int(listing.price or 0)
         best_comparison = determine_best_price(
@@ -65,28 +66,21 @@ async def create_level1_file(listings: list[dict], metadata: dict):
         uncertainty = rate_uncertainty(listing)
         risk = rate_risk_level1(listing, price, midpoint)
 
-        car_listing = CarListing(
-            id=listing.id,
-            vin=listing.vin or "",
-            year=int(year),
-            make=ctx.make,
-            model=ctx.model,
-            trim=base_trim,
-            trim_version=listing.vehicle.trim_version or "",
-            title=listing.title or "",
+        car_listing = ListingEvaluation(
+            listing=listing,
             cache_key=cache_key,
-            condition=listing.condition.value if listing.condition else "",
-            miles=listing.mileage or 0,
-            price=price,
+            base_trim=base_trim,
+            pricing=KBBPricingEntry(
+                msrp=msrp,
+                fpp_natl=fpp_natl,
+                fpp_local=fpp_local,
+                fmv=fmv,
+            ),
             price_delta=price - midpoint if price else 0,
             uncertainty=uncertainty,
             risk=risk,
             deal_rating=deal,
             compare_price=midpoint,
-            msrp=msrp,
-            fpp_natl=fpp_natl,
-            fpp_local=fpp_local,
-            fmv=fmv,
             deviation_pct=deviation_pct(price, midpoint),
         )
 
@@ -127,9 +121,10 @@ async def create_level1_file(listings: list[dict], metadata: dict):
     quicklist = sorted(
         {l.cache_key for l in all_listings if l.cache_key in ctx.cache_entries}
     )
+    pricing_by_key = {item.cache_key: item.pricing for item in ctx.listings}
     visible_entries = {
-        k: TrimValuation.from_dict({**ctx.cache_entries[k], "kbb_trim": k})
-        for k in quicklist
+        key: replace(pricing_by_key[key], kbb_trim=key)
+        for key in quicklist
     }
 
     # Output skipped listing reasons

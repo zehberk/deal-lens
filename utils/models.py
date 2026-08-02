@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
 
-from deal_lens.models import KBBPricingCache, Listing
+from deal_lens.models import KBBPricingCache, KBBPricingEntry, Listing, ListingEvaluation
 
 from utils.constants import (
     BED_LENGTH_RE,
@@ -16,179 +16,9 @@ from utils.constants import (
 
 
 @dataclass
-class TrimValuation:
-    model: str
-    kbb_trim: str
-
-    # Values pulled from the model-level page (national baseline)
-    msrp: int
-    fpp_natl: int
-
-    # Values pulled from the trim-level page (localized)
-    fmr_low: int
-    fmr_high: int
-    fpp_local: int
-    fmv: int
-
-    # Only two sources — one for each page type
-    natl_source: str
-    local_source: str
-
-    def __repr__(self):
-        return (
-            f"TrimValuation(model={self.model}, "
-            f"kbb_trim={self.kbb_trim!r}, "
-            f"msrp={self.fmv}, "
-            f"fpp_natl={self.fpp_natl}, "
-            f"fmr_low={self.fmr_low}, "
-            f"fmr_high={self.fmr_high}, "
-            f"fpp_local={self.fpp_local}, "
-            f"fmv={self.fmv}, "
-            f"model_source={self.natl_source!r})"
-            f"trim_source={self.local_source!r})"
-        )
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "model": self.model,
-            "kbb_trim": self.kbb_trim,
-            "msrp": self.msrp,
-            "fpp_natl": self.fpp_natl,
-            "fmr_low": self.fmr_low,
-            "fmr_high": self.fmr_high,
-            "fpp_local": self.fpp_local,
-            "fmv": self.fmv,
-            "natl_source": self.natl_source,
-            "local_source": self.local_source,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "TrimValuation":
-        return cls(
-            model=data["model"],
-            kbb_trim=data["kbb_trim"],
-            msrp=data["msrp"],
-            fpp_natl=data["fpp_natl"],
-            fmr_low=data["fmr_low"],
-            fmr_high=data["fmr_high"],
-            fpp_local=data["fpp_local"],
-            fmv=data["fmv"],
-            natl_source=data["natl_source"],
-            local_source=data["local_source"],
-        )
-
-
-@dataclass
-class CarListing:
-    id: str
-    vin: str
-    year: int
-    make: str
-    model: str
-    trim: str
-    trim_version: str
-    title: str
-    cache_key: str
-    condition: str  # "New" | "Used" | "Certified"
-    miles: int
-    price: int
-    price_delta: int
-    uncertainty: str
-    risk: str
-    msrp: int
-    fpp_natl: int | None
-    fpp_local: int | None
-    fmv: int | None
-    compare_price: int | None
-    deal_rating: Optional[str] = (
-        None  # "Great" | "Good" | "Fair" | "Poor" | "Bad" | None if no price
-    )
-    deviation_pct: Optional[float] = None  # signed; negative = under FMV
-
-    def __repr__(self):
-        return (
-            f"CarListing(id={self.id!r}, "
-            f"vin={self.vin!r}, "
-            f"year={self.year}, "
-            f"make={self.make}, "
-            f"model={self.model}, "
-            f"trim={self.trim}, "
-            f"trim_version={self.trim_version}, "
-            f"title={self.title}, "
-            f"cache_key={self.cache_key}, "
-            f"condition={self.condition}, "
-            f"miles={self.miles!r}, "
-            f"price={self.price!r}, "
-            f"price_delta={self.price_delta!r}, "
-            f"uncertainty={self.uncertainty!r}, "
-            f"risk={self.risk!r}, "
-            f"msrp={self.msrp!r}, "
-            f"fpp_natl={self.fpp_natl!r}, "
-            f"fpp_local={self.fpp_local!r}, "
-            f"fmv={self.fmv!r}, "
-            f"compare_price={self.compare_price!r}, "
-            f"deal_rating={self.deal_rating!r}, "
-            f"deviation_pct={self.deviation_pct!r})"
-        )
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "vin": self.vin,
-            "year": self.year,
-            "make": self.make,
-            "model": self.model,
-            "trim": self.trim,
-            "trim_version": self.trim_version,
-            "title": self.title,
-            "cache_key": self.cache_key,
-            "condition": self.condition,
-            "miles": self.miles,
-            "price": self.price,
-            "price_delta": self.price_delta,
-            "uncertainty": self.uncertainty,
-            "risk": self.risk,
-            "msrp": self.msrp,
-            "fpp_natl": self.fpp_natl,
-            "fpp_local": self.fpp_local,
-            "fmv": self.fmv,
-            "compare_price": self.compare_price,
-            "deal_rating": self.deal_rating,
-            "deviation_pct": self.deviation_pct,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "CarListing":
-        return cls(
-            id=data["id"],
-            vin=data["vin"],
-            year=data["year"],
-            make=data["make"],
-            model=data["model"],
-            trim=data["trim"],
-            trim_version=data["trim_version"],
-            title=data["title"],
-            cache_key=data["cache_key"],
-            condition=data["condition"],
-            miles=data["miles"],
-            price=data["price"],
-            price_delta=data["price_delta"],
-            uncertainty=data["uncertainty"],
-            risk=data["risk"],
-            msrp=data["msrp"],
-            fpp_natl=data["fpp_natl"],
-            fpp_local=data["fpp_local"],
-            fmv=data["fmv"],
-            compare_price=data["compare_price"],
-            deal_rating=data["deal_rating"],
-            deviation_pct=data["deviation_pct"],
-        )
-
-
-@dataclass
 class DealBin:
     category: str
-    listings: list[CarListing]
+    listings: list[ListingEvaluation]
     count: int
     avg_deviation_pct: Optional[float] = None
     condition_counts: dict[str, int] = field(default_factory=dict)  # {"New": 2, ...}
@@ -597,25 +427,8 @@ class DealCheck:
 
 
 @dataclass
-class PricingAnchors:
-    msrp: Optional[int] = None
-    fpp_natl: Optional[int] = None
-    fpp_local: Optional[int] = None
-    fmv: Optional[int] = None
-    fmr_low: Optional[int] = None
-    fmr_high: Optional[int] = None
-    uncertainty: Optional[str] = None
-    source_natl: Optional[str] = None
-    source_local: Optional[str] = None
-
-
-@dataclass
 class ListingContext:
-    listing_id: str = ""
-    vin: str = ""
     cache_key: str = ""
-
-    year: str = ""
     base_trim: str = ""
 
     listing: Listing = field(default_factory=lambda: Listing(id=""))
@@ -623,7 +436,7 @@ class ListingContext:
     report_path: Optional[str] = None
     carfax: Any | None = None
 
-    pricing: PricingAnchors = field(default_factory=PricingAnchors)
+    pricing: KBBPricingEntry = field(default_factory=KBBPricingEntry)
 
     # “figure out the leverage” output
     leverage_lines: list[str] = field(default_factory=list)
@@ -633,10 +446,17 @@ class ListingContext:
     risk_score: Optional[int] = None
     narrative: list[str] = field(default_factory=list)
 
-    def __post_init__(self) -> None:
-        self.listing_id = self.listing_id or self.listing.id
-        self.vin = self.vin or self.listing.vin or ""
-        self.year = self.year or str(self.listing.year or "")
+    @property
+    def listing_id(self) -> str:
+        return self.listing.id
+
+    @property
+    def vin(self) -> str:
+        return self.listing.vin or ""
+
+    @property
+    def year(self) -> str:
+        return str(self.listing.year or "")
 
 
 @dataclass
@@ -648,7 +468,7 @@ class AnalysisContext:
     cache: dict[str, Any] | KBBPricingCache = field(default_factory=dict)
     cache_entries: dict[str, dict[str, Any]] = field(default_factory=dict)
     variant_map: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
-    trim_valuations: list[TrimValuation] = field(default_factory=list)
+    trim_valuations: list[KBBPricingEntry] = field(default_factory=list)
 
     skipped_listings: list[dict[str, Any]] = field(default_factory=list)
     skip_summary: dict[str, dict[str, int]] = field(default_factory=dict)
