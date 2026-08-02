@@ -98,7 +98,9 @@ def _fill_missing_listing_fields_from_carfax(
 
 def _price_assessment(
     lc, narrative: list[str]
-) -> tuple[str, int, int, float, PricingVisual] | None:
+) -> tuple[
+    str, int, float | None, tuple[int, int, int, int], PricingVisual
+] | None:
     listing = lc.listing
     price_val = listing.price
     if price_val is None:
@@ -126,9 +128,11 @@ def _price_assessment(
         narrative.append(
             "This price assessment uses a fallback benchmark and should not be treated as the expected purchase price."
         )
-    deal, midpoint, increment, percent = classify_deal_rating(
+    classification = classify_deal_rating(
         price, best_comparison, fmv, fpp_local, fmr_high
     )
+    deal = classification.rating
+    midpoint = classification.midpoint
     price_difference_pct = (price - midpoint) / midpoint * 100
     if abs(price_difference_pct) < 0.05:
         narrative.append("Listing price matches the fair-price midpoint.")
@@ -137,25 +141,7 @@ def _price_assessment(
         narrative.append(
             f"Listing price is {abs(price_difference_pct):.1f}% {direction} the fair-price midpoint."
         )
-    boundaries = [
-        midpoint - increment * 3,
-        midpoint - increment,
-        midpoint + increment,
-        midpoint + increment * 3,
-    ]
-    if best_comparison != fpp_local:
-        percentage_boundaries = [
-            round(midpoint * (1 - percent * 3)),
-            round(midpoint * (1 - percent)),
-            round(midpoint * (1 + percent)),
-            round(midpoint * (1 + percent * 3)),
-        ]
-        boundaries = [
-            max(absolute, percentage)
-            for absolute, percentage in zip(boundaries, percentage_boundaries)
-        ]
-
-    great_high, good_high, fair_high, poor_high = boundaries
+    great_high, good_high, fair_high, poor_high = classification.boundaries
     leading_width = max(good_high - great_high, 1)
     trailing_width = max(poor_high - fair_high, 1)
     scale_low = max(great_high - leading_width, 0)
@@ -164,7 +150,8 @@ def _price_assessment(
     marker_pct = max(0.0, min(100.0, (price - scale_low) / scale_width * 100))
 
     boundary_percentages = [
-        (boundary - scale_low) / scale_width * 100 for boundary in boundaries
+        (boundary - scale_low) / scale_width * 100
+        for boundary in classification.boundaries
     ]
     great_end_pct, good_end_pct, fair_end_pct, poor_end_pct = boundary_percentages
 
@@ -190,7 +177,7 @@ def _price_assessment(
     }
     if kbb_url:
         pricing_visual["kbb_url"] = kbb_url
-    return deal, midpoint, increment, percent, pricing_visual
+    return deal, midpoint, classification.percent, classification.boundaries, pricing_visual
 
 
 async def start_level2_analysis(metadata: dict, listings: list[dict], filename: str):

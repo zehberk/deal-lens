@@ -60,9 +60,11 @@ async def create_level1_file(listings: list[dict], metadata: dict):
             is_new=listing.condition is not None and listing.condition.value.casefold() == "new",
         )
 
-        deal, midpoint, _, _ = classify_deal_rating(
+        classification = classify_deal_rating(
             price, best_comparison, fmv, fpp_local, fmr_high
         )
+        deal = classification.rating
+        midpoint = classification.midpoint
         uncertainty = rate_uncertainty(listing)
         risk = rate_risk_level1(listing, price, midpoint)
 
