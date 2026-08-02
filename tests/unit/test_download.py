@@ -22,6 +22,7 @@ from utils.download import (
 	is_chrome_browser_window,
 	launch_chrome,
 	needs_poll,
+	needs_supplementary_info,
 	wait_for_carfax_report,
 )
 
@@ -74,6 +75,10 @@ async def test_only_first_image_is_downloaded_and_normalized(output_dir):
 	assert count == 0
 	assert request.calls == 1
 	assert not (output_dir / "images" / "report.jpg").exists()
+	assert listing["supplementary_status"]["image"]["status"] == "failed"
+
+	await download_images(cast(APIRequestContext, request), listing, str(output_dir))
+	assert request.calls == 1
 
 
 async def test_report_image_is_compact_jpeg(output_dir):
@@ -225,6 +230,52 @@ def test_cached_dealer_fees_satisfy_polling_requirement():
 	}
 
 	assert not needs_poll(listing, cache)
+
+
+def test_supplementary_dealer_status_suppresses_repeat_poll_until_url_changes():
+	listing = {
+		"vin": "TESTVIN",
+		"listing_url": "https://dealer.test/old",
+		"supplementary_status": {
+			"dealer_data": {
+				"status": "unavailable",
+				"source_url": "https://dealer.test/old",
+				"attempted_at": "2026-01-01T00:00:00",
+				"retry_after": None,
+				"failure_reason": "removed_or_sold",
+				"http_status": None,
+			},
+		},
+	}
+
+	assert not needs_poll(listing, {})
+	listing["listing_url"] = "https://dealer.test/new"
+	assert needs_poll(listing, {})
+
+
+def test_downloaded_status_is_authoritative_when_artifact_is_missing(
+	output_dir, monkeypatch
+):
+	monkeypatch.setattr("utils.download.DOC_PATH", output_dir)
+	listing = {
+		"id": "listing-1", "title": "Test vehicle", "vin": "VIN",
+		"images": ["https://images.test/report.jpg"],
+		"supplementary_status": {
+			"image": {
+				"status": "downloaded",
+				"source_url": "https://images.test/report.jpg",
+				"attempted_at": "2026-01-01T00:00:00",
+				"retry_after": None,
+				"failure_reason": None,
+				"http_status": None,
+			},
+		},
+	}
+	folder = output_dir / listing["title"] / listing["vin"]
+	folder.mkdir(parents=True)
+	(folder / "listing.json").write_text("{}", encoding="utf-8")
+
+	assert not needs_supplementary_info(listing)
 
 
 def test_missing_carfax_url_remains_due_after_poll_window():

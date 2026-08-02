@@ -12,6 +12,7 @@ from deal_lens.models import (
 	ListingDataset,
 	ResourceState,
 	SupplementaryResourceStatus,
+	SupplementaryStatus,
 )
 
 
@@ -80,6 +81,28 @@ def test_supplementary_resource_status_round_trips_retry_state():
 	restored = SupplementaryResourceStatus.from_dict(status.to_dict())
 
 	assert restored == status
+
+
+def test_supplementary_status_controls_retries_and_url_changes():
+	now = datetime.now()
+	status = SupplementaryResourceStatus(
+		state=ResourceState.FAILED,
+		source_url="https://images.example/old.jpg",
+		attempted_at=now,
+		retry_after=now + timedelta(days=1),
+		failure_reason="timeout",
+	)
+	supplementary = SupplementaryStatus(image=status)
+
+	assert not supplementary.should_attempt(
+		"image", "https://images.example/old.jpg", now=now
+	)
+	assert supplementary.should_attempt(
+		"image", "https://images.example/new.jpg", now=now
+	)
+	assert supplementary.should_attempt(
+		"image", "https://images.example/old.jpg", now=now + timedelta(days=2)
+	)
 
 
 def test_dealer_fee_accepts_legacy_tuple_and_mapping():

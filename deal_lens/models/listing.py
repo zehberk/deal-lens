@@ -7,6 +7,8 @@ from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import Any
 
+from deal_lens.models.common import SupplementaryStatus
+
 
 class ListingCondition(StrEnum):
 	NEW = "New"
@@ -85,6 +87,7 @@ class Listing(MutableMapping[str, Any]):
 	source_record_id: str | None = None
 	provenance: dict[str, Any] = field(default_factory=dict)
 	warnings: list[dict[str, Any]] = field(default_factory=list)
+	supplementary_status: SupplementaryStatus = field(default_factory=SupplementaryStatus)
 	raw_source: dict[str, Any] = field(default_factory=dict, repr=False)
 	extra: dict[str, Any] = field(default_factory=dict, repr=False)
 
@@ -137,6 +140,7 @@ class Listing(MutableMapping[str, Any]):
 			},
 			"provenance": self.provenance,
 			"warnings": self.warnings,
+			"supplementary_status": self.supplementary_status.to_dict(),
 		})
 		if self.raw_source:
 			result["source_data"] = self.raw_source
@@ -209,6 +213,7 @@ def listing_from_legacy(value: Mapping[str, Any]) -> Listing:
 		"mileage", "days_on_market", "listed", "listed_at", "listing_url",
 		"images", "seller", "specs", "installed_addons", "price_history",
 		"additional_docs", "source_data", "provenance", "warnings",
+		"supplementary_status",
 	}
 	addons = _dict(data.get("installed_addons"))
 	return Listing(
@@ -259,6 +264,9 @@ def listing_from_legacy(value: Mapping[str, Any]) -> Listing:
 		source_record_id=str(data.get("id")) if data.get("id") is not None else None,
 		provenance=_dict(data.get("provenance")),
 		warnings=list(data.get("warnings") or []),
+		supplementary_status=SupplementaryStatus.from_dict(
+			_dict(data.get("supplementary_status"))
+		),
 		raw_source=source_data,
 		extra={key: item for key, item in data.items() if key not in known},
 	)
