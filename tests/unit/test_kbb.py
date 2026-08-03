@@ -271,7 +271,7 @@ async def test_vin_first_pricing_reuses_configuration_and_enriches_national(
 	)
 
 	resolve.assert_awaited_once()
-	local.assert_awaited_once()
+	assert local.await_count == 2
 	national.assert_awaited_once()
 	assert first["kbb_cache_key"] == second["kbb_cache_key"]
 	assert list(cache["level23_entries"]) == [
@@ -280,6 +280,8 @@ async def test_vin_first_pricing_reuses_configuration_and_enriches_national(
 	entry = cache["level23_entries"][first["kbb_cache_key"]]
 	assert entry["pricing_basis"] == "vin"
 	assert entry["fpp_local"] == 32_500
+	assert entry["fpp_vin_local"] == 32_500
+	assert entry["fpp_table_local"] == 32_500
 	assert entry["fpp_natl"] == 32_100
 	assert valuations[0].kbb_trim == first["kbb_cache_key"]
 	assert configuration["style"] == "SE Hatchback 4D"
@@ -289,7 +291,7 @@ async def test_vin_first_pricing_reuses_configuration_and_enriches_national(
 	)
 
 
-async def test_vin_first_keeps_local_pricing_without_national_rows(monkeypatch):
+async def test_new_vin_resolution_does_not_use_used_pricing_without_national_rows(monkeypatch):
 	listing = {
 		"id": "f150-xlt",
 		"vin": "1FTFW3L58SKE44302",
@@ -333,12 +335,16 @@ async def test_vin_first_keeps_local_pricing_without_national_rows(monkeypatch):
 	assert cache_key == (
 		"2025 Ford F150 SuperCrew Cab XLT Pickup 4D 5 1/2 ft"
 	)
-	assert entry["pricing_basis"] == "vin"
+	assert entry["pricing_basis"] is None
 	assert entry["fpp_natl"] is None
-	assert entry["fpp_local"] == 44_880
-	assert entry["fmr_low"] == 40_880
-	assert entry["fmr_high"] == 48_980
-	assert "skip_reason" not in entry
+	assert entry["fpp_local"] is None
+	assert entry["fpp_vin_local"] is None
+	assert entry["fpp_table_local"] is None
+	assert entry["fmr_low"] is None
+	assert entry["fmr_high"] is None
+	assert entry["skip_reason"] == (
+		"There is currently no pricing data for this configuration."
+	)
 	assert valuations[0].kbb_trim == cache_key
 
 
@@ -485,7 +491,9 @@ async def test_vin_first_new_listing_uses_resolved_body_specific_style(
 	entry = cache["level23_entries"][listing["kbb_cache_key"]]
 	assert entry["msrp"] == 27_450
 	assert entry["fpp_natl"] == 26_400
-	assert entry["local_source"] == (
+	assert entry["fpp_vin_local"] is None
+	assert entry["fpp_table_local"] == 25_640
+	assert entry["table_local_source"] == (
 		"https://kbb.com/honda/civic/2025/sport-hatchback-4d/"
 	)
 	assert cache["vin_resolutions"]["19XFL2H80SE034568"]
@@ -514,6 +522,8 @@ async def test_complete_vin_first_cache_does_not_start_browser(monkeypatch):
 				"fmv": 44_500,
 				"natl_source": "https://kbb.example/national",
 				"local_source": "https://kbb.example/local",
+				"local_timestamp": datetime.now().isoformat(),
+				"pricing_basis": "used",
 			},
 		},
 		"configurations": {

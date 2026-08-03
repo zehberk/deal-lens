@@ -179,7 +179,7 @@ def test_report_contains_required_aggregate_sections_only():
 		"The 2024 LX tends to sit on the market the longest",
 		"https://api.visor.vin/v1/facets — 3 calls",
 		"Kelley Blue Book®",
-		"https://www.kbb.com/honda/civic/",
+		"https://www.kbb.com/honda/civic/2024/lx/",
 		"data provided by Kelley Blue Book",
 	):
 		assert text in html
@@ -193,6 +193,8 @@ def test_report_falls_back_to_annotated_msrp():
 	valuation = replace(
 		first.valuation,
 		fpp_local=None,
+		fpp_vin_local=None,
+		fpp_table_local=None,
 		fpp_natl=None,
 		fmv=None,
 	)
@@ -236,8 +238,9 @@ def test_report_groups_sources_instead_of_listing_each_request():
 
 	assert html.count("https://api.visor.vin/v1/facets") == 1
 	assert "metric=price.median" not in html
-	assert html.count("https://www.kbb.com/honda/civic/") == 1
-	assert "2024/lx" not in html
+	assert html.count("https://www.kbb.com/honda/civic/2024/") == 2
+	assert "2024/lx/" in html
+	assert "2024/sport/" in html
 	assert 'href="https://visor.vin/search/listings?' in html
 	assert "trim=LX" in html
 	assert "car_type=" not in html

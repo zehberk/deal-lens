@@ -19,6 +19,8 @@ from deal_lens.models.dataset import (
 )
 from deal_lens.models.evaluation import ListingEvaluation
 from deal_lens.models.kbb import (
+	KBBFPPBasis,
+	KBBFreshness,
 	KBBLookupState,
 	KBBLookupStatus,
 	KBBNationalRow,
@@ -26,6 +28,7 @@ from deal_lens.models.kbb import (
 	KBBPricingBasis,
 	KBBPricingCache,
 	KBBPricingEntry,
+	KBBPriceAnchor,
 	KBBVehicleConfiguration,
 	KBBVinResolution,
 )
@@ -44,6 +47,8 @@ __all__ = [
 	"DatasetVehicle",
 	"DealerFee",
 	"InstalledOption",
+	"KBBFPPBasis",
+	"KBBFreshness",
 	"KBBLookupState",
 	"KBBLookupStatus",
 	"KBBNationalRow",
@@ -51,6 +56,7 @@ __all__ = [
 	"KBBPricingBasis",
 	"KBBPricingCache",
 	"KBBPricingEntry",
+	"KBBPriceAnchor",
 	"KBBVehicleConfiguration",
 	"KBBVinResolution",
 	"Listing",

@@ -8,6 +8,8 @@ from deal_lens.models import (
 	DataWarning,
 	DealerFee,
 	KBBNationalTable,
+	KBBFPPBasis,
+	KBBFreshness,
 	KBBPricingBasis,
 	KBBPricingCache,
 	KBBPricingEntry,
@@ -83,12 +85,120 @@ def test_kbb_pricing_cache_models_incomplete_and_empty_results():
 	cache = KBBPricingCache.from_dict(payload)
 
 	assert cache.level23_entries["entry"].pricing_basis is KBBPricingBasis.VIN
+	assert cache.level23_entries["entry"].fpp_vin_local == 44_880
 	assert cache.level23_entries["entry"].msrp is None
 	assert cache.level23_entries["entry"].extra["provider_note"] == "preserved"
 	assert cache.national_tables["2025 Ford F150 SuperCrew Cab"].rows == ()
 	serialized = cache.to_dict()
 	assert serialized["level23_national_tables"]["2025 Ford F150 SuperCrew Cab"]["rows"] == []
 	assert serialized["future_section"] == {"kept": True}
+
+
+def test_kbb_fpp_selector_preserves_precedence_and_provenance():
+	now = datetime.now()
+	entry = KBBPricingEntry(
+		fpp_vin_local=31_000,
+		vin_local_source="https://kbb.example/vin",
+		vin_local_timestamp=now,
+		fpp_table_local=30_500,
+		table_local_source="https://kbb.example/table-trim",
+		table_local_timestamp=now,
+		fpp_natl=30_000,
+		natl_source="https://kbb.example/table",
+		natl_timestamp=now,
+	)
+
+	anchor = entry.selected_fpp_anchor(timedelta(days=1), now=now)
+
+	assert anchor is not None
+	assert anchor.value == 31_000
+	assert anchor.basis is KBBFPPBasis.VIN_LOCAL
+	assert anchor.source_url == "https://kbb.example/vin"
+	assert anchor.timestamp == now
+	assert anchor.freshness is KBBFreshness.FRESH
+
+
+def test_kbb_fpp_selector_skips_stale_higher_priority_values():
+	now = datetime.now()
+	entry = KBBPricingEntry(
+		fpp_vin_local=31_000,
+		vin_local_source="https://kbb.example/vin",
+		vin_local_timestamp=now - timedelta(days=2),
+		fpp_table_local=30_500,
+		table_local_source="https://kbb.example/table-trim",
+		table_local_timestamp=now,
+		fpp_natl=30_000,
+		natl_source="https://kbb.example/table",
+		natl_timestamp=now,
+	)
+
+	anchor = entry.selected_fpp_anchor(timedelta(days=1), now=now)
+
+	assert anchor is not None
+	assert anchor.basis is KBBFPPBasis.TABLE_LOCAL
+	assert anchor.value == 30_500
+	assert anchor.uncertainty == ("vin_local FPP is stale",)
+
+
+def test_kbb_fpp_selector_uses_national_after_stale_local_values():
+	now = datetime.now()
+	entry = KBBPricingEntry(
+		fpp_vin_local=31_000,
+		vin_local_timestamp=now - timedelta(days=2),
+		fpp_table_local=30_500,
+		table_local_timestamp=now - timedelta(days=2),
+		fpp_natl=30_000,
+		natl_source="https://kbb.example/table",
+		natl_timestamp=now,
+	)
+
+	anchor = entry.selected_fpp_anchor(timedelta(days=1), now=now)
+
+	assert anchor is not None
+	assert anchor.basis is KBBFPPBasis.NATIONAL
+	assert anchor.value == 30_000
+	assert anchor.source_url == "https://kbb.example/table"
+
+
+def test_kbb_fpp_selector_excludes_used_vin_local_pricing_for_new_vehicle():
+	entry = KBBPricingEntry(
+		fpp_vin_local=42_690,
+		vin_local_source="https://kbb.example/x3/used-vin-style",
+		fpp_table_local=47_100,
+		table_local_source="https://kbb.example/x3/new-table-trim",
+		fpp_natl=47_100,
+		natl_source="https://kbb.example/x3/new-table",
+	)
+
+	anchor = entry.selected_fpp_anchor(is_new=True)
+
+	assert anchor is not None
+	assert anchor.basis is KBBFPPBasis.TABLE_LOCAL
+	assert anchor.value == 47_100
+	assert anchor.source_url == "https://kbb.example/x3/new-table-trim"
+	assert anchor.uncertainty[0] == (
+		"vin_local FPP was excluded because it is used-vehicle pricing"
+	)
+
+
+def test_kbb_legacy_local_migration_does_not_guess_ambiguous_provenance():
+	known = KBBPricingEntry.from_dict({
+		"fpp_local": 31_000,
+		"local_source": "https://kbb.example/vin",
+		"pricing_basis": "vin",
+	})
+	ambiguous = KBBPricingEntry.from_dict({
+		"fpp_local": 30_500,
+		"local_source": "https://kbb.example/unknown",
+	})
+
+	assert known.fpp_vin_local == 31_000
+	assert known.vin_local_source == "https://kbb.example/vin"
+	assert ambiguous.fpp_vin_local is None
+	assert ambiguous.fpp_table_local is None
+	assert ambiguous.fpp_local == 30_500
+	assert ambiguous.uncertainty is not None
+	assert ambiguous.selected_fpp_anchor() is None
 
 
 def test_kbb_national_table_rejects_missing_timestamp():

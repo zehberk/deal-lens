@@ -81,17 +81,7 @@ def populate_filtered_listings(
         report_path = str(report) if report else None
 
         entry = ctx.cache_entries.get(cache_key, {})
-        pricing = KBBPricingEntry(
-            msrp=entry.get("msrp"),
-            fpp_natl=entry.get("fpp_natl"),
-            fpp_local=entry.get("fpp_local"),
-            fmv=entry.get("fmv"),
-            fmr_low=entry.get("fmr_low"),
-            fmr_high=entry.get("fmr_high"),
-            uncertainty=entry.get("uncertainty"),
-            natl_source=entry.get("natl_source"),
-            local_source=entry.get("local_source"),
-        )
+        pricing = KBBPricingEntry.from_dict(entry)
 
         ctx.listings.append(
             ListingContext(

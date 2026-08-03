@@ -11,6 +11,7 @@ from playwright.async_api import async_playwright
 
 from analysis.level1_kbb import Level1KBBResult
 from analysis.level1_models import MarketSnapshot, MetricSummary, YearTrimSummary
+from utils.constants import KBB_CACHE_TTL
 from visor_api.query import VisorListingQuery
 
 
@@ -278,10 +279,9 @@ def _kbb_benchmark(snapshot: MarketSnapshot, valuation) -> tuple[int | None, str
 
 
 def _kbb_purchase_benchmark(valuation) -> tuple[int | None, str | None]:
-	if valuation.fpp_local:
-		return valuation.fpp_local, "FPP"
-	if valuation.fpp_natl:
-		return valuation.fpp_natl, "FPP"
+	anchor = valuation.selected_fpp_anchor(KBB_CACHE_TTL)
+	if anchor is not None:
+		return int(anchor.value), f"FPP ({anchor.basis.value.replace('_', '-')})"
 	if valuation.msrp:
 		return valuation.msrp, "(MSRP)"
 	return None, None
@@ -365,12 +365,13 @@ def _visor_sources(snapshot: MarketSnapshot) -> tuple[dict[str, object], ...]:
 
 
 def _kbb_sources(kbb: Level1KBBResult) -> tuple[str, ...]:
-	return tuple(sorted({
-		_kbb_model_url(source)
-		for match in kbb.matches
-		for source in (match.valuation.local_source, match.valuation.natl_source)
-		if source
-	}))
+	sources: set[str] = set()
+	for match in kbb.matches:
+		anchor = match.valuation.selected_fpp_anchor(KBB_CACHE_TTL)
+		source = anchor.source_url if anchor else match.valuation.natl_source
+		if source:
+			sources.add(source)
+	return tuple(sorted(sources))
 
 
 def _kbb_model_url(source: str) -> str:
