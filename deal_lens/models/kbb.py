@@ -119,14 +119,24 @@ class KBBPricingEntry:
 
 	def selected_fpp_anchor(
 		self, ttl: timedelta | None = None, *, now: datetime | None = None,
+		is_new: bool = False,
 	) -> KBBPriceAnchor | None:
 		"""Select the freshest available FPP while keeping value and provenance paired."""
 		uncertainty: list[str] = []
-		candidates = (
-			(KBBFPPBasis.VIN_LOCAL, self.fpp_vin_local, self.vin_local_source, self.vin_local_timestamp),
+		candidates = [
 			(KBBFPPBasis.TABLE_LOCAL, self.fpp_table_local, self.table_local_source, self.table_local_timestamp),
 			(KBBFPPBasis.NATIONAL, self.fpp_natl, self.natl_source, self.natl_timestamp),
-		)
+		]
+		if is_new:
+			if self.fpp_vin_local is not None:
+				uncertainty.append(
+					"vin_local FPP was excluded because it is used-vehicle pricing"
+				)
+		else:
+			candidates.insert(0, (
+				KBBFPPBasis.VIN_LOCAL, self.fpp_vin_local,
+				self.vin_local_source, self.vin_local_timestamp,
+			))
 		for basis, value, source, timestamp in candidates:
 			if value is None:
 				uncertainty.append(f"{basis.value} FPP is unavailable")

@@ -117,7 +117,7 @@ def determine_best_price_from_pricing(
     describe_fallback: bool = True,
 ) -> tuple[int, KBBPriceAnchor | None]:
     """Select one provenance-bearing FPP anchor before older fallbacks."""
-    anchor = pricing.selected_fpp_anchor(KBB_CACHE_TTL)
+    anchor = pricing.selected_fpp_anchor(KBB_CACHE_TTL, is_new=is_new)
     if anchor is not None:
         labels = {
             KBBFPPBasis.VIN_LOCAL: "VIN-local FPP",

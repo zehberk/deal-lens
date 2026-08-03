@@ -1380,12 +1380,30 @@ def _apply_complete_vin_first_cache(
                 return False
             cache_key = configuration.cache_key
             entry = cache.level23_entry(cache_key)
+            local_is_fresh = (
+                entry.is_table_local_fresh(KBB_CACHE_TTL)
+                if entry is not None and condition == "new"
+                else entry.is_vin_local_fresh(KBB_CACHE_TTL)
+                if entry is not None
+                else False
+            )
+            legacy_basis = entry.pricing_basis.value if entry and entry.pricing_basis else None
+            legacy_local_is_fresh = bool(
+                entry
+                and entry.fpp_vin_local is None
+                and entry.fpp_table_local is None
+                and (
+                    (condition == "new" and legacy_basis == "new")
+                    or (condition != "new" and legacy_basis in {"vin", "used"})
+                )
+                and is_local_fresh(entry.to_dict())
+            )
             if (
                 not cache_key
                 or entry is None
                 or not (
-                    entry.is_local_fresh(KBB_CACHE_TTL)
-                    or is_local_fresh(entry.to_dict())
+                    local_is_fresh
+                    or legacy_local_is_fresh
                 )
             ):
                 return False
@@ -1650,7 +1668,7 @@ async def _resolve_vin_first_variant(
         entry = cache.update_level23_entry(
             cache_key, model=model_name, kbb_trim=cache_key,
         )
-        if not entry.is_vin_local_fresh(KBB_CACHE_TTL):
+        if condition != "new" and not entry.is_vin_local_fresh(KBB_CACHE_TTL):
             entry_dicts = cache.level23_entry_dicts()
             fmr_low, fmr_high, fpp_local, fmv, local_source = (
                 await _get_local_pricing_with_progress(

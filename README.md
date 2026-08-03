@@ -96,8 +96,11 @@ powertrain fields constrain reuse when both records provide them. After resolvin
 listings, DealLens loads the national trim table and token-matches MSRP and national
 FPP to each canonical KBB style. It also retains the matched trim link and its
 table-local FPP separately from pricing collected from the VIN-resolved style.
-DealLens selects comparison FPP in the deterministic order VIN-local, table-local,
-then national, keeping the selected value paired with its source URL and timestamp.
+For used vehicles, DealLens selects comparison FPP in the deterministic order
+VIN-local, table-local, then national. New vehicles use table-local, then national;
+VIN resolution may identify their canonical body style, but a used-price VIN-local
+result is never used as their comparison benchmark. Every selected value remains
+paired with its source URL and timestamp.
 Stale higher-priority values are disclosed and skipped. Legacy cache values with a
 recognized VIN/used or new pricing basis migrate to VIN-local or table-local facts;
 an unrecognized local value is preserved with uncertain provenance instead of being

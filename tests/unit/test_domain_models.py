@@ -160,6 +160,27 @@ def test_kbb_fpp_selector_uses_national_after_stale_local_values():
 	assert anchor.source_url == "https://kbb.example/table"
 
 
+def test_kbb_fpp_selector_excludes_used_vin_local_pricing_for_new_vehicle():
+	entry = KBBPricingEntry(
+		fpp_vin_local=42_690,
+		vin_local_source="https://kbb.example/x3/used-vin-style",
+		fpp_table_local=47_100,
+		table_local_source="https://kbb.example/x3/new-table-trim",
+		fpp_natl=47_100,
+		natl_source="https://kbb.example/x3/new-table",
+	)
+
+	anchor = entry.selected_fpp_anchor(is_new=True)
+
+	assert anchor is not None
+	assert anchor.basis is KBBFPPBasis.TABLE_LOCAL
+	assert anchor.value == 47_100
+	assert anchor.source_url == "https://kbb.example/x3/new-table-trim"
+	assert anchor.uncertainty[0] == (
+		"vin_local FPP was excluded because it is used-vehicle pricing"
+	)
+
+
 def test_kbb_legacy_local_migration_does_not_guess_ambiguous_provenance():
 	known = KBBPricingEntry.from_dict({
 		"fpp_local": 31_000,

@@ -111,7 +111,7 @@ def _price_assessment(
     fmv = int(lc.pricing.fmv or 0)
     msrp = int(lc.pricing.msrp or 0)
     is_new = listing.condition is not None and listing.condition.value.casefold() == "new"
-    anchor = lc.pricing.selected_fpp_anchor()
+    anchor = lc.pricing.selected_fpp_anchor(is_new=is_new)
     if not any((anchor, fmv, msrp if is_new else 0)):
         return None
 

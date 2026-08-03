@@ -53,7 +53,7 @@ async def start_level3_analysis(metadata: dict, listings: list[dict], filename: 
         fmr_high = int(item.pricing.fmr_high or 0)
         fmv = int(item.pricing.fmv or 0)
         msrp = int(item.pricing.msrp or 0)
-        anchor = item.pricing.selected_fpp_anchor()
+        anchor = item.pricing.selected_fpp_anchor(is_new=is_new)
         if not any((anchor, fmv, msrp if is_new else 0)):
             narrative.append(
                 "Unable to provide ratings for this vehicle: no pricing data is available for this vehicle."

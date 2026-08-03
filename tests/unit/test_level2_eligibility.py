@@ -713,6 +713,29 @@ def test_price_assessment_accepts_local_pricing_without_national_fpp():
 	assert any("table-local FPP was used" in line for line in narrative)
 
 
+def test_new_vehicle_does_not_use_cached_used_vin_local_fpp():
+	lc = ListingContext(
+		listing_id="new-x3",
+		listing={"price": 46_000, "condition": "New"},
+		pricing=KBBPricingEntry(
+			fpp_vin_local=42_690,
+			vin_local_source="https://kbb.example/x3/used-vin-style",
+			fpp_table_local=47_100,
+			table_local_source="https://kbb.example/x3/new-table-trim",
+			fpp_natl=47_100,
+			natl_source="https://kbb.example/x3/new-table",
+		),
+	)
+	narrative: list[str] = []
+
+	assessment = level2._price_assessment(lc, narrative)
+
+	assert assessment is not None
+	assert assessment[1] == 47_100
+	assert assessment[4].get("kbb_url") == "https://kbb.example/x3/new-table-trim"
+	assert any("used-vehicle pricing" in line for line in narrative)
+
+
 def test_price_assessment_explains_percent_from_fair_midpoint():
 	lc = ListingContext(
 		listing_id="one",
