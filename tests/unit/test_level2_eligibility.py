@@ -677,7 +677,7 @@ def test_price_assessment_provides_visual_range_without_redundant_bullets():
 	assert not any("being listed at" in line for line in narrative)
 	assert not any("Deal bins are set" in line for line in narrative)
 	assert "Listing price is 7.4% below the fair-price midpoint." in narrative
-	assert not any("comparison value" in line for line in narrative)
+	assert any("table-local FPP was used" in line for line in narrative)
 
 
 def test_price_assessment_accepts_local_pricing_without_national_fpp():
@@ -710,7 +710,7 @@ def test_price_assessment_accepts_local_pricing_without_national_fpp():
 		< visual["scale_high"]
 	)
 	assert visual.get("kbb_url") == lc.pricing.local_source
-	assert not any("comparison value" in line for line in narrative)
+	assert any("table-local FPP was used" in line for line in narrative)
 
 
 def test_price_assessment_explains_percent_from_fair_midpoint():

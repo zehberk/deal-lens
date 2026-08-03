@@ -13,7 +13,7 @@ from analysis.normalization import (
 from analysis.scoring import (
     adjust_deal_for_risk,
     classify_deal_rating,
-    determine_best_price,
+    determine_best_price_from_pricing,
     rate_risk_level2,
 )
 from analysis.workflow import (
@@ -50,12 +50,11 @@ async def start_level3_analysis(metadata: dict, listings: list[dict], filename: 
         narrative: list[str] = []
 
         price = int(listing.price or 0)
-        fpp_natl = int(item.pricing.fpp_natl or 0)
-        fpp_local = int(item.pricing.fpp_local or 0)
         fmr_high = int(item.pricing.fmr_high or 0)
         fmv = int(item.pricing.fmv or 0)
         msrp = int(item.pricing.msrp or 0)
-        if not any((fpp_natl, fpp_local, fmv, msrp if is_new else 0)):
+        anchor = item.pricing.selected_fpp_anchor()
+        if not any((anchor, fmv, msrp if is_new else 0)):
             narrative.append(
                 "Unable to provide ratings for this vehicle: no pricing data is available for this vehicle."
             )
@@ -63,17 +62,17 @@ async def start_level3_analysis(metadata: dict, listings: list[dict], filename: 
 
         # Initial deal ratings
         narrative.append(f"This vehicle is being listed at ${price}.")
-        best_comparison = determine_best_price(
-            price,
-            fpp_local,
-            fpp_natl,
-            fmv,
-            narrative,
-            msrp=msrp,
-            is_new=is_new,
+        best_comparison, anchor = determine_best_price_from_pricing(
+            item.pricing, narrative, is_new=is_new,
         )
+        if best_comparison <= 0:
+            narrative.append(
+                "Unable to provide ratings for this vehicle: all KBB pricing is stale or unavailable."
+            )
+            continue
+        local_anchor = int(anchor.value) if anchor and anchor.basis != "national" else 0
         classification = classify_deal_rating(
-            price, best_comparison, fmv, fpp_local, fmr_high
+            price, best_comparison, fmv, local_anchor, fmr_high
         )
         deal = classification.rating
         midpoint = classification.midpoint

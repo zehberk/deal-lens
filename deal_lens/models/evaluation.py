@@ -77,7 +77,22 @@ class ListingEvaluation:
 
 	@property
 	def fpp_local(self) -> int | None:
-		return _optional_integer(self.pricing.fpp_local)
+		anchor = self.pricing.selected_fpp_anchor()
+		return (
+			_optional_integer(anchor.value)
+			if anchor is not None and anchor.basis.value.endswith("_local")
+			else None
+		)
+
+	@property
+	def fpp_basis(self) -> str | None:
+		anchor = self.pricing.selected_fpp_anchor()
+		return anchor.basis.value if anchor else None
+
+	@property
+	def fpp_source(self) -> str | None:
+		anchor = self.pricing.selected_fpp_anchor()
+		return anchor.source_url if anchor else None
 
 	@property
 	def fmv(self) -> int | None:
@@ -93,6 +108,7 @@ class ListingEvaluation:
 			"price_delta": self.price_delta, "uncertainty": self.uncertainty,
 			"risk": self.risk, "msrp": self.msrp,
 			"fpp_natl": self.fpp_natl, "fpp_local": self.fpp_local,
+			"fpp_basis": self.fpp_basis, "fpp_source": self.fpp_source,
 			"fmv": self.fmv, "compare_price": self.compare_price,
 			"deal_rating": self.deal_rating, "deviation_pct": self.deviation_pct,
 		}

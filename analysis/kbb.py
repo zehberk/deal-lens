@@ -1256,11 +1256,17 @@ def _complete_pricing_entry(entry: dict, *, model: str, kbb_trim: str) -> dict:
         "fmr_low": None,
         "fmr_high": None,
         "fpp_local": None,
+        "fpp_vin_local": None,
+        "fpp_table_local": None,
         "fmv": None,
         "natl_source": None,
         "local_source": None,
+        "vin_local_source": None,
+        "table_local_source": None,
         "natl_timestamp": None,
         "local_timestamp": None,
+        "vin_local_timestamp": None,
+        "table_local_timestamp": None,
     }
     for field, value in defaults.items():
         entry.setdefault(field, value)
@@ -1518,15 +1524,23 @@ async def _fetch_new_local_pricing_jobs(
                         expect_used=False,
                     )
                 )
-                entries[cache_key].update({
-                    "fmr_low": fmr_low,
-                    "fmr_high": fmr_high,
-                    "fpp_local": fpp_local,
-                    "fmv": fmv,
-                    "local_source": local_source,
-                    "local_timestamp": datetime.now().isoformat(),
-                    "pricing_basis": "new",
-                })
+                table_values = {
+                    "fpp_table_local": fpp_local,
+                    "table_local_source": local_source,
+                    "table_local_timestamp": datetime.now().isoformat(),
+                }
+                if entries[cache_key].get("fpp_vin_local") is None:
+                    table_values.update({
+                        "fmr_low": fmr_low, "fmr_high": fmr_high, "fmv": fmv,
+                        "pricing_basis": "new",
+                    })
+                entries[cache_key].update(table_values)
+                if entries[cache_key].get("fpp_vin_local") is None:
+                    entries[cache_key].update({
+                        "fpp_local": fpp_local,
+                        "local_source": local_source,
+                        "local_timestamp": datetime.now().isoformat(),
+                    })
             finally:
                 await page.close()
 
@@ -1636,7 +1650,7 @@ async def _resolve_vin_first_variant(
         entry = cache.update_level23_entry(
             cache_key, model=model_name, kbb_trim=cache_key,
         )
-        if not entry.is_local_fresh(KBB_CACHE_TTL):
+        if not entry.is_vin_local_fresh(KBB_CACHE_TTL):
             entry_dicts = cache.level23_entry_dicts()
             fmr_low, fmr_high, fpp_local, fmv, local_source = (
                 await _get_local_pricing_with_progress(
@@ -1654,8 +1668,10 @@ async def _resolve_vin_first_variant(
             )
             cache.update_level23_entry(
                 cache_key, fmr_low=fmr_low, fmr_high=fmr_high,
-                fpp_local=fpp_local, fmv=fmv, local_source=local_source,
-                local_timestamp=datetime.now(), pricing_basis="vin",
+                fpp_local=fpp_local, fpp_vin_local=fpp_local, fmv=fmv,
+                local_source=local_source, vin_local_source=local_source,
+                local_timestamp=datetime.now(), vin_local_timestamp=datetime.now(),
+                pricing_basis="vin",
             )
         listing["kbb_cache_key"] = cache_key
         cache.record_vin_resolution(vin, fingerprint)
@@ -1812,12 +1828,26 @@ async def get_vin_first_pricing_data(
                     )
                     continue
                 row = next(row for row in parsed_rows if row[0] == national_trim)
-                _, msrp, national_fpp, source, _, timestamp = row
+                _, msrp, national_fpp, source, trim_source, timestamp = row
                 pricing_cache.update_level23_entry(
                     cache_key, msrp=msrp, fpp_natl=national_fpp,
                     natl_source=source,
                     natl_timestamp=datetime.fromisoformat(timestamp),
                 )
+                entry = pricing_cache.level23_entry(cache_key)
+                if entry is not None and not entry.is_table_local_fresh(KBB_CACHE_TTL):
+                    table_source = (
+                        urllib.parse.urljoin(source, trim_source)
+                        if trim_source else None
+                    )
+                    if table_source:
+                        new_local_jobs.setdefault(
+                            cache_key,
+                            (
+                                year, make, model_slug, national_trim,
+                                cache_key, table_source,
+                            ),
+                        )
 
             for listing in variant_listings:
                 if listing.get("kbb_cache_key"):
@@ -1838,7 +1868,7 @@ async def get_vin_first_pricing_data(
                     natl_timestamp=datetime.fromisoformat(timestamp),
                     pricing_basis="new" if is_new else "national",
                 )
-                if is_new and not entry.is_local_fresh(KBB_CACHE_TTL):
+                if is_new and not entry.is_table_local_fresh(KBB_CACHE_TTL):
                     local_source = (
                         urllib.parse.urljoin(source, trim_source)
                         if trim_source else None
@@ -1870,7 +1900,10 @@ async def get_vin_first_pricing_data(
                     continue
                 usable = any(
                     getattr(entry, field) is not None
-                    for field in ("msrp", "fpp_natl", "fpp_local", "fmv")
+                    for field in (
+                        "msrp", "fpp_natl", "fpp_vin_local",
+                        "fpp_table_local", "fpp_local", "fmv",
+                    )
                 )
                 if usable:
                     pricing_cache.remove_level23_entry_value(cache_key, "skip_reason")

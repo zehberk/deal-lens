@@ -17,9 +17,31 @@ class KBBPricingBasis(StrEnum):
 	NATIONAL = "national"
 
 
+class KBBFPPBasis(StrEnum):
+	VIN_LOCAL = "vin_local"
+	TABLE_LOCAL = "table_local"
+	NATIONAL = "national"
+
+
+class KBBFreshness(StrEnum):
+	FRESH = "fresh"
+	STALE = "stale"
+	UNKNOWN = "unknown"
+
+
 class KBBLookupState(StrEnum):
 	COMPLETE = "complete"
 	FAILED = "failed"
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class KBBPriceAnchor:
+	value: Number
+	basis: KBBFPPBasis
+	source_url: str | None
+	timestamp: datetime | None
+	freshness: KBBFreshness
+	uncertainty: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -31,27 +53,97 @@ class KBBPricingEntry:
 	fmr_low: Number | None = None
 	fmr_high: Number | None = None
 	fpp_local: Number | None = None
+	fpp_vin_local: Number | None = None
+	fpp_table_local: Number | None = None
 	fmv: Number | None = None
 	natl_source: str | None = None
 	local_source: str | None = None
+	vin_local_source: str | None = None
+	table_local_source: str | None = None
 	natl_timestamp: datetime | None = None
 	local_timestamp: datetime | None = None
+	vin_local_timestamp: datetime | None = None
+	table_local_timestamp: datetime | None = None
 	pricing_basis: KBBPricingBasis | None = None
 	uncertainty: str | None = None
 	skip_reason: str | None = None
 	extra: dict[str, Any] = field(default_factory=dict, repr=False)
 
+	def __post_init__(self) -> None:
+		"""Migrate recognized in-memory legacy entries without guessing provenance."""
+		if self.fpp_local is None or self.fpp_vin_local is not None or self.fpp_table_local is not None:
+			return
+		if self.pricing_basis in {KBBPricingBasis.VIN, KBBPricingBasis.USED}:
+			object.__setattr__(self, "fpp_vin_local", self.fpp_local)
+			object.__setattr__(self, "vin_local_source", self.local_source)
+			object.__setattr__(self, "vin_local_timestamp", self.local_timestamp)
+		elif self.pricing_basis is KBBPricingBasis.NEW:
+			object.__setattr__(self, "fpp_table_local", self.fpp_local)
+			object.__setattr__(self, "table_local_source", self.local_source)
+			object.__setattr__(self, "table_local_timestamp", self.local_timestamp)
+		elif self.pricing_basis is None and self.uncertainty is None:
+			# Direct callers historically used fpp_local for table-local pricing.
+			# Ambiguous persisted values are tagged by from_dict before this hook.
+			object.__setattr__(self, "fpp_table_local", self.fpp_local)
+			object.__setattr__(self, "table_local_source", self.local_source)
+			object.__setattr__(self, "table_local_timestamp", self.local_timestamp)
+		elif self.uncertainty is None:
+			object.__setattr__(
+				self, "uncertainty",
+				"Legacy local FPP was preserved, but its VIN or table origin is unknown.",
+			)
+
 	@property
 	def has_pricing(self) -> bool:
 		return any(value is not None for value in (
-			self.msrp, self.fpp_natl, self.fpp_local, self.fmv,
+			self.msrp, self.fpp_natl, self.fpp_vin_local,
+			self.fpp_table_local, self.fpp_local, self.fmv,
 		))
 
 	def is_national_fresh(self, ttl: timedelta, *, now: datetime | None = None) -> bool:
 		return self.natl_timestamp is not None and (now or datetime.now()) - self.natl_timestamp < ttl
 
 	def is_local_fresh(self, ttl: timedelta, *, now: datetime | None = None) -> bool:
-		return self.local_timestamp is not None and (now or datetime.now()) - self.local_timestamp < ttl
+		return any(
+			timestamp is not None and (now or datetime.now()) - timestamp < ttl
+			for timestamp in (
+				self.vin_local_timestamp, self.table_local_timestamp, self.local_timestamp,
+			)
+		)
+
+	def is_vin_local_fresh(self, ttl: timedelta, *, now: datetime | None = None) -> bool:
+		return _freshness(self.vin_local_timestamp, ttl, now=now) is KBBFreshness.FRESH
+
+	def is_table_local_fresh(self, ttl: timedelta, *, now: datetime | None = None) -> bool:
+		return _freshness(self.table_local_timestamp, ttl, now=now) is KBBFreshness.FRESH
+
+	def selected_fpp_anchor(
+		self, ttl: timedelta | None = None, *, now: datetime | None = None,
+	) -> KBBPriceAnchor | None:
+		"""Select the freshest available FPP while keeping value and provenance paired."""
+		uncertainty: list[str] = []
+		candidates = (
+			(KBBFPPBasis.VIN_LOCAL, self.fpp_vin_local, self.vin_local_source, self.vin_local_timestamp),
+			(KBBFPPBasis.TABLE_LOCAL, self.fpp_table_local, self.table_local_source, self.table_local_timestamp),
+			(KBBFPPBasis.NATIONAL, self.fpp_natl, self.natl_source, self.natl_timestamp),
+		)
+		for basis, value, source, timestamp in candidates:
+			if value is None:
+				uncertainty.append(f"{basis.value} FPP is unavailable")
+				continue
+			freshness = _freshness(timestamp, ttl, now=now)
+			if freshness is KBBFreshness.STALE:
+				uncertainty.append(f"{basis.value} FPP is stale")
+				continue
+			if source is None:
+				uncertainty.append(f"{basis.value} FPP source URL is unavailable")
+			if freshness is KBBFreshness.UNKNOWN:
+				uncertainty.append(f"{basis.value} FPP freshness is unknown")
+			return KBBPriceAnchor(
+				value=value, basis=basis, source_url=source, timestamp=timestamp,
+				freshness=freshness, uncertainty=tuple(uncertainty),
+			)
+		return None
 
 	def is_complete_and_fresh(self, ttl: timedelta, *, now: datetime | None = None) -> bool:
 		return self.is_national_fresh(ttl, now=now) and self.is_local_fresh(ttl, now=now)
@@ -60,8 +152,10 @@ class KBBPricingEntry:
 	def from_dict(cls, value: Mapping[str, Any]) -> Self:
 		known = {
 			"model", "kbb_trim", "msrp", "fpp_natl", "fmr_low", "fmr_high",
-			"fpp_local", "fmv", "natl_source", "local_source",
-			"natl_timestamp", "local_timestamp", "pricing_basis",
+			"fpp_local", "fpp_vin_local", "fpp_table_local", "fmv",
+			"natl_source", "local_source", "vin_local_source", "table_local_source",
+			"natl_timestamp", "local_timestamp", "vin_local_timestamp",
+			"table_local_timestamp", "pricing_basis",
 			"uncertainty", "skip_reason",
 		}
 		basis = value.get("pricing_basis")
@@ -69,17 +163,37 @@ class KBBPricingEntry:
 			pricing_basis = KBBPricingBasis(str(basis)) if basis else None
 		except ValueError:
 			pricing_basis = None
+		legacy_uncertainty = _string(value.get("uncertainty"))
+		if (
+			value.get("fpp_local") is not None
+			and value.get("fpp_vin_local") is None
+			and value.get("fpp_table_local") is None
+			and pricing_basis not in {
+				KBBPricingBasis.VIN, KBBPricingBasis.USED, KBBPricingBasis.NEW,
+			}
+			and legacy_uncertainty is None
+		):
+			legacy_uncertainty = (
+				"Legacy local FPP was preserved, but its VIN or table origin is unknown."
+			)
 		return cls(
 			model=_string(value.get("model")), kbb_trim=_string(value.get("kbb_trim")),
 			msrp=_number(value.get("msrp")), fpp_natl=_number(value.get("fpp_natl")),
 			fmr_low=_number(value.get("fmr_low")), fmr_high=_number(value.get("fmr_high")),
-			fpp_local=_number(value.get("fpp_local")), fmv=_number(value.get("fmv")),
+			fpp_local=_number(value.get("fpp_local")),
+			fpp_vin_local=_number(value.get("fpp_vin_local")),
+			fpp_table_local=_number(value.get("fpp_table_local")),
+			fmv=_number(value.get("fmv")),
 			natl_source=_string(value.get("natl_source")),
 			local_source=_string(value.get("local_source")),
+			vin_local_source=_string(value.get("vin_local_source")),
+			table_local_source=_string(value.get("table_local_source")),
 			natl_timestamp=_datetime(value.get("natl_timestamp")),
 			local_timestamp=_datetime(value.get("local_timestamp")),
+			vin_local_timestamp=_datetime(value.get("vin_local_timestamp")),
+			table_local_timestamp=_datetime(value.get("table_local_timestamp")),
 			pricing_basis=pricing_basis,
-			uncertainty=_string(value.get("uncertainty")),
+			uncertainty=legacy_uncertainty,
 			skip_reason=_string(value.get("skip_reason")),
 			extra={key: item for key, item in value.items() if key not in known},
 		)
@@ -90,10 +204,16 @@ class KBBPricingEntry:
 			"model": self.model, "kbb_trim": self.kbb_trim, "msrp": self.msrp,
 			"fpp_natl": self.fpp_natl, "fmr_low": self.fmr_low,
 			"fmr_high": self.fmr_high, "fpp_local": self.fpp_local,
+			"fpp_vin_local": self.fpp_vin_local,
+			"fpp_table_local": self.fpp_table_local,
 			"fmv": self.fmv, "natl_source": self.natl_source,
 			"local_source": self.local_source,
+			"vin_local_source": self.vin_local_source,
+			"table_local_source": self.table_local_source,
 			"natl_timestamp": _isoformat(self.natl_timestamp),
 			"local_timestamp": _isoformat(self.local_timestamp),
+			"vin_local_timestamp": _isoformat(self.vin_local_timestamp),
+			"table_local_timestamp": _isoformat(self.table_local_timestamp),
 			"pricing_basis": self.pricing_basis.value if self.pricing_basis else None,
 			"uncertainty": self.uncertainty, "skip_reason": self.skip_reason,
 		}
@@ -371,3 +491,15 @@ def _datetime(value: Any) -> datetime | None:
 
 def _isoformat(value: datetime | None) -> str | None:
 	return value.isoformat() if value else None
+
+
+def _freshness(
+	timestamp: datetime | None, ttl: timedelta | None, *, now: datetime | None = None,
+) -> KBBFreshness:
+	if timestamp is None or ttl is None:
+		return KBBFreshness.UNKNOWN
+	return (
+		KBBFreshness.FRESH
+		if (now or datetime.now()) - timestamp < ttl
+		else KBBFreshness.STALE
+	)

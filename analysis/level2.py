@@ -10,7 +10,7 @@ from analysis.scoring import (
     calculate_deal_score_result,
     classify_deal_rating,
     deal_score_from_position,
-    determine_best_price,
+    determine_best_price_from_pricing,
     favorable_evidence_bonus,
     score_mileage_use,
     score_new_vehicle_warranty,
@@ -107,29 +107,27 @@ def _price_assessment(
         return None
 
     price = int(price_val)
-    fpp_natl = int(lc.pricing.fpp_natl or 0)
-    fpp_local = int(lc.pricing.fpp_local or 0)
     fmr_high = int(lc.pricing.fmr_high or 0)
     fmv = int(lc.pricing.fmv or 0)
     msrp = int(lc.pricing.msrp or 0)
     is_new = listing.condition is not None and listing.condition.value.casefold() == "new"
-    if not any((fpp_natl, fpp_local, fmv, msrp if is_new else 0)):
+    anchor = lc.pricing.selected_fpp_anchor()
+    if not any((anchor, fmv, msrp if is_new else 0)):
         return None
 
-    best_comparison = determine_best_price(
-        price,
-        fpp_local,
-        fpp_natl,
-        fmv,
-        msrp=msrp,
-        is_new=is_new,
+    selection_narrative: list[str] = []
+    best_comparison, anchor = determine_best_price_from_pricing(
+        lc.pricing, selection_narrative, is_new=is_new, describe_fallback=False,
     )
-    if msrp and is_new and not any((fpp_local, fpp_natl, fmv)):
+    if best_comparison <= 0:
+        return None
+    local_anchor = int(anchor.value) if anchor and anchor.basis != "national" else 0
+    if msrp and is_new and not any((anchor, fmv)):
         narrative.append(
             "This price assessment uses a fallback benchmark and should not be treated as the expected purchase price."
         )
     classification = classify_deal_rating(
-        price, best_comparison, fmv, fpp_local, fmr_high
+        price, best_comparison, fmv, local_anchor, fmr_high
     )
     deal = classification.rating
     midpoint = classification.midpoint
@@ -141,6 +139,7 @@ def _price_assessment(
         narrative.append(
             f"Listing price is {abs(price_difference_pct):.1f}% {direction} the fair-price midpoint."
         )
+    narrative.extend(selection_narrative)
     great_high, good_high, fair_high, poor_high = classification.boundaries
     leading_width = max(good_high - great_high, 1)
     trailing_width = max(poor_high - fair_high, 1)
@@ -155,10 +154,8 @@ def _price_assessment(
     ]
     great_end_pct, good_end_pct, fair_end_pct, poor_end_pct = boundary_percentages
 
-    kbb_url = (
+    kbb_url = anchor.source_url if anchor else (
         lc.pricing.local_source or lc.pricing.natl_source
-        if fpp_local or fmv
-        else lc.pricing.natl_source or lc.pricing.local_source
     )
     pricing_visual: PricingVisual = {
         "listing_price": price,

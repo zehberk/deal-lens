@@ -271,7 +271,7 @@ async def test_vin_first_pricing_reuses_configuration_and_enriches_national(
 	)
 
 	resolve.assert_awaited_once()
-	local.assert_awaited_once()
+	assert local.await_count == 2
 	national.assert_awaited_once()
 	assert first["kbb_cache_key"] == second["kbb_cache_key"]
 	assert list(cache["level23_entries"]) == [
@@ -280,6 +280,8 @@ async def test_vin_first_pricing_reuses_configuration_and_enriches_national(
 	entry = cache["level23_entries"][first["kbb_cache_key"]]
 	assert entry["pricing_basis"] == "vin"
 	assert entry["fpp_local"] == 32_500
+	assert entry["fpp_vin_local"] == 32_500
+	assert entry["fpp_table_local"] == 32_500
 	assert entry["fpp_natl"] == 32_100
 	assert valuations[0].kbb_trim == first["kbb_cache_key"]
 	assert configuration["style"] == "SE Hatchback 4D"
@@ -478,7 +480,7 @@ async def test_vin_first_new_listing_uses_resolved_body_specific_style(
 	assert await_args is not None
 	assert await_args.args[4] == ["19XFL2H80SE034568"]
 	assert await_args.args[5] == "hatchback"
-	local.assert_awaited_once()
+	assert local.await_count == 2
 	assert listing["kbb_cache_key"] == (
 		"2025 Honda Civic Sport Hatchback 4D"
 	)

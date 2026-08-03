@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional
 
 from analysis.analysis_utils import to_int
-from deal_lens.models import Listing, ListingEvaluation
+from deal_lens.models import KBBFPPBasis, KBBPriceAnchor, KBBPricingEntry, Listing, ListingEvaluation
 from itertools import groupby
 from utils.constants import *
 from utils.models import (
@@ -107,6 +107,36 @@ def determine_best_price(
             )
 
     return value
+
+
+def determine_best_price_from_pricing(
+    pricing: KBBPricingEntry,
+    narrative: Optional[list[str]] = None,
+    *,
+    is_new: bool = False,
+    describe_fallback: bool = True,
+) -> tuple[int, KBBPriceAnchor | None]:
+    """Select one provenance-bearing FPP anchor before older fallbacks."""
+    anchor = pricing.selected_fpp_anchor(KBB_CACHE_TTL)
+    if anchor is not None:
+        labels = {
+            KBBFPPBasis.VIN_LOCAL: "VIN-local FPP",
+            KBBFPPBasis.TABLE_LOCAL: "table-local FPP",
+            KBBFPPBasis.NATIONAL: "national FPP",
+        }
+        if narrative is not None:
+            narrative.append(
+                f"{labels[anchor.basis]} was used as the comparison value because "
+                "it is the highest-priority available KBB Fair Purchase Price."
+            )
+            narrative.extend(f"KBB pricing limitation: {item}." for item in anchor.uncertainty)
+        return int(anchor.value), anchor
+
+    fallback = determine_best_price(
+        1, 0, 0, int(pricing.fmv or 0), narrative if describe_fallback else None,
+        msrp=int(pricing.msrp or 0), is_new=is_new,
+    )
+    return fallback, None
 
 
 def classify_deal_rating(
